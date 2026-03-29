@@ -104,6 +104,15 @@ export function getChatContext(
 }
 
 /**
+ * Returns the last n messages as a formatted string (for the get_chat_context tool).
+ */
+export function getRecentMessages(chatId: number, n: number): string {
+  const buf = logs.get(chatId);
+  if (!buf || buf.length === 0) return "";
+  return buf.slice(-n).map(formatLogEntry).join("\n");
+}
+
+/**
  * Store a summary and reset the counter. Persists to disk.
  */
 export async function setSummary(chatId: number, summary: string): Promise<void> {

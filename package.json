@@ -28,6 +28,7 @@
   },
   "dependencies": {
     "dotenv": "^16.6.1",
+    "exa-js": "^2.10.2",
     "grammy": "^1.39.3",
     "openai": "^6.17.0"
   }

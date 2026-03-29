@@ -11,10 +11,12 @@ import {
 import { log } from "./utils/log.js";
 import { buildContext } from "./contextBuilder.js";
 import { buildSystemMessage } from "./prompt.js";
-import { getMemories, clearMemories, memoryTools, executeMemoryTool } from "./memory.js";
+import { clearMemories } from "./memory.js";
 import { getChatConfig } from "./chatConfig.js";
 import { registerConfigHandlers, handleWizardInput, isInWizard } from "./configCommand.js";
-import { logMessage, getChatContext, summarizeChat, type LogEntry } from "./chatLog.js";
+import { logMessage, summarizeChat, type LogEntry } from "./chatLog.js";
+import { buildTools, executeTool, toolNotification } from "./tools.js";
+import { initReminders } from "./reminders.js";
 
 const bot = new Bot(BOT_TOKEN);
 
@@ -26,9 +28,6 @@ async function toDataUrl(url: string): Promise<string> {
   if (!res.ok) throw new Error(`Failed to download image: ${res.status}`);
   const buf = Buffer.from(await res.arrayBuffer());
 
-  // Derive MIME from file extension – Telegram's content-type header can be
-  // unreliable (e.g. application/octet-stream) or include parameters that
-  // break the data-URL format (e.g. "image/jpeg; charset=utf-8").
   const MIME_MAP: Record<string, string> = {
     jpg: "image/jpeg",
     jpeg: "image/jpeg",
@@ -44,7 +43,7 @@ async function toDataUrl(url: string): Promise<string> {
   return `data:${mime};base64,${buf.toString("base64")}`;
 }
 
-// Global error handler to prevent crashes
+// Global error handler
 bot.catch((err) => {
   const msg = (err as any)?.error?.message || (err as Error).message || "Unknown error";
   log.err(`Bot error: ${msg}`);
@@ -63,7 +62,7 @@ function threadKey(chatId: number, threadId?: number): string {
   return threadId != null ? `${chatId}:${threadId}` : String(chatId);
 }
 
-// Simple rolling memory per thread (stores Chat Completion message objects)
+// Rolling message history per thread
 const memory = new Map<string, Array<any>>();
 
 function storeMessage(key: string, msg: any) {
@@ -73,9 +72,11 @@ function storeMessage(key: string, msg: any) {
   if (list.length > 15) list.shift();
 }
 
+// Last image data URL per thread (for edit_image tool)
+const lastImages = new Map<string, string>();
+
 /**
- * If the model doesn't support images, strip image_url parts from context
- * so that old image messages in history don't break subsequent requests.
+ * If the model doesn't support images, strip image_url parts from context.
  */
 function sanitizeContext(messages: any[]): any[] {
   if (modelSupportsImages() !== false) return messages;
@@ -88,7 +89,7 @@ function sanitizeContext(messages: any[]): any[] {
   });
 }
 
-// Rate limiting (very light): 1 request per 2s per thread
+// Rate limiting: 1 request per 2s per thread
 const lastCall = new Map<string, number>();
 function canRespond(key: string) {
   const now = Date.now();
@@ -188,7 +189,7 @@ function hasAccess(chatId: number): boolean {
   return !!getChatConfig(chatId).apiKey;
 }
 
-// --- Handler registration order matters ---
+// --- Handler registration ---
 
 // 1. Config handlers (always accessible)
 registerConfigHandlers(bot);
@@ -198,7 +199,6 @@ async function accessGate(ctx: Context, next: NextFunction) {
   const chatId = ctx.chat?.id;
   if (!chatId) return next();
 
-  // Always allow /config and wizard interactions
   if (ctx.callbackQuery?.data?.startsWith("cfg:")) return next();
   if (isInWizard(chatId)) return next();
 
@@ -206,24 +206,17 @@ async function accessGate(ctx: Context, next: NextFunction) {
   const botUsername = ctx.me?.username ?? "";
   const text = ctx.message?.text ?? ctx.message?.caption ?? "";
 
-  // Check if this is a command directed at our bot
   const cmdMatch = text.match(/^\/(\w+)(?:@(\S+))?/);
   const isOurCommand = cmdMatch
     ? OUR_COMMANDS.has(cmdMatch[1]) && (!cmdMatch[2] || cmdMatch[2] === botUsername)
     : false;
 
-  // In groups, ignore commands addressed to other bots entirely
   if (isGroup && cmdMatch && !isOurCommand) return;
-
-  // /config always passes through
   if (isOurCommand && cmdMatch![1] === "config") return next();
 
   if (!hasAccess(chatId)) {
     const isMention = botUsername ? text.includes(`@${botUsername}`) : false;
-
-    // In groups, only respond when directly @mentioned or our command is used
     const isDirected = !isGroup || isMention || isOurCommand;
-
     if (isDirected) {
       await ctx.reply("You need to provide an API key to use this bot. Use /config to set one up.");
     }
@@ -246,31 +239,48 @@ bot.on("message", async (ctx, next) => {
   return next();
 });
 
-// 3. Commands and message handlers
+// 3. Main chat function
+
+interface ChatOptions {
+  chatId: number;
+  threadId?: number;
+  isGroup: boolean;
+  groupTitle?: string;
+  messages: any[];
+  creds?: ApiCredentials;
+  lastImageDataUrl?: string;
+  /** Called on each content delta with the accumulated snapshot. */
+  onChunk?: (snapshot: string) => void;
+  /** Called before executing a tool call (for status notifications). */
+  onToolCall?: (name: string, args: any) => Promise<void>;
+  /** Called when a tool produces an image. */
+  onImage?: (buffer: Buffer) => Promise<void>;
+}
 
 /**
- * Chat helper: builds system message with memories, runs the tool-calling loop,
- * and returns the final text response.  Supports streaming via optional onChunk
- * callback that receives the accumulated text snapshot on each content delta.
+ * Core agentic loop: streams a response and handles all tool calls.
+ * Returns the final text, or empty string if the model produced only tool calls.
  */
-async function chat(
-  chatId: number,
-  messages: any[],
-  creds?: ApiCredentials,
-  onChunk?: (snapshot: string) => void
-): Promise<string> {
-  const memories = getMemories(chatId);
-  const chatContext = getChatContext(chatId);
-  const systemMsg = buildSystemMessage(memories, chatContext);
-  const msgs = [systemMsg, ...messages];
+async function chat(opts: ChatOptions): Promise<string> {
+  const systemMsg = buildSystemMessage(
+    opts.groupTitle ? { groupTitle: opts.groupTitle } : undefined
+  );
+  const tools = buildTools(opts.isGroup);
+  const msgs: any[] = [systemMsg, ...opts.messages];
+
+  const toolCtx = {
+    chatId: opts.chatId,
+    threadId: opts.threadId,
+    creds: opts.creds,
+    lastImageDataUrl: opts.lastImageDataUrl,
+  };
 
   let iterations = 0;
   while (iterations <= 5) {
-    const stream = askSkyeStream(msgs, memoryTools, creds);
+    const stream = askSkyeStream(msgs, tools, opts.creds);
 
-    // Only wire up streaming for the content phase (not tool-call iterations)
-    if (onChunk) {
-      stream.on("content", (_delta, snapshot) => onChunk(snapshot));
+    if (opts.onChunk) {
+      stream.on("content", (_delta, snapshot) => opts.onChunk!(snapshot));
     }
 
     const completion = await stream.finalChatCompletion();
@@ -280,26 +290,53 @@ async function chat(
       return choice?.message?.content || "";
     }
 
-    // Tool calls — process and loop
+    // Process tool calls
     msgs.push(choice.message);
+
     for (const tc of choice.message.tool_calls) {
       if (tc.type !== "function") continue;
-      const result = await executeMemoryTool(chatId, tc);
-      msgs.push({ role: "tool", tool_call_id: tc.id, content: result });
+
+      const name = tc.function.name;
+      let args: any;
+      try {
+        args = JSON.parse(tc.function.arguments);
+      } catch {
+        args = {};
+      }
+
+      // Notify before executing
+      if (opts.onToolCall) await opts.onToolCall(name, args);
+
+      let result: { text: string; imageBuffer?: Buffer };
+      try {
+        result = await executeTool(name, args, toolCtx);
+      } catch (e: any) {
+        result = { text: `Tool error: ${e?.message || String(e)}` };
+      }
+
+      // Send image to user immediately if produced
+      if (result.imageBuffer && opts.onImage) {
+        await opts.onImage(result.imageBuffer).catch(() => {});
+      }
+
+      msgs.push({ role: "tool", tool_call_id: tc.id, content: result.text });
     }
+
     iterations++;
   }
+
   return "";
 }
 
-// reset context (per-thread)
+// 4. Commands
+
 bot.command("reset", async (ctx) => {
   const tk = threadKey(ctx.chat.id, ctx.message?.message_thread_id);
   memory.delete(tk);
   await ctx.reply("Context reset. Memories are still saved — use /forget to clear them.");
 });
 
-// image generation (text-only prompt)
+// Direct image generation (bypasses the model for speed)
 bot.command("image", async (ctx) => {
   const prompt = ctx.match?.trim();
   if (!prompt) {
@@ -315,7 +352,6 @@ bot.command("image", async (ctx) => {
   void (async () => {
     log.info(`Image generation from ${ctx.chat.id}: ${prompt}`);
 
-    // Keep the "uploading photo" indicator visible while generating
     const actionInterval = setInterval(() => {
       ctx.api.sendChatAction(ctx.chat.id, "upload_photo").catch(() => {});
     }, 4000);
@@ -347,20 +383,20 @@ bot.command("image", async (ctx) => {
   })();
 });
 
-// Clear all saved memories for this chat
 bot.command("forget", async (ctx) => {
   await clearMemories(ctx.chat.id);
   await ctx.reply("All memories cleared.");
 });
 
+// 5. Text messages
+
 bot.on("message:text", async (ctx) => {
-  // Wizard input interception — short-circuit before normal handling
   if (await handleWizardInput(ctx)) return;
 
   const isPM = ctx.chat.type === "private";
   const mention = ctx.message.text.includes(`@${ctx.me.username}`);
 
-  if (!isPM && !mention) return; // groups: only when tagged
+  if (!isPM && !mention) return;
 
   const tk = threadKey(ctx.chat.id, ctx.message?.message_thread_id);
   if (!canRespond(tk)) return;
@@ -368,16 +404,24 @@ bot.on("message:text", async (ctx) => {
   void (async () => {
     log.info(`Incoming from ${ctx.chat.id}`);
 
+    // React to show the message was received
+    try {
+      await ctx.react("👀");
+    } catch {}
+
     const creds = getCredentials(ctx.chat.id);
     const tag = senderTag(ctx);
     const userMsg = {
       role: "user" as const,
-      content: tag + (ctx.message.text || ""),
+      content: tag + ctx.message.text,
     };
     const history = memory.get(tk) || [];
     const context = sanitizeContext(buildContext([...history, userMsg]));
 
-    // Throttled streaming draft sender
+    const isGroup = ctx.chat.type === "group" || ctx.chat.type === "supergroup";
+    const groupTitle = isGroup ? (ctx.chat as any).title : undefined;
+
+    // Throttled streaming draft
     let lastDraft = 0;
     const onChunk = (snapshot: string) => {
       const now = Date.now();
@@ -386,13 +430,42 @@ bot.on("message:text", async (ctx) => {
       (ctx as any).replyWithDraft?.(snapshot)?.catch(() => {});
     };
 
+    // Tool call notifications in DMs
+    const onToolCall = async (name: string, args: any) => {
+      const note = toolNotification(name, args);
+      if (note && isPM) {
+        await ctx.reply(`→ ${note}`, {
+          reply_to_message_id: ctx.message.message_id,
+        }).catch(() => {});
+      }
+    };
+
+    // Send generated images
+    const onImage = async (buffer: Buffer) => {
+      await ctx.replyWithPhoto(new InputFile(buffer, "image.png"), {
+        reply_to_message_id: ctx.message.message_id,
+      });
+    };
+
     try {
-      const text = cleanMd(await chat(ctx.chat.id, context, creds, onChunk));
+      const text = cleanMd(
+        await chat({
+          chatId: ctx.chat.id,
+          threadId: ctx.message.message_thread_id,
+          isGroup,
+          groupTitle,
+          messages: context,
+          creds,
+          lastImageDataUrl: lastImages.get(tk),
+          onChunk,
+          onToolCall,
+          onImage,
+        })
+      );
 
       if (!text) {
-        await ctx.reply("I couldn't generate a response. Please try again.", {
-          reply_to_message_id: ctx.message.message_id,
-        });
+        // Model may have only generated an image — that's fine
+        storeMessage(tk, userMsg);
         return;
       }
 
@@ -411,7 +484,8 @@ bot.on("message:text", async (ctx) => {
   })();
 });
 
-// photo input: /image editing or vision analysis
+// 6. Photo messages
+
 const IMAGE_CMD_RE = /^\/image(?:@\S+)?\s*([\s\S]*)$/;
 
 bot.on("message:photo", async (ctx) => {
@@ -421,7 +495,7 @@ bot.on("message:photo", async (ctx) => {
 
   const tk = threadKey(ctx.chat.id, ctx.message?.message_thread_id);
 
-  // --- Path 1: /image command with photo → image editing ---
+  // Path 1: /image command with photo → direct image editing (no model overhead)
   if (imageMatch) {
     const prompt = imageMatch[1].trim();
     if (!prompt) {
@@ -473,7 +547,7 @@ bot.on("message:photo", async (ctx) => {
     return;
   }
 
-  // --- Path 2: vision analysis ---
+  // Path 2: Vision analysis — treat photo as a regular message
   const hasMention = captionRaw.includes(`@${ctx.me.username}`);
   if (!isPM && (!captionRaw || !hasMention)) return;
 
@@ -487,12 +561,17 @@ bot.on("message:photo", async (ctx) => {
 
   if (!canRespond(tk)) return;
 
-  const creds = getCredentials(ctx.chat.id);
-
   void (async () => {
     log.info(`Photo from ${ctx.chat.id}`);
 
-    // Throttled streaming draft sender
+    try {
+      await ctx.react("👀");
+    } catch {}
+
+    const creds = getCredentials(ctx.chat.id);
+    const isGroup = ctx.chat.type === "group" || ctx.chat.type === "supergroup";
+    const groupTitle = isGroup ? (ctx.chat as any).title : undefined;
+
     let lastDraft = 0;
     const onChunk = (snapshot: string) => {
       const now = Date.now();
@@ -501,10 +580,28 @@ bot.on("message:photo", async (ctx) => {
       (ctx as any).replyWithDraft?.(snapshot)?.catch(() => {});
     };
 
+    const onToolCall = async (name: string, args: any) => {
+      const note = toolNotification(name, args);
+      if (note && isPM) {
+        await ctx.reply(`→ ${note}`, {
+          reply_to_message_id: ctx.message.message_id,
+        }).catch(() => {});
+      }
+    };
+
+    const onImage = async (buffer: Buffer) => {
+      await ctx.replyWithPhoto(new InputFile(buffer, "image.png"), {
+        reply_to_message_id: ctx.message.message_id,
+      });
+    };
+
     try {
       const file = await ctx.api.getFile(ctx.message.photo.pop()!.file_id);
       const telegramUrl = `https://api.telegram.org/file/bot${BOT_TOKEN}/${file.file_path}`;
       const dataUrl = await toDataUrl(telegramUrl);
+
+      // Store for potential edit_image tool use
+      lastImages.set(tk, dataUrl);
 
       const tag = senderTag(ctx);
       const parts: any[] = [];
@@ -516,12 +613,23 @@ bot.on("message:photo", async (ctx) => {
       const history = memory.get(tk) || [];
       const context = buildContext([...history, userMsg]);
 
-      const text = cleanMd(await chat(ctx.chat.id, context, creds, onChunk));
+      const text = cleanMd(
+        await chat({
+          chatId: ctx.chat.id,
+          threadId: ctx.message.message_thread_id,
+          isGroup,
+          groupTitle,
+          messages: context,
+          creds,
+          lastImageDataUrl: dataUrl,
+          onChunk,
+          onToolCall,
+          onImage,
+        })
+      );
 
       if (!text) {
-        await ctx.reply("I couldn't generate a response for this image. Please try again.", {
-          reply_to_message_id: ctx.message.message_id,
-        });
+        storeMessage(tk, userMsg);
         return;
       }
 
@@ -540,8 +648,14 @@ bot.on("message:photo", async (ctx) => {
   })();
 });
 
-// Fetch model capabilities, then start
+// Fetch model capabilities, init reminders, then start
 checkModelCapabilities().finally(() => {
+  initReminders(async (chatId, threadId, text) => {
+    const options: any = {};
+    if (threadId != null) options.message_thread_id = threadId;
+    await bot.api.sendMessage(chatId, text, options);
+  });
+
   bot.start({ drop_pending_updates: true });
   log.info("Skye is alive");
 });
