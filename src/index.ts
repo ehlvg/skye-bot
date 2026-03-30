@@ -290,6 +290,9 @@ async function chat(opts: ChatOptions): Promise<string> {
       return choice?.message?.content || "";
     }
 
+    const toolNames = choice.message.tool_calls.map((tc: any) => tc.function?.name).join(", ");
+    log.info(`chat() iteration ${iterations}: tool calls [${toolNames}]`);
+
     // Process tool calls
     msgs.push(choice.message);
 
@@ -322,10 +325,19 @@ async function chat(opts: ChatOptions): Promise<string> {
       msgs.push({ role: "tool", tool_call_id: tc.id, content: result.text });
     }
 
+    // After the first round of tool calls, nudge the model to respond with text
+    if (iterations === 0) {
+      msgs.push({
+        role: "user",
+        content: "[system: tool results delivered — now respond to the user with text]",
+      });
+    }
+
     iterations++;
   }
 
-  return "";
+  log.warn(`chat() exhausted tool-call loop (${opts.chatId})`);
+  throw new Error("Too many tool calls without a response.");
 }
 
 // 4. Commands
@@ -441,7 +453,9 @@ bot.on("message:text", async (ctx) => {
     };
 
     // Send generated images
+    let imagesSent = false;
     const onImage = async (buffer: Buffer) => {
+      imagesSent = true;
       await ctx.replyWithPhoto(new InputFile(buffer, "image.png"), {
         reply_to_message_id: ctx.message.message_id,
       });
@@ -463,15 +477,18 @@ bot.on("message:text", async (ctx) => {
         })
       );
 
+      storeMessage(tk, userMsg);
+
       if (!text) {
-        // Model may have only generated an image — that's fine
-        storeMessage(tk, userMsg);
+        if (!imagesSent) {
+          await ctx.reply("I couldn't generate a response. Please try again.", {
+            reply_to_message_id: ctx.message.message_id,
+          });
+        }
         return;
       }
 
-      storeMessage(tk, userMsg);
       storeMessage(tk, { role: "assistant", content: text });
-
       await ctx.reply(text, { reply_to_message_id: ctx.message.message_id });
     } catch (e: any) {
       log.err(`Text handler failed: ${e?.message || e}`);
@@ -589,7 +606,9 @@ bot.on("message:photo", async (ctx) => {
       }
     };
 
+    let imagesSent = false;
     const onImage = async (buffer: Buffer) => {
+      imagesSent = true;
       await ctx.replyWithPhoto(new InputFile(buffer, "image.png"), {
         reply_to_message_id: ctx.message.message_id,
       });
@@ -628,12 +647,17 @@ bot.on("message:photo", async (ctx) => {
         })
       );
 
+      storeMessage(tk, userMsg);
+
       if (!text) {
-        storeMessage(tk, userMsg);
+        if (!imagesSent) {
+          await ctx.reply("I couldn't generate a response. Please try again.", {
+            reply_to_message_id: ctx.message.message_id,
+          });
+        }
         return;
       }
 
-      storeMessage(tk, userMsg);
       storeMessage(tk, { role: "assistant", content: text });
 
       await ctx.reply(text, { reply_to_message_id: ctx.message.message_id });
