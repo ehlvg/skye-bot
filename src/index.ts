@@ -15,7 +15,7 @@ import { getMemories, clearMemories, memoryTools, executeMemoryTool } from "./me
 import { getChatConfig } from "./chatConfig.js";
 import { registerConfigHandlers, handleWizardInput, isInWizard } from "./configCommand.js";
 import { logMessage, getChatContext, summarizeChat, type LogEntry } from "./chatLog.js";
-import { isSpeechRecognitionAvailable, recognizeSpeech } from "./speech.js";
+import { isSpeechRecognitionAvailable, recognizeSpeech, isTTSAvailable, synthesizeSpeech } from "./speech.js";
 
 const bot = new Bot(BOT_TOKEN);
 
@@ -613,6 +613,18 @@ bot.on("message:voice", async (ctx) => {
 
       storeMessage(tk, userMsg);
       storeMessage(tk, { role: "assistant", content: text });
+
+      if (isTTSAvailable()) {
+        await ctx.api.sendChatAction(ctx.chat.id, "record_voice");
+        const audioBuffer = await synthesizeSpeech(text);
+        if (audioBuffer) {
+          await ctx.replyWithVoice(new InputFile(audioBuffer, "response.mp3"), {
+            reply_to_message_id: ctx.message.message_id,
+          });
+          return;
+        }
+        log.warn("TTS synthesis failed, falling back to text reply");
+      }
 
       await ctx.reply(text, { reply_to_message_id: ctx.message.message_id });
     } catch (e: any) {

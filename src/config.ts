@@ -17,3 +17,8 @@ export const ALLOWED_IDS: Set<number> = new Set(
 
 export const YC_API_KEY = process.env.YC_API_KEY ?? "";
 export const YC_FOLDER_ID = process.env.YC_FOLDER_ID ?? "";
+
+export const ELEVENLABS_API_KEY = process.env.ELEVENLABS_API_KEY ?? "";
+// Rachel — спокойный женский голос (американский акцент)
+export const ELEVENLABS_VOICE_ID =
+  process.env.ELEVENLABS_VOICE_ID ?? "21m00Tcm4TlvDq8ikWAM";
