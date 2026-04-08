@@ -15,7 +15,13 @@ import { getMemories, clearMemories, memoryTools, executeMemoryTool } from "./me
 import { getChatConfig } from "./chatConfig.js";
 import { registerConfigHandlers, handleWizardInput, isInWizard } from "./configCommand.js";
 import { logMessage, getChatContext, summarizeChat, type LogEntry } from "./chatLog.js";
-import { isSpeechRecognitionAvailable, recognizeSpeech, isTTSAvailable, synthesizeSpeech } from "./speech.js";
+import {
+  isSpeechRecognitionAvailable,
+  recognizeSpeech,
+  isTTSAvailable,
+  synthesizeSpeech,
+} from "./speech.js";
+import { logRequest, scheduleAuditPruning, type AuditEntry } from "./audit.js";
 
 const bot = new Bot(BOT_TOKEN);
 
@@ -47,8 +53,7 @@ async function toDataUrl(url: string): Promise<string> {
 
 // Global error handler to prevent crashes
 bot.catch((err) => {
-  const msg = (err as any)?.error?.message || (err as Error).message || "Unknown error";
-  log.err(`Bot error: ${msg}`);
+  log.error(serializeError(err), "Unhandled bot error");
 });
 
 // Advertise bot commands
@@ -109,6 +114,48 @@ function senderTag(ctx: Context): string {
   const name = parts.join(" ") || "Unknown";
   const handle = from.username ? ` (@${from.username})` : "";
   return `[${name}${handle}] `;
+}
+
+/** Extract common fields for an audit log entry from any message context */
+function ctxAudit(
+  ctx: Context
+): Pick<AuditEntry, "chatId" | "chatType" | "threadId" | "userId" | "username" | "firstName"> {
+  return {
+    chatId: ctx.chat!.id,
+    chatType: ctx.chat!.type,
+    threadId: ctx.message?.message_thread_id ?? undefined,
+    userId: ctx.from!.id,
+    username: ctx.from?.username ?? undefined,
+    firstName: ctx.from?.first_name ?? undefined,
+  };
+}
+
+/**
+ * Extracts all useful fields from any error for structured pino logging.
+ * Handles OpenAI SDK errors (status, error.code, error.type) and plain Errors.
+ */
+function serializeError(e: unknown): Record<string, unknown> {
+  if (!(e instanceof Error)) return { message: String(e) };
+  const a = e as any;
+  const obj: Record<string, unknown> = { message: e.message };
+  if (a.status != null) obj.status = a.status;
+  if (a.error != null) obj.apiError = a.error; // provider error object
+  if (a.code != null) obj.code = a.code;
+  return obj;
+}
+
+/**
+ * Formats an error into a compact human-readable string for the audit errorMsg field.
+ * Includes HTTP status and provider error code when available.
+ */
+function fmtError(e: unknown): string {
+  if (!(e instanceof Error)) return String(e);
+  const a = e as any;
+  const parts: string[] = [e.message];
+  if (a.status != null) parts.push(`status=${a.status}`);
+  if (a.error?.code != null) parts.push(`code=${a.error.code}`);
+  if (a.error?.type != null) parts.push(`type=${a.error.type}`);
+  return parts.join(" | ");
 }
 
 /** Extract a LogEntry from any message context */
@@ -314,7 +361,8 @@ bot.command("image", async (ctx) => {
   const creds = getCredentials(ctx.chat.id);
 
   void (async () => {
-    log.info(`Image generation from ${ctx.chat.id}: ${prompt}`);
+    const t0 = Date.now();
+    log.info({ chatId: ctx.chat.id, userId: ctx.from?.id }, "Image generation");
 
     // Keep the "uploading photo" indicator visible while generating
     const actionInterval = setInterval(() => {
@@ -329,19 +377,48 @@ bot.command("image", async (ctx) => {
         await ctx.reply("No image was generated. Try a different prompt.", {
           reply_to_message_id: ctx.message!.message_id,
         });
+        logRequest({
+          ...ctxAudit(ctx),
+          msgType: "image",
+          command: "/image",
+          inputLen: prompt.length,
+          outputLen: 0,
+          latencyMs: Date.now() - t0,
+          status: "ok",
+        });
         return;
       }
 
       await ctx.replyWithPhoto(new InputFile(buffer, "image.png"), {
         reply_to_message_id: ctx.message!.message_id,
       });
-    } catch (e: any) {
-      log.err(`Image generation failed: ${e?.message || e}`);
+      logRequest({
+        ...ctxAudit(ctx),
+        msgType: "image",
+        command: "/image",
+        inputLen: prompt.length,
+        outputLen: 0,
+        latencyMs: Date.now() - t0,
+        status: "ok",
+      });
+    } catch (e: unknown) {
+      const ms = Date.now() - t0;
+      log.error({ ...serializeError(e), latencyMs: ms }, "Image generation failed");
       await ctx
         .reply("Failed to generate the image. Please try again.", {
           reply_to_message_id: ctx.message!.message_id,
         })
         .catch(() => {});
+      logRequest({
+        ...ctxAudit(ctx),
+        msgType: "image",
+        command: "/image",
+        inputLen: prompt.length,
+        outputLen: 0,
+        latencyMs: ms,
+        status: "error",
+        errorMsg: fmtError(e),
+      });
     } finally {
       clearInterval(actionInterval);
     }
@@ -367,13 +444,15 @@ bot.on("message:text", async (ctx) => {
   if (!canRespond(tk)) return;
 
   void (async () => {
-    log.info(`Incoming from ${ctx.chat.id}`);
+    const t0 = Date.now();
+    log.info({ chatId: ctx.chat.id, userId: ctx.from?.id }, "Incoming text message");
 
     const creds = getCredentials(ctx.chat.id);
     const tag = senderTag(ctx);
+    const inputText = ctx.message.text || "";
     const userMsg = {
       role: "user" as const,
-      content: tag + (ctx.message.text || ""),
+      content: tag + inputText,
     };
     const history = memory.get(tk) || [];
     const context = sanitizeContext(buildContext([...history, userMsg]));
@@ -394,6 +473,14 @@ bot.on("message:text", async (ctx) => {
         await ctx.reply("I couldn't generate a response. Please try again.", {
           reply_to_message_id: ctx.message.message_id,
         });
+        logRequest({
+          ...ctxAudit(ctx),
+          msgType: "text",
+          inputLen: inputText.length,
+          outputLen: 0,
+          latencyMs: Date.now() - t0,
+          status: "ok",
+        });
         return;
       }
 
@@ -401,13 +488,31 @@ bot.on("message:text", async (ctx) => {
       storeMessage(tk, { role: "assistant", content: text });
 
       await ctx.reply(text, { reply_to_message_id: ctx.message.message_id });
-    } catch (e: any) {
-      log.err(`Text handler failed: ${e?.message || e}`);
+      logRequest({
+        ...ctxAudit(ctx),
+        msgType: "text",
+        inputLen: inputText.length,
+        outputLen: text.length,
+        latencyMs: Date.now() - t0,
+        status: "ok",
+      });
+    } catch (e: unknown) {
+      const ms = Date.now() - t0;
+      log.error({ ...serializeError(e), latencyMs: ms }, "Text handler failed");
       await ctx
         .reply("Something went wrong, please try again.", {
           reply_to_message_id: ctx.message.message_id,
         })
         .catch(() => {});
+      logRequest({
+        ...ctxAudit(ctx),
+        msgType: "text",
+        inputLen: inputText.length,
+        outputLen: 0,
+        latencyMs: ms,
+        status: "error",
+        errorMsg: fmtError(e),
+      });
     }
   })();
 });
@@ -437,7 +542,8 @@ bot.on("message:photo", async (ctx) => {
     const creds = getCredentials(ctx.chat.id);
 
     void (async () => {
-      log.info(`Image editing from ${ctx.chat.id}: ${prompt}`);
+      const t0 = Date.now();
+      log.info({ chatId: ctx.chat.id, userId: ctx.from?.id }, "Image editing");
 
       const actionInterval = setInterval(() => {
         ctx.api.sendChatAction(ctx.chat.id, "upload_photo").catch(() => {});
@@ -454,19 +560,48 @@ bot.on("message:photo", async (ctx) => {
           await ctx.reply("No image was generated. Try a different prompt.", {
             reply_to_message_id: ctx.message.message_id,
           });
+          logRequest({
+            ...ctxAudit(ctx),
+            msgType: "image_edit",
+            command: "/image",
+            inputLen: prompt.length,
+            outputLen: 0,
+            latencyMs: Date.now() - t0,
+            status: "ok",
+          });
           return;
         }
 
         await ctx.replyWithPhoto(new InputFile(buffer, "image.png"), {
           reply_to_message_id: ctx.message.message_id,
         });
-      } catch (e: any) {
-        log.err(`Image editing failed: ${e?.message || e}`);
+        logRequest({
+          ...ctxAudit(ctx),
+          msgType: "image_edit",
+          command: "/image",
+          inputLen: prompt.length,
+          outputLen: 0,
+          latencyMs: Date.now() - t0,
+          status: "ok",
+        });
+      } catch (e: unknown) {
+        const ms = Date.now() - t0;
+        log.error({ ...serializeError(e), latencyMs: ms }, "Image editing failed");
         await ctx
           .reply("Failed to edit the image. Please try again.", {
             reply_to_message_id: ctx.message.message_id,
           })
           .catch(() => {});
+        logRequest({
+          ...ctxAudit(ctx),
+          msgType: "image_edit",
+          command: "/image",
+          inputLen: prompt.length,
+          outputLen: 0,
+          latencyMs: ms,
+          status: "error",
+          errorMsg: fmtError(e),
+        });
       } finally {
         clearInterval(actionInterval);
       }
@@ -491,7 +626,8 @@ bot.on("message:photo", async (ctx) => {
   const creds = getCredentials(ctx.chat.id);
 
   void (async () => {
-    log.info(`Photo from ${ctx.chat.id}`);
+    const t0 = Date.now();
+    log.info({ chatId: ctx.chat.id, userId: ctx.from?.id }, "Photo vision request");
 
     // Throttled streaming draft sender
     let lastDraft = 0;
@@ -523,6 +659,14 @@ bot.on("message:photo", async (ctx) => {
         await ctx.reply("I couldn't generate a response for this image. Please try again.", {
           reply_to_message_id: ctx.message.message_id,
         });
+        logRequest({
+          ...ctxAudit(ctx),
+          msgType: "photo",
+          inputLen: captionRaw.length,
+          outputLen: 0,
+          latencyMs: Date.now() - t0,
+          status: "ok",
+        });
         return;
       }
 
@@ -530,13 +674,31 @@ bot.on("message:photo", async (ctx) => {
       storeMessage(tk, { role: "assistant", content: text });
 
       await ctx.reply(text, { reply_to_message_id: ctx.message.message_id });
-    } catch (e: any) {
-      log.err(`Image handler failed: ${e?.message || e}`);
+      logRequest({
+        ...ctxAudit(ctx),
+        msgType: "photo",
+        inputLen: captionRaw.length,
+        outputLen: text.length,
+        latencyMs: Date.now() - t0,
+        status: "ok",
+      });
+    } catch (e: unknown) {
+      const ms = Date.now() - t0;
+      log.error({ ...serializeError(e), latencyMs: ms }, "Photo handler failed");
       await ctx
         .reply("Failed to process the image. Please try again or send text instead.", {
           reply_to_message_id: ctx.message.message_id,
         })
         .catch(() => {});
+      logRequest({
+        ...ctxAudit(ctx),
+        msgType: "photo",
+        inputLen: captionRaw.length,
+        outputLen: 0,
+        latencyMs: ms,
+        status: "error",
+        errorMsg: fmtError(e),
+      });
     }
   })();
 });
@@ -562,7 +724,8 @@ bot.on("message:voice", async (ctx) => {
   const creds = getCredentials(ctx.chat.id);
 
   void (async () => {
-    log.info(`Voice message from ${ctx.chat.id}`);
+    const t0 = Date.now();
+    log.info({ chatId: ctx.chat.id, userId: ctx.from?.id }, "Voice message");
 
     try {
       await ctx.api.sendChatAction(ctx.chat.id, "typing");
@@ -581,10 +744,19 @@ bot.on("message:voice", async (ctx) => {
         await ctx.reply("Could not recognize speech. Please try again or send text.", {
           reply_to_message_id: ctx.message.message_id,
         });
+        logRequest({
+          ...ctxAudit(ctx),
+          msgType: "voice",
+          inputLen: 0,
+          outputLen: 0,
+          latencyMs: Date.now() - t0,
+          status: "error",
+          errorMsg: "STT returned empty result",
+        });
         return;
       }
 
-      log.info(`Recognized: "${recognized}"`);
+      log.info({ chatId: ctx.chat.id, recognizedLen: recognized.length }, `STT recognized`);
 
       let lastDraft = 0;
       const onChunk = (snapshot: string) => {
@@ -608,6 +780,14 @@ bot.on("message:voice", async (ctx) => {
         await ctx.reply("I couldn't generate a response. Please try again.", {
           reply_to_message_id: ctx.message.message_id,
         });
+        logRequest({
+          ...ctxAudit(ctx),
+          msgType: "voice",
+          inputLen: recognized.length,
+          outputLen: 0,
+          latencyMs: Date.now() - t0,
+          status: "ok",
+        });
         return;
       }
 
@@ -621,25 +801,52 @@ bot.on("message:voice", async (ctx) => {
           await ctx.replyWithVoice(new InputFile(audioBuffer, "response.mp3"), {
             reply_to_message_id: ctx.message.message_id,
           });
+          logRequest({
+            ...ctxAudit(ctx),
+            msgType: "voice",
+            inputLen: recognized.length,
+            outputLen: text.length,
+            latencyMs: Date.now() - t0,
+            status: "ok",
+          });
           return;
         }
         log.warn("TTS synthesis failed, falling back to text reply");
       }
 
       await ctx.reply(text, { reply_to_message_id: ctx.message.message_id });
-    } catch (e: any) {
-      log.err(`Voice handler failed: ${e?.message || e}`);
+      logRequest({
+        ...ctxAudit(ctx),
+        msgType: "voice",
+        inputLen: recognized.length,
+        outputLen: text.length,
+        latencyMs: Date.now() - t0,
+        status: "ok",
+      });
+    } catch (e: unknown) {
+      const ms = Date.now() - t0;
+      log.error({ ...serializeError(e), latencyMs: ms }, "Voice handler failed");
       await ctx
         .reply("Failed to process the voice message. Please try again or send text.", {
           reply_to_message_id: ctx.message.message_id,
         })
         .catch(() => {});
+      logRequest({
+        ...ctxAudit(ctx),
+        msgType: "voice",
+        inputLen: 0,
+        outputLen: 0,
+        latencyMs: ms,
+        status: "error",
+        errorMsg: fmtError(e),
+      });
     }
   })();
 });
 
 // Fetch model capabilities, then start
 checkModelCapabilities().finally(() => {
+  scheduleAuditPruning();
   bot.start({ drop_pending_updates: true });
   log.info("Skye is alive");
 });

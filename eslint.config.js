@@ -16,4 +16,10 @@ export default [
     },
   },
   eslintConfigPrettier,
+  {
+    rules: {
+      // Codebase uses `any` extensively for OpenAI/grammy dynamic types — warn, don't block
+      "@typescript-eslint/no-explicit-any": "warn",
+    },
+  },
 ];

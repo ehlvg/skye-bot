@@ -1,13 +1,6 @@
-import { readFileSync, existsSync } from "fs";
-import { writeFile, mkdir, access } from "fs/promises";
-import { dirname, join } from "path";
-import { fileURLToPath } from "url";
+import { getDb } from "./db.js";
 import { askSkye, type ApiCredentials } from "./openai.js";
 import { log } from "./utils/log.js";
-
-const __dirname = dirname(fileURLToPath(import.meta.url));
-const DATA_DIR = join(__dirname, "..", "data");
-const SUMMARY_FILE = join(DATA_DIR, "chat-summaries.json");
 
 const MAX_BUFFER = 50;
 const RECENT_COUNT = 20;
@@ -21,33 +14,16 @@ export interface LogEntry {
   replyTo?: string;
 }
 
-// In-memory ring buffers keyed by chatId
+// In-memory ring buffers keyed by chatId (reset on restart is acceptable)
 const logs = new Map<number, LogEntry[]>();
 const counters = new Map<number, number>();
-const summaries = new Map<number, string>();
 const chatTitles = new Map<number, string>();
 
-// Load persisted summaries on import
-if (existsSync(SUMMARY_FILE)) {
-  try {
-    const raw = JSON.parse(readFileSync(SUMMARY_FILE, "utf-8"));
-    for (const [key, value] of Object.entries(raw)) {
-      summaries.set(Number(key), value as string);
-    }
-  } catch {
-    // Corrupted file — start fresh
-  }
-}
-
-async function persistSummaries(): Promise<void> {
-  try {
-    await access(DATA_DIR);
-  } catch {
-    await mkdir(DATA_DIR, { recursive: true });
-  }
-  const obj: Record<string, string> = {};
-  for (const [k, v] of summaries) obj[String(k)] = v;
-  await writeFile(SUMMARY_FILE, JSON.stringify(obj, null, 2));
+function getSummary(chatId: number): string {
+  const row = getDb()
+    .query<{ summary: string }, [number]>("SELECT summary FROM chat_summaries WHERE chat_id = ?")
+    .get(chatId);
+  return row?.summary ?? "";
 }
 
 export function formatLogEntry(entry: LogEntry): string {
@@ -95,7 +71,7 @@ export function getChatContext(
   if (!buf || buf.length === 0) return undefined;
 
   const title = chatTitles.get(chatId) ?? "Unknown Chat";
-  const summary = summaries.get(chatId) ?? "";
+  const summary = getSummary(chatId);
 
   const recent = buf.slice(-RECENT_COUNT);
   const recentLog = recent.map(formatLogEntry).join("\n");
@@ -104,12 +80,16 @@ export function getChatContext(
 }
 
 /**
- * Store a summary and reset the counter. Persists to disk.
+ * Store a summary and reset the counter. Persists to SQLite.
  */
 export async function setSummary(chatId: number, summary: string): Promise<void> {
-  summaries.set(chatId, summary);
+  getDb()
+    .query(
+      `INSERT INTO chat_summaries (chat_id, summary) VALUES (?, ?)
+       ON CONFLICT(chat_id) DO UPDATE SET summary = excluded.summary`
+    )
+    .run(chatId, summary);
   counters.set(chatId, 0);
-  await persistSummaries();
 }
 
 /**
