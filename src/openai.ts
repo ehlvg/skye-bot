@@ -77,7 +77,7 @@ export function modelSupportsImages(): boolean | null {
 
 // --- Image generation (via OpenRouter chat completions with modalities) ---
 
-const IMAGE_MODEL = "google/gemini-3-pro-image-preview";
+const IMAGE_MODEL = "google/gemini-3.1-flash-image-preview";
 
 export async function generateImage(
   prompt: string,
