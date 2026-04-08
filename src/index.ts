@@ -15,6 +15,7 @@ import { getMemories, clearMemories, memoryTools, executeMemoryTool } from "./me
 import { getChatConfig } from "./chatConfig.js";
 import { registerConfigHandlers, handleWizardInput, isInWizard } from "./configCommand.js";
 import { logMessage, getChatContext, summarizeChat, type LogEntry } from "./chatLog.js";
+import { isSpeechRecognitionAvailable, recognizeSpeech } from "./speech.js";
 
 const bot = new Bot(BOT_TOKEN);
 
@@ -533,6 +534,91 @@ bot.on("message:photo", async (ctx) => {
       log.err(`Image handler failed: ${e?.message || e}`);
       await ctx
         .reply("Failed to process the image. Please try again or send text instead.", {
+          reply_to_message_id: ctx.message.message_id,
+        })
+        .catch(() => {});
+    }
+  })();
+});
+
+bot.on("message:voice", async (ctx) => {
+  if (!isSpeechRecognitionAvailable()) {
+    await ctx.reply(
+      "Voice recognition is not configured. Please ask the bot administrator to set up Yandex Cloud SpeechKit.",
+      { reply_to_message_id: ctx.message.message_id }
+    );
+    return;
+  }
+
+  const isPM = ctx.chat.type === "private";
+  const captionRaw = ctx.message.caption?.trim() || "";
+  const mention = captionRaw.includes(`@${ctx.me.username}`);
+
+  if (!isPM && !mention) return;
+
+  const tk = threadKey(ctx.chat.id, ctx.message?.message_thread_id);
+  if (!canRespond(tk)) return;
+
+  const creds = getCredentials(ctx.chat.id);
+
+  void (async () => {
+    log.info(`Voice message from ${ctx.chat.id}`);
+
+    try {
+      await ctx.api.sendChatAction(ctx.chat.id, "typing");
+
+      const file = await ctx.api.getFile(ctx.message.voice.file_id);
+      const telegramUrl = `https://api.telegram.org/file/bot${BOT_TOKEN}/${file.file_path}`;
+      const audioRes = await fetch(telegramUrl);
+      if (!audioRes.ok) {
+        throw new Error(`Failed to download voice: ${audioRes.status}`);
+      }
+      const audioBuffer = Buffer.from(await audioRes.arrayBuffer());
+
+      const recognized = await recognizeSpeech(audioBuffer);
+
+      if (!recognized) {
+        await ctx.reply("Could not recognize speech. Please try again or send text.", {
+          reply_to_message_id: ctx.message.message_id,
+        });
+        return;
+      }
+
+      log.info(`Recognized: "${recognized}"`);
+
+      let lastDraft = 0;
+      const onChunk = (snapshot: string) => {
+        const now = Date.now();
+        if (now - lastDraft < 300) return;
+        lastDraft = now;
+        (ctx as any).replyWithDraft?.(snapshot)?.catch(() => {});
+      };
+
+      const tag = senderTag(ctx);
+      const userMsg = {
+        role: "user" as const,
+        content: tag + recognized,
+      };
+      const history = memory.get(tk) || [];
+      const context = sanitizeContext(buildContext([...history, userMsg]));
+
+      const text = cleanMd(await chat(ctx.chat.id, context, creds, onChunk));
+
+      if (!text) {
+        await ctx.reply("I couldn't generate a response. Please try again.", {
+          reply_to_message_id: ctx.message.message_id,
+        });
+        return;
+      }
+
+      storeMessage(tk, userMsg);
+      storeMessage(tk, { role: "assistant", content: text });
+
+      await ctx.reply(text, { reply_to_message_id: ctx.message.message_id });
+    } catch (e: any) {
+      log.err(`Voice handler failed: ${e?.message || e}`);
+      await ctx
+        .reply("Failed to process the voice message. Please try again or send text.", {
           reply_to_message_id: ctx.message.message_id,
         })
         .catch(() => {});

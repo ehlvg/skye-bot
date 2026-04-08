@@ -14,3 +14,6 @@ export const ALLOWED_IDS: Set<number> = new Set(
     .map(Number)
     .filter((n) => !isNaN(n))
 );
+
+export const YC_API_KEY = process.env.YC_API_KEY ?? "";
+export const YC_FOLDER_ID = process.env.YC_FOLDER_ID ?? "";
