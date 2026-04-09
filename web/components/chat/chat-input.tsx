@@ -1,8 +1,18 @@
 "use client"
 
 import { useCallback, useEffect, useRef, useState } from "react"
-import { Textarea } from "@/components/ui/textarea"
-import { Button } from "@/components/ui/button"
+import {
+  InputGroup,
+  InputGroupAddon,
+  InputGroupButton,
+  InputGroupTextarea,
+} from "@/components/ui/input-group"
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu"
 import {
   Tooltip,
   TooltipContent,
@@ -16,6 +26,7 @@ import {
   StopIcon,
   SparklesIcon,
   Cancel01Icon,
+  PlusSignIcon,
 } from "@hugeicons/core-free-icons"
 import { cn } from "@/lib/utils"
 import { toast } from "sonner"
@@ -96,7 +107,6 @@ export function ChatInput({
     const reader = new FileReader()
     reader.onload = (ev) => setAttachedImage(ev.target?.result as string)
     reader.readAsDataURL(file)
-    // reset input so same file can be re-selected
     e.target.value = ""
   }
 
@@ -135,50 +145,61 @@ export function ChatInput({
     setRecording(false)
   }
 
-  const canSend = text.trim().length > 0 && !disabled
+  const hasText = text.trim().length > 0
+  const canSend = hasText && !disabled
 
   return (
     <div className="border-t border-border bg-background/80 px-4 py-3 backdrop-blur-sm md:px-6">
-      {/* Attached image preview */}
-      {attachedImage && (
-        <div className="mb-2 flex items-start gap-2">
-          <div className="relative">
-            {/* eslint-disable-next-line @next/next/no-img-element */}
-            <img
-              src={attachedImage}
-              alt="Attached"
-              className="h-20 w-20 rounded-lg border border-border object-cover shadow-sm"
-            />
+      <div className="mx-auto w-full max-w-3xl">
+        {/* Attached image preview */}
+        {attachedImage && (
+          <div className="mb-2 flex items-start gap-2">
+            <div className="relative">
+              {/* eslint-disable-next-line @next/next/no-img-element */}
+              <img
+                src={attachedImage}
+                alt="Attached"
+                className="h-20 w-20 rounded-lg border border-border object-cover shadow-sm"
+              />
+              <button
+                onClick={() => setAttachedImage(null)}
+                className="absolute -top-1.5 -right-1.5 flex size-5 items-center justify-center rounded-full bg-foreground text-background shadow-sm transition-opacity hover:opacity-80"
+                aria-label="Remove image"
+              >
+                <HugeiconsIcon icon={Cancel01Icon} className="size-3" />
+              </button>
+            </div>
+          </div>
+        )}
+
+        {/* Image mode badge */}
+        {imageMode && (
+          <div className="mb-2 flex items-center gap-1.5">
+            <span className="inline-flex items-center gap-1 rounded-full bg-primary/10 px-2.5 py-0.5 text-xs font-medium text-primary">
+              <HugeiconsIcon icon={SparklesIcon} className="size-3" />
+              Image generation
+            </span>
             <button
-              onClick={() => setAttachedImage(null)}
-              className="absolute -top-1.5 -right-1.5 flex size-5 items-center justify-center rounded-full bg-foreground text-background shadow-sm transition-opacity hover:opacity-80"
-              aria-label="Remove image"
+              onClick={() => setImageMode(false)}
+              className="text-xs text-muted-foreground transition-colors hover:text-foreground"
             >
-              <HugeiconsIcon icon={Cancel01Icon} className="size-3" />
+              Cancel
             </button>
           </div>
-        </div>
-      )}
+        )}
 
-      {/* Mode badge */}
-      {imageMode && (
-        <div className="mb-2 flex items-center gap-1.5">
-          <span className="inline-flex items-center gap-1 rounded-full bg-primary/10 px-2.5 py-0.5 text-xs font-medium text-primary">
-            <HugeiconsIcon icon={SparklesIcon} className="size-3" />
-            Image generation
-          </span>
-          <button
-            onClick={() => setImageMode(false)}
-            className="text-xs text-muted-foreground transition-colors hover:text-foreground"
-          >
-            Cancel
-          </button>
-        </div>
-      )}
+        {/* Hidden file input */}
+        <input
+          ref={fileInputRef}
+          type="file"
+          accept="image/*"
+          className="hidden"
+          onChange={handleImageAttach}
+        />
 
-      <div className="flex items-end gap-2">
-        <div className="relative flex-1">
-          <Textarea
+        <InputGroup className="rounded-2xl">
+          {/* Textarea */}
+          <InputGroupTextarea
             ref={textareaRef}
             value={text}
             onChange={(e) => setText(e.target.value)}
@@ -190,99 +211,98 @@ export function ChatInput({
             }
             disabled={disabled}
             rows={1}
-            className="max-h-[200px] min-h-[44px] resize-none rounded-xl py-3 pr-2 text-sm leading-relaxed"
+            className="max-h-[200px] min-h-[44px] leading-relaxed"
           />
-        </div>
 
-        {/* Toolbar */}
-        <div className="flex items-center gap-1 pb-0.5">
-          {/* Attach image */}
-          <input
-            ref={fileInputRef}
-            type="file"
-            accept="image/*"
-            className="hidden"
-            onChange={handleImageAttach}
-          />
-          <Tooltip>
-            <TooltipTrigger asChild>
-              <Button
-                variant="ghost"
-                size="icon"
-                className="size-9 rounded-xl text-muted-foreground hover:text-foreground"
-                onClick={() => fileInputRef.current?.click()}
-                disabled={disabled}
-                aria-label="Attach image"
-              >
-                <HugeiconsIcon icon={ImageAdd01Icon} className="size-4" />
-              </Button>
-            </TooltipTrigger>
-            <TooltipContent>Attach image</TooltipContent>
-          </Tooltip>
-
-          {/* Image generation mode */}
-          <Tooltip>
-            <TooltipTrigger asChild>
-              <Button
-                variant={imageMode ? "default" : "ghost"}
-                size="icon"
-                className={cn(
-                  "size-9 rounded-xl",
-                  !imageMode && "text-muted-foreground hover:text-foreground"
-                )}
-                onClick={() => setImageMode((v) => !v)}
-                disabled={disabled}
-                aria-label="Generate image"
-              >
-                <HugeiconsIcon icon={SparklesIcon} className="size-4" />
-              </Button>
-            </TooltipTrigger>
-            <TooltipContent>Generate image</TooltipContent>
-          </Tooltip>
-
-          {/* Voice input */}
-          {voiceAvailable && (
-            <Tooltip>
-              <TooltipTrigger asChild>
-                <Button
-                  variant={recording ? "destructive" : "ghost"}
-                  size="icon"
-                  className={cn(
-                    "size-9 rounded-xl",
-                    !recording && "text-muted-foreground hover:text-foreground"
-                  )}
-                  onClick={recording ? stopRecording : startRecording}
-                  disabled={disabled && !recording}
-                  aria-label={recording ? "Stop recording" : "Voice input"}
+          {/* Bottom row: plus menu left, voice/send right */}
+          <InputGroupAddon align="block-end" className="justify-between pb-2 px-2">
+            {/* Left: plus menu */}
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <InputGroupButton
+                  size="icon-sm"
+                  variant="ghost"
+                  disabled={disabled}
+                  aria-label="More options"
+                  className="text-muted-foreground hover:text-foreground"
                 >
-                  <HugeiconsIcon
-                    icon={recording ? StopIcon : Mic01Icon}
-                    className="size-4"
-                  />
-                </Button>
-              </TooltipTrigger>
-              <TooltipContent>
-                {recording ? "Stop recording" : "Voice input"}
-              </TooltipContent>
-            </Tooltip>
-          )}
+                  <HugeiconsIcon icon={PlusSignIcon} className="size-4" />
+                </InputGroupButton>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent side="top" align="start">
+                <DropdownMenuItem
+                  onClick={() => fileInputRef.current?.click()}
+                  className="gap-2"
+                >
+                  <HugeiconsIcon icon={ImageAdd01Icon} className="size-4" />
+                  Attach image
+                </DropdownMenuItem>
+                <DropdownMenuItem
+                  onClick={() => setImageMode((v) => !v)}
+                  className="gap-2"
+                >
+                  <HugeiconsIcon icon={SparklesIcon} className="size-4" />
+                  {imageMode ? "Cancel image gen" : "Generate image"}
+                </DropdownMenuItem>
+              </DropdownMenuContent>
+            </DropdownMenu>
 
-          {/* Send */}
-          <Button
-            size="icon"
-            className="size-9 rounded-xl shadow-sm"
-            onClick={handleSend}
-            disabled={!canSend}
-            aria-label="Send message"
-          >
-            <HugeiconsIcon icon={ArrowUp01Icon} className="size-4" />
-          </Button>
-        </div>
+            {/* Right: voice (empty) or send (has text) */}
+            <div className="flex items-center">
+              {voiceAvailable && !hasText && !recording && (
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <InputGroupButton
+                      size="icon-sm"
+                      variant="ghost"
+                      onClick={startRecording}
+                      disabled={disabled}
+                      aria-label="Voice input"
+                      className="text-muted-foreground hover:text-foreground"
+                    >
+                      <HugeiconsIcon icon={Mic01Icon} className="size-4" />
+                    </InputGroupButton>
+                  </TooltipTrigger>
+                  <TooltipContent>Voice input</TooltipContent>
+                </Tooltip>
+              )}
+
+              {recording && (
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <InputGroupButton
+                      size="icon-sm"
+                      variant="destructive"
+                      onClick={stopRecording}
+                      aria-label="Stop recording"
+                    >
+                      <HugeiconsIcon icon={StopIcon} className="size-4" />
+                    </InputGroupButton>
+                  </TooltipTrigger>
+                  <TooltipContent>Stop recording</TooltipContent>
+                </Tooltip>
+              )}
+
+              {hasText && (
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <InputGroupButton
+                      size="icon-sm"
+                      variant="default"
+                      onClick={handleSend}
+                      disabled={!canSend}
+                      aria-label="Send message"
+                    >
+                      <HugeiconsIcon icon={ArrowUp01Icon} className="size-4" />
+                    </InputGroupButton>
+                  </TooltipTrigger>
+                  <TooltipContent>Send</TooltipContent>
+                </Tooltip>
+              )}
+            </div>
+          </InputGroupAddon>
+        </InputGroup>
       </div>
-
-      <p className="mt-2 text-center text-[10px] text-muted-foreground/50">
-        Enter to send · Shift+Enter for new line
-      </p>
     </div>
   )
 }

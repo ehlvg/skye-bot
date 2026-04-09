@@ -2,15 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState } from "react"
 import { SidebarProvider, SidebarTrigger } from "@/components/ui/sidebar"
-import { Separator } from "@/components/ui/separator"
-import { Button } from "@/components/ui/button"
-import {
-  Tooltip,
-  TooltipContent,
-  TooltipTrigger,
-} from "@/components/ui/tooltip"
-import { HugeiconsIcon } from "@hugeicons/react"
-import { Brain01Icon, Delete02Icon } from "@hugeicons/core-free-icons"
+import { Badge } from "@/components/ui/badge"
 
 import { ChatSidebar } from "./chat-sidebar"
 import { MessageList, type Message } from "./message-list"
@@ -18,7 +10,6 @@ import { ChatInput } from "./chat-input"
 import { EmptyState, EmptyThread } from "./empty-state"
 import { MemoriesDialog } from "@/components/memories-dialog"
 import { RenameDialog } from "@/components/rename-dialog"
-import { ThemeToggle } from "@/components/theme-toggle"
 import type { Thread } from "./thread-item"
 import { toast } from "sonner"
 
@@ -330,7 +321,7 @@ export function ChatShell() {
   // ── Render ─────────────────────────────────────────────────────────────────
 
   return (
-    <SidebarProvider>
+    <SidebarProvider className="h-svh overflow-hidden">
       <ChatSidebar
         threads={threads}
         activeThreadId={activeThreadId}
@@ -343,77 +334,46 @@ export function ChatShell() {
       />
 
       {/* Main area */}
-      <div className="flex min-h-svh flex-1 flex-col overflow-hidden">
-        {/* Header */}
-        <header className="flex h-14 shrink-0 items-center gap-2 border-b border-border bg-background/80 px-4 backdrop-blur-sm">
-          <SidebarTrigger className="-ml-1" />
-          <Separator orientation="vertical" className="h-5" />
-
-          <div className="min-w-0 flex-1 px-1">
+      <div className="relative flex flex-1 flex-col overflow-hidden">
+        {/* Floating header */}
+        <header className="pointer-events-none absolute inset-x-0 top-0 z-10 h-20">
+          <div className="absolute inset-0 bg-gradient-to-b from-background/85 via-background/50 to-transparent backdrop-blur-[2px] [mask-image:linear-gradient(to_bottom,black_50%,transparent_100%)]" />
+          <div className="pointer-events-auto relative flex h-14 items-center gap-2 px-3">
+            <SidebarTrigger className="size-8 rounded-full bg-muted/70 shadow-xs backdrop-blur-sm hover:bg-muted" />
             {activeThread ? (
-              <h1 className="truncate font-heading text-sm font-semibold">
+              <Badge
+                variant="secondary"
+                className="h-7 max-w-[260px] truncate rounded-full px-3 font-heading text-xs font-semibold shadow-xs backdrop-blur-sm"
+              >
                 {activeThread.name}
-              </h1>
+              </Badge>
             ) : (
-              <h1 className="font-heading text-sm font-semibold text-muted-foreground">
+              <Badge
+                variant="secondary"
+                className="h-7 rounded-full px-3 font-heading text-xs font-semibold text-muted-foreground shadow-xs backdrop-blur-sm"
+              >
                 Skye
-              </h1>
+              </Badge>
             )}
-          </div>
-
-          <div className="flex items-center gap-1">
-            {activeThread && (
-              <>
-                <Tooltip>
-                  <TooltipTrigger asChild>
-                    <Button
-                      variant="ghost"
-                      size="icon"
-                      className="size-8 text-muted-foreground hover:text-foreground"
-                      onClick={() => setDeleteTarget(activeThread)}
-                    >
-                      <HugeiconsIcon icon={Delete02Icon} className="size-4" />
-                    </Button>
-                  </TooltipTrigger>
-                  <TooltipContent>Delete conversation</TooltipContent>
-                </Tooltip>
-              </>
-            )}
-
-            <Tooltip>
-              <TooltipTrigger asChild>
-                <Button
-                  variant="ghost"
-                  size="icon"
-                  className="size-8 text-muted-foreground hover:text-foreground"
-                  onClick={() => setMemoriesOpen(true)}
-                >
-                  <HugeiconsIcon icon={Brain01Icon} className="size-4" />
-                </Button>
-              </TooltipTrigger>
-              <TooltipContent>Memories</TooltipContent>
-            </Tooltip>
-
-            <ThemeToggle />
           </div>
         </header>
 
         {/* Body */}
         {!activeThreadId ? (
-          <div className="flex flex-1 flex-col">
+          <div className="flex flex-1 flex-col pt-14">
             <EmptyState onNewThread={handleNewThread} />
           </div>
         ) : (
           <div className="flex flex-1 flex-col overflow-hidden">
             {loadingMessages ? (
-              <div className="flex flex-1 items-center justify-center">
+              <div className="flex flex-1 items-center justify-center pt-14">
                 <div className="flex items-center gap-2 text-sm text-muted-foreground">
                   <div className="size-4 animate-spin rounded-full border-2 border-primary border-t-transparent" />
                   Loading…
                 </div>
               </div>
             ) : messages.length === 0 ? (
-              <div className="flex flex-1 flex-col">
+              <div className="flex flex-1 flex-col pt-14">
                 <EmptyThread />
               </div>
             ) : (
@@ -421,7 +381,7 @@ export function ChatShell() {
                 messages={messages}
                 streamingContent={streamingContent}
                 isStreaming={isStreaming}
-                className="flex-1"
+                className="flex-1 pt-20"
               />
             )}
 
