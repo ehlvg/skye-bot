@@ -23,9 +23,26 @@ export async function POST(req: Request) {
       )
 
     const audioBuffer = await audio.arrayBuffer()
+    const contentType =
+      audio.type && audio.type !== "application/octet-stream"
+        ? audio.type
+        : "application/octet-stream"
+
+    // Yandex SpeechKit STT "recognize" supports oggopus (and a few others).
+    // Web browsers often record as audio/webm;codecs=opus which SpeechKit does not accept.
+    if (!contentType.includes("ogg")) {
+      return NextResponse.json(
+        {
+          error:
+            "Unsupported audio format from browser. SpeechKit requires OGG/Opus (oggopus).",
+          receivedContentType: contentType,
+        },
+        { status: 415 }
+      )
+    }
 
     const response = await fetch(
-      `https://stt.api.cloud.yandex.net/speech/v1/stt:recognize?folderId=${YC_FOLDER_ID}&lang=ru-RU`,
+      `https://stt.api.cloud.yandex.net/speech/v1/stt:recognize?folderId=${YC_FOLDER_ID}&lang=ru-RU&format=oggopus`,
       {
         method: "POST",
         headers: {

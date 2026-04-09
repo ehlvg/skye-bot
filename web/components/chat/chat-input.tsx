@@ -52,6 +52,17 @@ export function ChatInput({
   const fileInputRef = useRef<HTMLInputElement>(null)
   const mediaRecorderRef = useRef<MediaRecorder | null>(null)
   const chunksRef = useRef<Blob[]>([])
+  const speechRecognitionRef = useRef<{
+    start: () => void
+    stop: () => void
+    abort?: () => void
+    lang?: string
+    interimResults?: boolean
+    continuous?: boolean
+    onresult?: ((ev: unknown) => void) | null
+    onerror?: ((ev: unknown) => void) | null
+    onend?: (() => void) | null
+  } | null>(null)
 
   // Check voice availability
   useEffect(() => {
@@ -112,18 +123,98 @@ export function ChatInput({
 
   const startRecording = async () => {
     try {
+      const hasOggOpus =
+        typeof MediaRecorder !== "undefined" &&
+        MediaRecorder.isTypeSupported("audio/ogg;codecs=opus")
+
+      const SR =
+        typeof window !== "undefined"
+          ? ((window as unknown as { SpeechRecognition?: unknown })
+              .SpeechRecognition ??
+              (window as unknown as { webkitSpeechRecognition?: unknown })
+                .webkitSpeechRecognition)
+          : undefined
+
+      if (!hasOggOpus && SR) {
+        const recognition = new (SR as new () => {
+          start: () => void
+          stop: () => void
+          abort?: () => void
+          lang?: string
+          interimResults?: boolean
+          continuous?: boolean
+          onresult?: (ev: unknown) => void
+          onerror?: (ev: unknown) => void
+          onend?: () => void
+        })()
+
+        recognition.lang = "ru-RU"
+        recognition.interimResults = false
+        recognition.continuous = false
+
+        recognition.onresult = (ev) => {
+          const e = ev as {
+            results?: ArrayLike<
+              ArrayLike<{ transcript?: string }> & { isFinal?: boolean }
+            >
+          }
+          const r0 = e.results?.[0]
+          const alt0 = r0?.[0]
+          const transcript = alt0?.transcript?.trim() ?? ""
+          if (transcript) {
+            setText((prev) => (prev ? prev + " " + transcript : transcript))
+          } else {
+            toast.warning("No speech detected")
+          }
+        }
+
+        recognition.onerror = () => {
+          toast.error("Voice recognition failed")
+        }
+
+        recognition.onend = () => {
+          speechRecognitionRef.current = null
+          setRecording(false)
+        }
+
+        speechRecognitionRef.current = recognition
+        setRecording(true)
+        recognition.start()
+        return
+      }
+
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true })
-      const mr = new MediaRecorder(stream, { mimeType: "audio/webm" })
+      const preferredTypes = [
+        "audio/ogg;codecs=opus",
+        "audio/webm;codecs=opus",
+        "audio/webm",
+      ]
+      const selectedType =
+        preferredTypes.find((t) => MediaRecorder.isTypeSupported(t)) ?? ""
+      const mr = selectedType
+        ? new MediaRecorder(stream, { mimeType: selectedType })
+        : new MediaRecorder(stream)
       chunksRef.current = []
       mr.ondataavailable = (e) => chunksRef.current.push(e.data)
       mr.onstop = async () => {
         stream.getTracks().forEach((t) => t.stop())
-        const blob = new Blob(chunksRef.current, { type: "audio/ogg" })
+        const blobType =
+          chunksRef.current[0]?.type || selectedType || "application/octet-stream"
+        const blob = new Blob(chunksRef.current, { type: blobType })
         const fd = new FormData()
-        fd.append("audio", blob, "voice.ogg")
+        const ext = blobType.includes("ogg")
+          ? "ogg"
+          : blobType.includes("webm")
+            ? "webm"
+            : "bin"
+        fd.append("audio", blob, `voice.${ext}`)
         const res = await fetch("/api/voice", { method: "POST", body: fd })
         if (!res.ok) {
-          toast.error("Voice recognition failed")
+          const msg = await res
+            .json()
+            .then((d: { error?: string }) => d.error)
+            .catch(() => "")
+          toast.error(msg || "Voice recognition failed")
           return
         }
         const { text: recognized } = (await res.json()) as { text: string }
@@ -140,6 +231,10 @@ export function ChatInput({
   }
 
   const stopRecording = () => {
+    if (speechRecognitionRef.current) {
+      speechRecognitionRef.current.stop()
+      return
+    }
     mediaRecorderRef.current?.stop()
     mediaRecorderRef.current = null
     setRecording(false)
