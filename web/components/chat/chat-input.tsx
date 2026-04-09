@@ -149,42 +149,45 @@ export function ChatInput({
   const canSend = hasText && !disabled
 
   return (
-    <div className="border-t border-border bg-background/80 px-4 py-3 backdrop-blur-sm md:px-6">
-      <div className="mx-auto w-full max-w-3xl">
-        {/* Attached image preview */}
-        {attachedImage && (
-          <div className="mb-2 flex items-start gap-2">
-            <div className="relative">
-              {/* eslint-disable-next-line @next/next/no-img-element */}
-              <img
-                src={attachedImage}
-                alt="Attached"
-                className="h-20 w-20 rounded-lg border border-border object-cover shadow-sm"
-              />
-              <button
-                onClick={() => setAttachedImage(null)}
-                className="absolute -top-1.5 -right-1.5 flex size-5 items-center justify-center rounded-full bg-foreground text-background shadow-sm transition-opacity hover:opacity-80"
-                aria-label="Remove image"
-              >
-                <HugeiconsIcon icon={Cancel01Icon} className="size-3" />
-              </button>
-            </div>
-          </div>
-        )}
+    <div className="relative z-10 px-4 pb-4 md:px-6 bg-transparent">
+      <div className="relative mx-auto w-full max-w-3xl">
+        {/* Floating elements above InputGroup — absolute, no background */}
+        {(attachedImage || imageMode) && (
+          <div className="absolute bottom-full left-0 mb-2 flex flex-col gap-1.5">
+            {/* Attached image preview */}
+            {attachedImage && (
+              <div className="relative w-fit">
+                {/* eslint-disable-next-line @next/next/no-img-element */}
+                <img
+                  src={attachedImage}
+                  alt="Attached"
+                  className="h-20 w-20 rounded-lg border border-border object-cover shadow-md bg-white"
+                />
+                <button
+                  onClick={() => setAttachedImage(null)}
+                  className="absolute -top-1.5 -right-1.5 flex size-5 items-center justify-center rounded-full bg-foreground text-background shadow-sm transition-opacity hover:opacity-80"
+                  aria-label="Remove image"
+                >
+                  <HugeiconsIcon icon={Cancel01Icon} className="size-3" />
+                </button>
+              </div>
+            )}
 
-        {/* Image mode badge */}
-        {imageMode && (
-          <div className="mb-2 flex items-center gap-1.5">
-            <span className="inline-flex items-center gap-1 rounded-full bg-primary/10 px-2.5 py-0.5 text-xs font-medium text-primary">
-              <HugeiconsIcon icon={SparklesIcon} className="size-3" />
-              Image generation
-            </span>
-            <button
-              onClick={() => setImageMode(false)}
-              className="text-xs text-muted-foreground transition-colors hover:text-foreground"
-            >
-              Cancel
-            </button>
+            {/* Image mode badge */}
+            {imageMode && (
+              <div className="flex items-center gap-1.5">
+                <span className="inline-flex items-center gap-1 rounded-full bg-primary/10 px-2.5 py-0.5 text-xs font-medium text-primary backdrop-blur-sm">
+                  <HugeiconsIcon icon={SparklesIcon} className="size-3" />
+                  Image generation
+                </span>
+                <button
+                  onClick={() => setImageMode(false)}
+                  className="text-xs text-muted-foreground transition-colors hover:text-foreground"
+                >
+                  Cancel
+                </button>
+              </div>
+            )}
           </div>
         )}
 

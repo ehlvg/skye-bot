@@ -1,11 +1,11 @@
 import { HugeiconsIcon } from "@hugeicons/react"
-import { BubbleChatIcon } from "@hugeicons/core-free-icons"
+import { WavingHand01Icon } from "@hugeicons/core-free-icons"
 
 export function EmptyState({ onNewThread }: { onNewThread: () => void }) {
   return (
     <div className="flex flex-1 flex-col items-center justify-center gap-6 p-8 text-center">
       <div className="flex size-16 items-center justify-center rounded-2xl bg-primary/10">
-        <HugeiconsIcon icon={BubbleChatIcon} className="size-8 text-primary" />
+        <HugeiconsIcon icon={WavingHand01Icon} className="size-8 text-primary" />
       </div>
       <div className="max-w-sm space-y-2">
         <h2 className="font-heading text-xl font-semibold">Welcome to Skye</h2>

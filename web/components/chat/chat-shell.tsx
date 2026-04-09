@@ -338,7 +338,7 @@ export function ChatShell() {
         {/* Floating header */}
         <header className="pointer-events-none absolute inset-x-0 top-0 z-10 h-20">
           <div className="absolute inset-0 bg-gradient-to-b from-background/85 via-background/50 to-transparent backdrop-blur-[2px] [mask-image:linear-gradient(to_bottom,black_50%,transparent_100%)]" />
-          <div className="pointer-events-auto relative flex h-14 items-center gap-2 px-3">
+          <div className="pointer-events-auto relative flex h-14 items-center gap-2 px-3 my-3">
             <SidebarTrigger className="size-8 rounded-full bg-muted/70 shadow-xs backdrop-blur-sm hover:bg-muted" />
             {activeThread ? (
               <Badge
@@ -364,7 +364,7 @@ export function ChatShell() {
             <EmptyState onNewThread={handleNewThread} />
           </div>
         ) : (
-          <div className="flex flex-1 flex-col overflow-hidden">
+          <div className="relative flex flex-1 flex-col overflow-hidden">
             {loadingMessages ? (
               <div className="flex flex-1 items-center justify-center pt-14">
                 <div className="flex items-center gap-2 text-sm text-muted-foreground">
@@ -384,6 +384,9 @@ export function ChatShell() {
                 className="flex-1 pt-20"
               />
             )}
+
+            {/* Bottom gradient — absolute like the header, overlays bottom of message list */}
+            <div className="pointer-events-none absolute inset-x-0 bottom-0 z-[5] h-40 bg-gradient-to-t from-background/85 via-background/50 to-transparent backdrop-blur-[2px] [mask-image:linear-gradient(to_top,black_50%,transparent_100%)]" />
 
             <ChatInput
               onSend={handleSend}

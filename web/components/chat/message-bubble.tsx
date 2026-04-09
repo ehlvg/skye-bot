@@ -60,7 +60,7 @@ export function MessageBubble({
     >
       {!isUser && (
         <div className="mt-0.5 flex size-7 shrink-0 items-center justify-center rounded-full bg-primary/10 font-heading text-xs font-semibold text-primary select-none">
-          S
+          <img src="/star.svg" alt="Skye" className="size-3.5" />
         </div>
       )}
 
@@ -76,7 +76,7 @@ export function MessageBubble({
             src={imageUrl}
             alt={isUser ? "Attached image" : "Generated image"}
             className={cn(
-              "max-w-full rounded-xl object-cover shadow-sm",
+              "max-w-md rounded-xl object-cover shadow-sm",
               isUser ? "max-h-60" : "max-h-96 w-full"
             )}
           />

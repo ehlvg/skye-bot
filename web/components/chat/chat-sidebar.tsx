@@ -14,7 +14,7 @@ import {
 } from "@/components/ui/sidebar"
 import { Button } from "@/components/ui/button"
 import { HugeiconsIcon } from "@hugeicons/react"
-import { PencilEdit01Icon, AiChat01Icon } from "@hugeicons/core-free-icons"
+import { PencilEdit01Icon, AiChat01Icon, Book01Icon, Brain01Icon, PlusSignIcon } from "@hugeicons/core-free-icons"
 import { ThreadItem, type Thread } from "./thread-item"
 import { ThemeToggle } from "@/components/theme-toggle"
 
@@ -48,25 +48,22 @@ export function ChatSidebar({
 
   return (
     <Sidebar collapsible="offcanvas" variant="floating">
-      <SidebarHeader className="border-b border-sidebar-border px-3 py-3">
+      <SidebarHeader className="px-3 py-3">
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-2 pl-1">
-            <HugeiconsIcon
-              icon={AiChat01Icon}
-              className="size-5 text-primary"
-            />
+            <img src="/cloud.svg" alt="Skye" className="size-5" />
             <span className="font-heading text-base font-semibold text-sidebar-foreground">
               Skye
             </span>
           </div>
           <Button
             variant="ghost"
-            size="icon"
-            className="size-8 text-muted-foreground hover:text-foreground"
+            className="text-muted-foreground hover:text-foreground"
             onClick={onNewThread}
             aria-label="New conversation"
           >
-            <HugeiconsIcon icon={PencilEdit01Icon} className="size-4" />
+            <p>New chat</p>
+            <HugeiconsIcon icon={PlusSignIcon} className="size-4" />
           </Button>
         </div>
       </SidebarHeader>
@@ -123,12 +120,9 @@ export function ChatSidebar({
 
       <SidebarFooter className="border-t border-sidebar-border px-3 py-2">
         <div className="flex items-center justify-between">
-          <button
-            onClick={onOpenMemories}
-            className="flex items-center gap-2 rounded-md px-2 py-1.5 text-xs text-muted-foreground transition-colors hover:bg-sidebar-accent hover:text-foreground"
-          >
-            Memories
-          </button>
+          <Button variant="ghost" size="icon" onClick={onOpenMemories} aria-label="Memories">
+            <HugeiconsIcon icon={Brain01Icon} className="size-4 text-muted-foreground" />
+          </Button>
           <ThemeToggle />
         </div>
       </SidebarFooter>
