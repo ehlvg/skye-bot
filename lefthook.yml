@@ -7,3 +7,12 @@ pre-commit:
       run: bun run lint
     format:
       run: bun run format:check
+    web-typecheck:
+      root: "web/"
+      run: bun run typecheck
+    web-lint:
+      root: "web/"
+      run: bun run lint
+    web-format:
+      root: "web/"
+      run: bun run format:check

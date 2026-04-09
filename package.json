@@ -3,6 +3,9 @@
   "version": "1.0.0",
   "description": "",
   "type": "module",
+  "workspaces": [
+    "web"
+  ],
   "scripts": {
     "dev": "bun --watch src/index.ts",
     "dev:pretty": "bun --watch src/index.ts 2>&1 | bunx pino-pretty --colorize --translateTime",

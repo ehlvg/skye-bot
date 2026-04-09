@@ -5,7 +5,7 @@ import eslintConfigPrettier from "eslint-config-prettier";
 
 export default [
   {
-    ignores: ["dist/**", "node_modules/**", "data/**", ".env", ".env.*"],
+    ignores: ["dist/**", "node_modules/**", "data/**", ".env", ".env.*", "web/**"],
   },
   js.configs.recommended,
   ...tseslint.configs.recommended,
