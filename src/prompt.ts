@@ -85,7 +85,11 @@ export interface ChatContext {
   recentLog: string;
 }
 
-export function buildSystemMessage(memories: MemoryEntry[], chatContext?: ChatContext) {
+export function buildSystemMessage(
+  memories: MemoryEntry[],
+  chatContext?: ChatContext,
+  mcpToolNames?: string[]
+) {
   let content = SYSTEM_PROMPT;
 
   if (chatContext) {
@@ -112,6 +116,13 @@ You have access to long-term memory tools. Use save_memory to remember important
     for (const m of memories) {
       content += `\n- [${m.id}] ${m.content}`;
     }
+  }
+
+  if (mcpToolNames && mcpToolNames.length > 0) {
+    content += "\n\n## MCP Tools\n\n";
+    content +=
+      "You have access to additional tools provided by MCP servers. Use them when relevant to help the user.\n";
+    content += `Available MCP tools: ${mcpToolNames.join(", ")}.`;
   }
 
   content += `

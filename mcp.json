@@ -1,0 +1,8 @@
+{
+  "mcpServers": {
+    "y360": {
+      "command": "uvx",
+      "args": ["y360-mcp"]
+    }
+  }
+}

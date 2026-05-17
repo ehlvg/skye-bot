@@ -13,6 +13,7 @@ const envSchema = z.object({
   ELEVENLABS_API_KEY: z.string().default(""),
   // Rachel — спокойный женский голос (американский акцент)
   ELEVENLABS_VOICE_ID: z.string().default("21m00Tcm4TlvDq8ikWAM"),
+  MCP_CONFIG_PATH: z.string().default(""),
 });
 
 const env = (() => {
@@ -42,3 +43,4 @@ export const YC_API_KEY = env.YC_API_KEY;
 export const YC_FOLDER_ID = env.YC_FOLDER_ID;
 export const ELEVENLABS_API_KEY = env.ELEVENLABS_API_KEY;
 export const ELEVENLABS_VOICE_ID = env.ELEVENLABS_VOICE_ID;
+export const MCP_CONFIG_PATH = env.MCP_CONFIG_PATH;

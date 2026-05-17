@@ -12,6 +12,7 @@ import { log } from "./utils/log.js";
 import { buildContext } from "./contextBuilder.js";
 import { buildSystemMessage } from "./prompt.js";
 import { getMemories, clearMemories, memoryTools, executeMemoryTool } from "./memory.js";
+import { initMcp, getMcpTools, isMcpTool, executeMcpTool, shutdownMcp } from "./mcp.js";
 import { getChatConfig } from "./chatConfig.js";
 import { registerConfigHandlers, handleWizardInput, isInWizard } from "./configCommand.js";
 import { logMessage, getChatContext, summarizeChat, type LogEntry } from "./chatLog.js";
@@ -309,12 +310,16 @@ async function chat(
 ): Promise<string> {
   const memories = getMemories(chatId);
   const chatContext = getChatContext(chatId);
-  const systemMsg = buildSystemMessage(memories, chatContext);
+  const mcpTools = getMcpTools();
+  const mcpToolNames = mcpTools.map((t: any) => t.function.name);
+  const allTools = [...memoryTools, ...mcpTools];
+
+  const systemMsg = buildSystemMessage(memories, chatContext, mcpToolNames);
   const msgs = [systemMsg, ...messages];
 
   let iterations = 0;
   while (iterations <= 5) {
-    const stream = askSkyeStream(msgs, memoryTools, creds);
+    const stream = askSkyeStream(msgs, allTools.length > 0 ? allTools : undefined, creds);
 
     // Only wire up streaming for the content phase (not tool-call iterations)
     if (onChunk) {
@@ -332,7 +337,10 @@ async function chat(
     msgs.push(choice.message);
     for (const tc of choice.message.tool_calls) {
       if (tc.type !== "function") continue;
-      const result = await executeMemoryTool(chatId, tc);
+      const fnName = tc.function.name;
+      const result = isMcpTool(fnName)
+        ? await executeMcpTool(fnName, JSON.parse(tc.function.arguments))
+        : await executeMemoryTool(chatId, tc);
       msgs.push({ role: "tool", tool_call_id: tc.id, content: result });
     }
     iterations++;
@@ -844,9 +852,21 @@ bot.on("message:voice", async (ctx) => {
   })();
 });
 
-// Fetch model capabilities, then start
-checkModelCapabilities().finally(() => {
-  scheduleAuditPruning();
-  bot.start({ drop_pending_updates: true });
-  log.info("Skye is alive");
+// Fetch model capabilities, init MCP servers, then start
+checkModelCapabilities()
+  .then(() => initMcp())
+  .finally(() => {
+    scheduleAuditPruning();
+    bot.start({ drop_pending_updates: true });
+    log.info("Skye is alive");
+  });
+
+// Graceful shutdown
+process.on("SIGINT", () => {
+  log.info("Shutting down...");
+  shutdownMcp().finally(() => process.exit(0));
+});
+process.on("SIGTERM", () => {
+  log.info("Shutting down...");
+  shutdownMcp().finally(() => process.exit(0));
 });

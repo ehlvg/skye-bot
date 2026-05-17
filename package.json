@@ -34,6 +34,7 @@
     "typescript-eslint": "^8.54.0"
   },
   "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.29.0",
     "dotenv": "^16.6.1",
     "grammy": "^1.39.3",
     "openai": "^6.17.0",
