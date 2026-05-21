@@ -52,6 +52,41 @@ async function toDataUrl(url: string): Promise<string> {
   return `data:${mime};base64,${buf.toString("base64")}`;
 }
 
+/**
+ * Robustly parse a JSON string that may contain trailing garbage.
+ * Models sometimes append extra text after the JSON object.
+ */
+function safeJsonParse(raw: string): Record<string, unknown> {
+  const trimmed = raw.trim();
+  // Fast path: clean JSON
+  try {
+    return JSON.parse(trimmed);
+  } catch {
+    // Slow path: find the first balanced JSON object by brace counting
+    let depth = 0;
+    let start = -1;
+    for (let i = 0; i < trimmed.length; i++) {
+      const ch = trimmed[i];
+      if (ch === "{") {
+        if (depth === 0) start = i;
+        depth++;
+      } else if (ch === "}") {
+        depth--;
+        if (depth === 0 && start !== -1) {
+          const candidate = trimmed.slice(start, i + 1);
+          try {
+            return JSON.parse(candidate);
+          } catch {
+            // keep searching if there are more braces
+          }
+        }
+      }
+    }
+    log.warn({ raw: trimmed.slice(0, 200) }, "Failed to parse tool arguments JSON");
+    return {};
+  }
+}
+
 // Global error handler to prevent crashes
 bot.catch((err) => {
   log.error(serializeError(err), "Unhandled bot error");
@@ -339,7 +374,7 @@ async function chat(
       if (tc.type !== "function") continue;
       const fnName = tc.function.name;
       const result = isMcpTool(fnName)
-        ? await executeMcpTool(fnName, JSON.parse(tc.function.arguments))
+        ? await executeMcpTool(fnName, safeJsonParse(tc.function.arguments))
         : await executeMemoryTool(chatId, tc);
       msgs.push({ role: "tool", tool_call_id: tc.id, content: result });
     }

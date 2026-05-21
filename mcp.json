@@ -1,8 +1,22 @@
 {
   "mcpServers": {
+    "github": {
+      "type": "http",
+      "url": "https://api.githubcopilot.com/mcp/",
+      "headers": {
+        "Authorization": "Bearer ${input:github_mcp_pat}"
+      }
+    },
     "y360": {
       "command": "uvx",
       "args": ["y360-mcp"]
     }
-  }
+  },
+  "inputs": [
+    {
+      "id": "github_mcp_pat",
+      "description": "GitHub Personal Access Token",
+      "password": true
+    }
+  ]
 }
