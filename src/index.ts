@@ -332,6 +332,80 @@ bot.on("message", async (ctx, next) => {
 
 // 3. Commands and message handlers
 
+interface ToolCallRecord {
+  name: string;
+  args: Record<string, unknown>;
+  isMcp: boolean;
+}
+
+function createDraftManager(ctx: Context, parseMode?: "HTML") {
+  let msgId: number | undefined;
+  let lastText = "";
+  const extraOpts = parseMode ? { parse_mode: parseMode } : {};
+
+  return {
+    send: async (text: string) => {
+      if (text === lastText) return;
+      lastText = text;
+      if (!msgId) {
+        const msg = await ctx.reply(text, { reply_to_message_id: ctx.message!.message_id, ...extraOpts });
+        msgId = msg.message_id;
+      } else {
+        await ctx.api.editMessageText(ctx.chat!.id, msgId, text, extraOpts).catch((e: any) => {
+          if (e?.description?.includes("not modified")) return;
+          log.warn({ err: e }, "Failed to edit draft message");
+        });
+      }
+    },
+    delete: async () => {
+      if (!msgId) return;
+      await ctx.api.deleteMessage(ctx.chat!.id, msgId).catch(() => {});
+      msgId = undefined;
+      lastText = "";
+    },
+  };
+}
+
+function formatToolCalls(calls: ToolCallRecord[]): string {
+  return calls
+    .map((c) => {
+      const icon = c.isMcp ? "🔌" : "🧠";
+      const argsStr = Object.entries(c.args)
+        .map(([k, v]) => {
+          let val = JSON.stringify(v);
+          if (val.length > 40) val = val.slice(0, 40) + "...";
+          return `${k}=${val}`;
+        })
+        .join(", ");
+      return `${icon} ${c.name}(${argsStr})`;
+    })
+    .join("\n");
+}
+
+function escapeHtml(text: string): string {
+  return text.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+}
+
+/** Build HTML draft text: tool calls in a blockquote, optional plain suffix. */
+function buildDraftHtml(toolCalls: ToolCallRecord[], suffix?: string): string {
+  const prefix = formatToolCalls(toolCalls);
+  const blockquote = `<blockquote>${escapeHtml(prefix)}</blockquote>`;
+  return suffix ? `${blockquote}\n${escapeHtml(suffix)}` : blockquote;
+}
+
+/** Build the final reply text and options. If tool calls are present, wraps them
+ *  in an HTML blockquote and returns parse_mode: "HTML". */
+function buildFinalReply(
+  toolCalls: ToolCallRecord[],
+  text: string
+): { text: string; options?: { parse_mode: "HTML" } } {
+  if (toolCalls.length === 0) return { text };
+  return {
+    text: buildDraftHtml(toolCalls, text),
+    options: { parse_mode: "HTML" },
+  };
+}
+
 /**
  * Chat helper: builds system message with memories, runs the tool-calling loop,
  * and returns the final text response.  Supports streaming via optional onChunk
@@ -341,7 +415,8 @@ async function chat(
   chatId: number,
   messages: any[],
   creds?: ApiCredentials,
-  onChunk?: (snapshot: string) => void
+  onChunk?: (snapshot: string) => void,
+  onToolCalls?: (calls: ToolCallRecord[]) => void
 ): Promise<string> {
   const memories = getMemories(chatId);
   const chatContext = getChatContext(chatId);
@@ -351,6 +426,24 @@ async function chat(
 
   const systemMsg = buildSystemMessage(memories, chatContext, mcpToolNames);
   const msgs = [systemMsg, ...messages];
+
+  // Log request summary (text + attachments)
+  const lastMsg = msgs[msgs.length - 1];
+  let requestSummary = "";
+  const requestAttachments: string[] = [];
+  if (lastMsg) {
+    if (typeof lastMsg.content === "string") {
+      requestSummary = lastMsg.content.slice(0, 200);
+    } else if (Array.isArray(lastMsg.content)) {
+      for (const part of lastMsg.content) {
+        if (part.type === "text") requestSummary += part.text;
+        else if (part.type === "image_url") requestAttachments.push("image");
+        else requestAttachments.push(String(part.type));
+      }
+      requestSummary = requestSummary.slice(0, 200);
+    }
+  }
+  log.info({ chatId, requestSummary, requestAttachments, toolCount: allTools.length }, "LLM request");
 
   let iterations = 0;
   while (iterations <= 5) {
@@ -370,14 +463,23 @@ async function chat(
 
     // Tool calls — process and loop
     msgs.push(choice.message);
+    const currentToolCalls: ToolCallRecord[] = [];
     for (const tc of choice.message.tool_calls) {
       if (tc.type !== "function") continue;
       const fnName = tc.function.name;
+      const args = safeJsonParse(tc.function.arguments);
+      currentToolCalls.push({ name: fnName, args, isMcp: isMcpTool(fnName) });
+
       const result = isMcpTool(fnName)
-        ? await executeMcpTool(fnName, safeJsonParse(tc.function.arguments))
+        ? await executeMcpTool(fnName, args)
         : await executeMemoryTool(chatId, tc);
       msgs.push({ role: "tool", tool_call_id: tc.id, content: result });
     }
+
+    if (onToolCalls && currentToolCalls.length > 0) {
+      onToolCalls(currentToolCalls);
+    }
+
     iterations++;
   }
   return "";
@@ -500,19 +602,31 @@ bot.on("message:text", async (ctx) => {
     const history = memory.get(tk) || [];
     const context = sanitizeContext(buildContext([...history, userMsg]));
 
-    // Throttled streaming draft sender
-    let lastDraft = 0;
+    const draft = createDraftManager(ctx, "HTML");
+    const toolCallHistory: ToolCallRecord[] = [];
+
+    let lastDraftTs = 0;
     const onChunk = (snapshot: string) => {
       const now = Date.now();
-      if (now - lastDraft < 300) return;
-      lastDraft = now;
-      (ctx as any).replyWithDraft?.(snapshot)?.catch(() => {});
+      if (now - lastDraftTs < 300) return;
+      lastDraftTs = now;
+      if (toolCallHistory.length > 0) {
+        void draft.send(buildDraftHtml(toolCallHistory, snapshot));
+      } else {
+        void draft.send(escapeHtml(snapshot));
+      }
+    };
+
+    const onToolCalls = (calls: ToolCallRecord[]) => {
+      toolCallHistory.push(...calls);
+      void draft.send(buildDraftHtml(toolCallHistory, "Thinking..."));
     };
 
     try {
-      const text = cleanMd(await chat(ctx.chat.id, context, creds, onChunk));
+      const text = cleanMd(await chat(ctx.chat.id, context, creds, onChunk, onToolCalls));
 
       if (!text) {
+        await draft.delete();
         await ctx.reply("I couldn't generate a response. Please try again.", {
           reply_to_message_id: ctx.message.message_id,
         });
@@ -530,7 +644,9 @@ bot.on("message:text", async (ctx) => {
       storeMessage(tk, userMsg);
       storeMessage(tk, { role: "assistant", content: text });
 
-      await ctx.reply(text, { reply_to_message_id: ctx.message.message_id });
+      const { text: finalText, options: replyOptions } = buildFinalReply(toolCallHistory, text);
+      await draft.delete();
+      await ctx.reply(finalText, { reply_to_message_id: ctx.message.message_id, ...replyOptions });
       logRequest({
         ...ctxAudit(ctx),
         msgType: "text",
@@ -542,6 +658,7 @@ bot.on("message:text", async (ctx) => {
     } catch (e: unknown) {
       const ms = Date.now() - t0;
       log.error({ ...serializeError(e), latencyMs: ms }, "Text handler failed");
+      await draft.delete();
       await ctx
         .reply("Something went wrong, please try again.", {
           reply_to_message_id: ctx.message.message_id,
@@ -672,13 +789,24 @@ bot.on("message:photo", async (ctx) => {
     const t0 = Date.now();
     log.info({ chatId: ctx.chat.id, userId: ctx.from?.id }, "Photo vision request");
 
-    // Throttled streaming draft sender
-    let lastDraft = 0;
+    const draft = createDraftManager(ctx, "HTML");
+    const toolCallHistory: ToolCallRecord[] = [];
+
+    let lastDraftTs = 0;
     const onChunk = (snapshot: string) => {
       const now = Date.now();
-      if (now - lastDraft < 300) return;
-      lastDraft = now;
-      (ctx as any).replyWithDraft?.(snapshot)?.catch(() => {});
+      if (now - lastDraftTs < 300) return;
+      lastDraftTs = now;
+      if (toolCallHistory.length > 0) {
+        void draft.send(buildDraftHtml(toolCallHistory, snapshot));
+      } else {
+        void draft.send(escapeHtml(snapshot));
+      }
+    };
+
+    const onToolCalls = (calls: ToolCallRecord[]) => {
+      toolCallHistory.push(...calls);
+      void draft.send(buildDraftHtml(toolCallHistory, "Thinking..."));
     };
 
     try {
@@ -696,9 +824,10 @@ bot.on("message:photo", async (ctx) => {
       const history = memory.get(tk) || [];
       const context = buildContext([...history, userMsg]);
 
-      const text = cleanMd(await chat(ctx.chat.id, context, creds, onChunk));
+      const text = cleanMd(await chat(ctx.chat.id, context, creds, onChunk, onToolCalls));
 
       if (!text) {
+        await draft.delete();
         await ctx.reply("I couldn't generate a response for this image. Please try again.", {
           reply_to_message_id: ctx.message.message_id,
         });
@@ -716,7 +845,9 @@ bot.on("message:photo", async (ctx) => {
       storeMessage(tk, userMsg);
       storeMessage(tk, { role: "assistant", content: text });
 
-      await ctx.reply(text, { reply_to_message_id: ctx.message.message_id });
+      const { text: finalText, options: replyOptions } = buildFinalReply(toolCallHistory, text);
+      await draft.delete();
+      await ctx.reply(finalText, { reply_to_message_id: ctx.message.message_id, ...replyOptions });
       logRequest({
         ...ctxAudit(ctx),
         msgType: "photo",
@@ -728,6 +859,7 @@ bot.on("message:photo", async (ctx) => {
     } catch (e: unknown) {
       const ms = Date.now() - t0;
       log.error({ ...serializeError(e), latencyMs: ms }, "Photo handler failed");
+      await draft.delete();
       await ctx
         .reply("Failed to process the image. Please try again or send text instead.", {
           reply_to_message_id: ctx.message.message_id,
@@ -770,6 +902,9 @@ bot.on("message:voice", async (ctx) => {
     const t0 = Date.now();
     log.info({ chatId: ctx.chat.id, userId: ctx.from?.id }, "Voice message");
 
+    const draft = createDraftManager(ctx, "HTML");
+    const toolCallHistory: ToolCallRecord[] = [];
+
     try {
       await ctx.api.sendChatAction(ctx.chat.id, "typing");
 
@@ -784,6 +919,7 @@ bot.on("message:voice", async (ctx) => {
       const recognized = await recognizeSpeech(audioBuffer);
 
       if (!recognized) {
+        await draft.delete();
         await ctx.reply("Could not recognize speech. Please try again or send text.", {
           reply_to_message_id: ctx.message.message_id,
         });
@@ -801,12 +937,21 @@ bot.on("message:voice", async (ctx) => {
 
       log.info({ chatId: ctx.chat.id, recognizedLen: recognized.length }, `STT recognized`);
 
-      let lastDraft = 0;
+      let lastDraftTs = 0;
       const onChunk = (snapshot: string) => {
         const now = Date.now();
-        if (now - lastDraft < 300) return;
-        lastDraft = now;
-        (ctx as any).replyWithDraft?.(snapshot)?.catch(() => {});
+        if (now - lastDraftTs < 300) return;
+        lastDraftTs = now;
+        if (toolCallHistory.length > 0) {
+          void draft.send(buildDraftHtml(toolCallHistory, snapshot));
+        } else {
+          void draft.send(escapeHtml(snapshot));
+        }
+      };
+
+      const onToolCalls = (calls: ToolCallRecord[]) => {
+        toolCallHistory.push(...calls);
+        void draft.send(buildDraftHtml(toolCallHistory, "Thinking..."));
       };
 
       const tag = senderTag(ctx);
@@ -817,9 +962,10 @@ bot.on("message:voice", async (ctx) => {
       const history = memory.get(tk) || [];
       const context = sanitizeContext(buildContext([...history, userMsg]));
 
-      const text = cleanMd(await chat(ctx.chat.id, context, creds, onChunk));
+      const text = cleanMd(await chat(ctx.chat.id, context, creds, onChunk, onToolCalls));
 
       if (!text) {
+        await draft.delete();
         await ctx.reply("I couldn't generate a response. Please try again.", {
           reply_to_message_id: ctx.message.message_id,
         });
@@ -841,6 +987,7 @@ bot.on("message:voice", async (ctx) => {
         await ctx.api.sendChatAction(ctx.chat.id, "record_voice");
         const audioBuffer = await synthesizeSpeech(text);
         if (audioBuffer) {
+          await draft.delete();
           await ctx.replyWithVoice(new InputFile(audioBuffer, "response.mp3"), {
             reply_to_message_id: ctx.message.message_id,
           });
@@ -857,7 +1004,9 @@ bot.on("message:voice", async (ctx) => {
         log.warn("TTS synthesis failed, falling back to text reply");
       }
 
-      await ctx.reply(text, { reply_to_message_id: ctx.message.message_id });
+      const { text: finalText, options: replyOptions } = buildFinalReply(toolCallHistory, text);
+      await draft.delete();
+      await ctx.reply(finalText, { reply_to_message_id: ctx.message.message_id, ...replyOptions });
       logRequest({
         ...ctxAudit(ctx),
         msgType: "voice",
@@ -869,6 +1018,7 @@ bot.on("message:voice", async (ctx) => {
     } catch (e: unknown) {
       const ms = Date.now() - t0;
       log.error({ ...serializeError(e), latencyMs: ms }, "Voice handler failed");
+      await draft.delete();
       await ctx
         .reply("Failed to process the voice message. Please try again or send text.", {
           reply_to_message_id: ctx.message.message_id,
