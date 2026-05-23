@@ -37,9 +37,11 @@ export function getDb(): Database.Database {
     );
 
     CREATE TABLE IF NOT EXISTS chat_configs (
-      chat_id  INTEGER PRIMARY KEY,
-      api_key  TEXT,
-      base_url TEXT
+      chat_id    INTEGER PRIMARY KEY,
+      api_key    TEXT,
+      base_url   TEXT,
+      fast_mode  INTEGER NOT NULL DEFAULT 0,
+      voice_mode INTEGER NOT NULL DEFAULT 0
     );
 
     CREATE TABLE IF NOT EXISTS request_logs (
@@ -65,6 +67,14 @@ export function getDb(): Database.Database {
     CREATE INDEX IF NOT EXISTS idx_rl_user_id ON request_logs(user_id);
     CREATE INDEX IF NOT EXISTS idx_rl_chat_id ON request_logs(chat_id);
   `);
+
+  const cols = new Set(
+    (_db.pragma("table_info(chat_configs)") as { name: string }[]).map((c) => c.name)
+  );
+  if (!cols.has("fast_mode"))
+    _db.exec("ALTER TABLE chat_configs ADD COLUMN fast_mode  INTEGER NOT NULL DEFAULT 0");
+  if (!cols.has("voice_mode"))
+    _db.exec("ALTER TABLE chat_configs ADD COLUMN voice_mode INTEGER NOT NULL DEFAULT 0");
 
   return _db;
 }

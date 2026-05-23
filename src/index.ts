@@ -1,5 +1,5 @@
 import { Bot, InputFile, Context, NextFunction } from "grammy";
-import { BOT_TOKEN, ALLOWED_IDS, BASE_URL } from "./config.js";
+import { BOT_TOKEN, ALLOWED_IDS, BASE_URL, OLLAMA_BASE_URL, OLLAMA_MODEL } from "./config.js";
 import { cleanMd } from "./utils/markdown.js";
 import {
   askSkyeStream,
@@ -13,7 +13,7 @@ import { buildContext } from "./contextBuilder.js";
 import { buildSystemMessage } from "./prompt.js";
 import { getMemories, clearMemories, memoryTools, executeMemoryTool } from "./memory.js";
 import { initMcp, getMcpTools, isMcpTool, executeMcpTool, shutdownMcp } from "./mcp.js";
-import { getChatConfig } from "./chatConfig.js";
+import { getChatConfig, setChatFastMode, setChatVoiceMode } from "./chatConfig.js";
 import { registerConfigHandlers, handleWizardInput, isInWizard } from "./configCommand.js";
 import { logMessage, getChatContext, summarizeChat, type LogEntry } from "./chatLog.js";
 import {
@@ -21,12 +21,13 @@ import {
   recognizeSpeech,
   isTTSAvailable,
   synthesizeSpeech,
+  synthesizeSpeechStream,
 } from "./speech.js";
 import { logRequest, scheduleAuditPruning, type AuditEntry } from "./audit.js";
 
 const bot = new Bot(BOT_TOKEN);
 
-const OUR_COMMANDS = new Set(["image", "reset", "forget", "config"]);
+const OUR_COMMANDS = new Set(["image", "reset", "forget", "config", "fast", "voice"]);
 
 /** Download an image from a URL and return it as a base64 data URL. */
 async function toDataUrl(url: string): Promise<string> {
@@ -94,10 +95,12 @@ bot.catch((err) => {
 
 // Advertise bot commands
 void bot.api.setMyCommands([
-  { command: "image", description: "Generate an image from a text prompt" },
-  { command: "reset", description: "Reset conversation context" },
+  { command: "image",  description: "Generate an image from a text prompt" },
+  { command: "reset",  description: "Reset conversation context" },
   { command: "forget", description: "Clear all saved memories for this chat" },
   { command: "config", description: "Configure API credentials for this chat" },
+  { command: "fast",   description: "Toggle fast mode (Ollama, ultra-low latency)" },
+  { command: "voice",  description: "Toggle voice note responses" },
 ]);
 
 // Composite key: "chatId" or "chatId:threadId" for per-thread state
@@ -258,8 +261,11 @@ function extractLogEntry(ctx: Context): LogEntry {
 // --- Access control helpers ---
 
 function getCredentials(chatId: number): ApiCredentials | undefined {
-  if (ALLOWED_IDS.has(chatId)) return undefined; // use global
   const cfg = getChatConfig(chatId);
+  if (cfg.fastMode) {
+    return { apiKey: "ollama", baseUrl: OLLAMA_BASE_URL, model: OLLAMA_MODEL };
+  }
+  if (ALLOWED_IDS.has(chatId)) return undefined; // use global
   if (!cfg.apiKey) return undefined;
   return {
     apiKey: cfg.apiKey,
@@ -269,7 +275,8 @@ function getCredentials(chatId: number): ApiCredentials | undefined {
 
 function hasAccess(chatId: number): boolean {
   if (ALLOWED_IDS.has(chatId)) return true;
-  return !!getChatConfig(chatId).apiKey;
+  const cfg = getChatConfig(chatId);
+  return !!cfg.apiKey || cfg.fastMode;
 }
 
 // --- Handler registration order matters ---
@@ -299,8 +306,8 @@ async function accessGate(ctx: Context, next: NextFunction) {
   // In groups, ignore commands addressed to other bots entirely
   if (isGroup && cmdMatch && !isOurCommand) return;
 
-  // /config always passes through
-  if (isOurCommand && cmdMatch![1] === "config") return next();
+  // /config, /fast, /voice always pass through
+  if (isOurCommand && ["config", "fast", "voice"].includes(cmdMatch![1])) return next();
 
   if (!hasAccess(chatId)) {
     const isMention = botUsername ? text.includes(`@${botUsername}`) : false;
@@ -576,6 +583,30 @@ bot.command("forget", async (ctx) => {
   await ctx.reply("All memories cleared.");
 });
 
+bot.command("fast", async (ctx) => {
+  const cfg = getChatConfig(ctx.chat.id);
+  const newState = !cfg.fastMode;
+  setChatFastMode(ctx.chat.id, newState);
+  await ctx.reply(
+    newState
+      ? "Fast mode ON — using Ollama (nemotron-3-super). Ultra-low latency."
+      : "Fast mode OFF — back to default LLM.",
+    { reply_to_message_id: ctx.message!.message_id }
+  );
+});
+
+bot.command("voice", async (ctx) => {
+  const cfg = getChatConfig(ctx.chat.id);
+  const newState = !cfg.voiceMode;
+  setChatVoiceMode(ctx.chat.id, newState);
+  await ctx.reply(
+    newState
+      ? "Voice mode ON — text responses will be sent as voice notes."
+      : "Voice mode OFF — responses will be sent as text.",
+    { reply_to_message_id: ctx.message!.message_id }
+  );
+});
+
 bot.on("message:text", async (ctx) => {
   // Wizard input interception — short-circuit before normal handling
   if (await handleWizardInput(ctx)) return;
@@ -643,6 +674,30 @@ bot.on("message:text", async (ctx) => {
 
       storeMessage(tk, userMsg);
       storeMessage(tk, { role: "assistant", content: text });
+
+      const chatCfg = getChatConfig(ctx.chat.id);
+      if (chatCfg.voiceMode && isTTSAvailable()) {
+        await ctx.api.sendChatAction(ctx.chat.id, "record_voice");
+        const audioBuffer = chatCfg.fastMode
+          ? await synthesizeSpeechStream(text)
+          : await synthesizeSpeech(text);
+        if (audioBuffer) {
+          await draft.delete();
+          await ctx.replyWithVoice(new InputFile(audioBuffer, "response.mp3"), {
+            reply_to_message_id: ctx.message.message_id,
+          });
+          logRequest({
+            ...ctxAudit(ctx),
+            msgType: "text",
+            inputLen: inputText.length,
+            outputLen: text.length,
+            latencyMs: Date.now() - t0,
+            status: "ok",
+          });
+          return;
+        }
+        log.warn("Voice mode TTS failed, falling back to text reply");
+      }
 
       const { text: finalText, options: replyOptions } = buildFinalReply(toolCallHistory, text);
       await draft.delete();
@@ -985,7 +1040,10 @@ bot.on("message:voice", async (ctx) => {
 
       if (isTTSAvailable()) {
         await ctx.api.sendChatAction(ctx.chat.id, "record_voice");
-        const audioBuffer = await synthesizeSpeech(text);
+        const voiceCfg = getChatConfig(ctx.chat.id);
+        const audioBuffer = voiceCfg.fastMode
+          ? await synthesizeSpeechStream(text)
+          : await synthesizeSpeech(text);
         if (audioBuffer) {
           await draft.delete();
           await ctx.replyWithVoice(new InputFile(audioBuffer, "response.mp3"), {

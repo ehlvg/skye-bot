@@ -54,6 +54,53 @@ export function isTTSAvailable(): boolean {
   return ELEVENLABS_API_KEY.length > 0;
 }
 
+export async function synthesizeSpeechStream(text: string): Promise<Buffer | null> {
+  if (!isTTSAvailable()) {
+    log.warn("ElevenLabs API key not configured, cannot synthesize speech");
+    return null;
+  }
+
+  try {
+    const res = await fetch(`${EL_TTS_URL}/${ELEVENLABS_VOICE_ID}/stream`, {
+      method: "POST",
+      headers: {
+        "xi-api-key": ELEVENLABS_API_KEY,
+        "Content-Type": "application/json",
+        Accept: "audio/mpeg",
+      },
+      body: JSON.stringify({
+        text,
+        model_id: "eleven_flash_v2_5",
+        voice_settings: {
+          stability: 0.5,
+          similarity_boost: 0.75,
+          style: 0.0,
+          use_speaker_boost: true,
+        },
+      }),
+    });
+
+    if (!res.ok) {
+      const body = await res.text().catch(() => "");
+      log.err(`ElevenLabs TTS stream failed (${res.status}): ${body}`);
+      return null;
+    }
+
+    const chunks: Buffer[] = [];
+    const reader = res.body!.getReader();
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      chunks.push(Buffer.from(value));
+    }
+    return Buffer.concat(chunks);
+  } catch (e: unknown) {
+    const msg = e instanceof Error ? e.message : String(e);
+    log.err(`ElevenLabs TTS stream error: ${msg}`);
+    return null;
+  }
+}
+
 export async function synthesizeSpeech(text: string): Promise<Buffer | null> {
   if (!isTTSAvailable()) {
     log.warn("ElevenLabs API key not configured, cannot synthesize speech");

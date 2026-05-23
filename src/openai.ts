@@ -5,6 +5,7 @@ import { log } from "./utils/log.js";
 export interface ApiCredentials {
   apiKey: string;
   baseUrl: string;
+  model?: string;
 }
 
 const globalClient = new OpenAI({
@@ -27,7 +28,7 @@ function resolveCredentials(creds?: ApiCredentials): { apiKey: string; baseUrl: 
 // Basic helper: send text + optional images, with optional tool definitions
 export async function askSkye(messages: any[], tools?: any[], creds?: ApiCredentials) {
   return getClient(creds).chat.completions.create({
-    model: MODEL,
+    model: creds?.model ?? MODEL,
     messages,
     max_completion_tokens: MAX_COMPLETION_TOKENS,
     ...(tools?.length ? { tools } : {}),
@@ -38,7 +39,7 @@ export async function askSkye(messages: any[], tools?: any[], creds?: ApiCredent
 // Call .finalChatCompletion() to get the full ChatCompletion object once done.
 export function askSkyeStream(messages: any[], tools?: any[], creds?: ApiCredentials) {
   return getClient(creds).chat.completions.stream({
-    model: MODEL,
+    model: creds?.model ?? MODEL,
     messages,
     max_completion_tokens: MAX_COMPLETION_TOKENS,
     ...(tools?.length ? { tools } : {}),

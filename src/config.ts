@@ -14,6 +14,8 @@ const envSchema = z.object({
   // Rachel — спокойный женский голос (американский акцент)
   ELEVENLABS_VOICE_ID: z.string().default("21m00Tcm4TlvDq8ikWAM"),
   MCP_CONFIG_PATH: z.string().default(""),
+  OLLAMA_BASE_URL: z.string().url().default("http://localhost:11434/v1"),
+  OLLAMA_MODEL: z.string().default("nemotron-3-super:cloud"),
 });
 
 const env = (() => {
@@ -44,3 +46,5 @@ export const YC_FOLDER_ID = env.YC_FOLDER_ID;
 export const ELEVENLABS_API_KEY = env.ELEVENLABS_API_KEY;
 export const ELEVENLABS_VOICE_ID = env.ELEVENLABS_VOICE_ID;
 export const MCP_CONFIG_PATH = env.MCP_CONFIG_PATH;
+export const OLLAMA_BASE_URL = env.OLLAMA_BASE_URL;
+export const OLLAMA_MODEL = env.OLLAMA_MODEL;
