@@ -85,11 +85,11 @@ export interface ChatContext {
   recentLog: string;
 }
 
-export function buildSystemMessage(
+export function buildSystemPrompt(
   memories: MemoryEntry[],
   chatContext?: ChatContext,
   mcpToolNames?: string[]
-) {
+): string {
   let content = SYSTEM_PROMPT;
 
   if (chatContext) {
@@ -129,5 +129,5 @@ You have access to long-term memory tools. Use save_memory to remember important
 
 Messages from users are prefixed with their name and Telegram handle like [Name (@handle)]. Use this to know who is speaking.`;
 
-  return { role: "system" as const, content };
+  return content;
 }

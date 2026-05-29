@@ -3,9 +3,6 @@
   "version": "1.0.0",
   "description": "",
   "type": "module",
-  "workspaces": [
-    "web"
-  ],
   "scripts": {
     "dev": "tsx watch src/index.ts",
     "dev:pretty": "tsx watch src/index.ts 2>&1 | pino-pretty --colorize --translateTime",
@@ -17,9 +14,7 @@
     "format": "prettier . --write",
     "format:check": "prettier . --check",
     "test": "vitest run",
-    "test:watch": "vitest",
-    "web:dev": "pnpm --filter web dev",
-    "web:build": "pnpm --filter web build"
+    "test:watch": "vitest"
   },
   "keywords": [],
   "author": "",

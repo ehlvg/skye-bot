@@ -1,4 +1,5 @@
 import OpenAI from "openai";
+import type { ResponseInputItem, ResponseFunctionToolCall } from "openai/resources/responses/responses.js";
 import { BASE_URL, MAX_COMPLETION_TOKENS, MODEL, OPENAI_KEY } from "./config.js";
 import { log } from "./utils/log.js";
 
@@ -7,6 +8,8 @@ export interface ApiCredentials {
   baseUrl: string;
   model?: string;
 }
+
+export type { ResponseInputItem, ResponseFunctionToolCall };
 
 const globalClient = new OpenAI({
   baseURL: BASE_URL,
@@ -25,23 +28,33 @@ function resolveCredentials(creds?: ApiCredentials): { apiKey: string; baseUrl: 
   };
 }
 
-// Basic helper: send text + optional images, with optional tool definitions
-export async function askSkye(messages: any[], tools?: any[], creds?: ApiCredentials) {
-  return getClient(creds).chat.completions.create({
+// One-shot request for simple tasks like summarization (no streaming, no tools).
+export async function askSkye(
+  instructions: string,
+  input: string,
+  creds?: ApiCredentials
+) {
+  return getClient(creds).responses.create({
     model: creds?.model ?? MODEL,
-    messages,
-    max_completion_tokens: MAX_COMPLETION_TOKENS,
-    ...(tools?.length ? { tools } : {}),
+    instructions,
+    input,
+    max_output_tokens: MAX_COMPLETION_TOKENS,
   });
 }
 
-// Streaming variant — returns a ChatCompletionStream (async iterable with events).
-// Call .finalChatCompletion() to get the full ChatCompletion object once done.
-export function askSkyeStream(messages: any[], tools?: any[], creds?: ApiCredentials) {
-  return getClient(creds).chat.completions.stream({
+// Streaming variant for the main chat loop.
+// Returns a ResponseStream — call .finalResponse() to get the completed Response.
+export function askSkyeStream(
+  instructions: string,
+  input: ResponseInputItem[],
+  tools?: any[],
+  creds?: ApiCredentials
+) {
+  return getClient(creds).responses.stream({
     model: creds?.model ?? MODEL,
-    messages,
-    max_completion_tokens: MAX_COMPLETION_TOKENS,
+    instructions,
+    input,
+    max_output_tokens: MAX_COMPLETION_TOKENS,
     ...(tools?.length ? { tools } : {}),
   });
 }

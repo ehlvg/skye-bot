@@ -79,7 +79,8 @@ describe("clearMemories", () => {
 describe("executeMemoryTool", () => {
   test("save_memory saves and returns confirmation", async () => {
     const result = await executeMemoryTool(CHAT, {
-      function: { name: "save_memory", arguments: JSON.stringify({ content: "loves jazz" }) },
+      name: "save_memory",
+      arguments: JSON.stringify({ content: "loves jazz" }),
     });
     expect(result).toMatch(/^Memory saved with ID mem_/);
     expect(getMemories(CHAT)).toHaveLength(1);
@@ -88,7 +89,8 @@ describe("executeMemoryTool", () => {
   test("delete_memory removes the entry and returns confirmation", async () => {
     const entry = await addMemory(CHAT, "temporary");
     const result = await executeMemoryTool(CHAT, {
-      function: { name: "delete_memory", arguments: JSON.stringify({ memory_id: entry.id }) },
+      name: "delete_memory",
+      arguments: JSON.stringify({ memory_id: entry.id }),
     });
     expect(result).toBe(`Memory ${entry.id} deleted.`);
     expect(getMemories(CHAT)).toHaveLength(0);
@@ -96,14 +98,16 @@ describe("executeMemoryTool", () => {
 
   test("delete_memory returns not-found message for missing ID", async () => {
     const result = await executeMemoryTool(CHAT, {
-      function: { name: "delete_memory", arguments: JSON.stringify({ memory_id: "mem_ghost" }) },
+      name: "delete_memory",
+      arguments: JSON.stringify({ memory_id: "mem_ghost" }),
     });
     expect(result).toBe("Memory mem_ghost not found.");
   });
 
   test("unknown tool returns error message", async () => {
     const result = await executeMemoryTool(CHAT, {
-      function: { name: "fly_spaceship", arguments: "{}" },
+      name: "fly_spaceship",
+      arguments: "{}",
     });
     expect(result).toBe("Unknown tool: fly_spaceship");
   });

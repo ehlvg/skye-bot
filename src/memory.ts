@@ -37,54 +37,51 @@ export async function clearMemories(chatId: number): Promise<void> {
   getDb().prepare("DELETE FROM memories WHERE chat_id = ?").run(chatId);
 }
 
-// OpenAI tool definitions
+// Responses API tool definitions (flat format: { type, name, description, parameters })
 export const memoryTools = [
   {
     type: "function" as const,
-    function: {
-      name: "save_memory",
-      description:
-        "Save a piece of information to long-term memory for this chat. Use this when the user asks you to remember something, or when you encounter important facts worth preserving (names, preferences, project details, etc.).",
-      parameters: {
-        type: "object",
-        properties: {
-          content: {
-            type: "string",
-            description: "The information to remember, written as a clear factual statement.",
-          },
+    name: "save_memory",
+    description:
+      "Save a piece of information to long-term memory for this chat. Use this when the user asks you to remember something, or when you encounter important facts worth preserving (names, preferences, project details, etc.).",
+    parameters: {
+      type: "object",
+      properties: {
+        content: {
+          type: "string",
+          description: "The information to remember, written as a clear factual statement.",
         },
-        required: ["content"],
       },
+      required: ["content"],
     },
   },
   {
     type: "function" as const,
-    function: {
-      name: "delete_memory",
-      description:
-        "Delete a specific memory by its ID. Use this when the user asks you to forget something.",
-      parameters: {
-        type: "object",
-        properties: {
-          memory_id: {
-            type: "string",
-            description: "The ID of the memory to delete (e.g. mem_abc123).",
-          },
+    name: "delete_memory",
+    description:
+      "Delete a specific memory by its ID. Use this when the user asks you to forget something.",
+    parameters: {
+      type: "object",
+      properties: {
+        memory_id: {
+          type: "string",
+          description: "The ID of the memory to delete (e.g. mem_abc123).",
         },
-        required: ["memory_id"],
       },
+      required: ["memory_id"],
     },
   },
 ];
 
-// Execute a tool call and return the result string
+// Execute a memory tool call and return the result string.
+// toolCall is a ResponseFunctionToolCall from the Responses API.
 export async function executeMemoryTool(
   chatId: number,
-  toolCall: { function: { name: string; arguments: string } }
+  toolCall: { name: string; arguments: string }
 ): Promise<string> {
-  const args = JSON.parse(toolCall.function.arguments);
+  const args = JSON.parse(toolCall.arguments);
 
-  switch (toolCall.function.name) {
+  switch (toolCall.name) {
     case "save_memory": {
       const entry = await addMemory(chatId, args.content);
       return `Memory saved with ID ${entry.id}.`;
@@ -94,6 +91,6 @@ export async function executeMemoryTool(
       return ok ? `Memory ${args.memory_id} deleted.` : `Memory ${args.memory_id} not found.`;
     }
     default:
-      return `Unknown tool: ${toolCall.function.name}`;
+      return `Unknown tool: ${toolCall.name}`;
   }
 }

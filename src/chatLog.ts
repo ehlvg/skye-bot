@@ -104,27 +104,18 @@ export async function summarizeChat(chatId: number, creds?: ApiCredentials): Pro
   }
 
   const formatted = older.map(formatLogEntry).join("\n");
-  const messages = [
-    {
-      role: "system" as const,
-      content:
-        "You are a concise summarizer. Given a log of group chat messages, produce a brief summary noting: key participants, topics discussed, any media or files exchanged, and approximate timeline. Keep it under 200 words. Output only the summary, no preamble.",
-    },
-    {
-      role: "user" as const,
-      content: formatted,
-    },
-  ];
+  const instructions =
+    "You are a concise summarizer. Given a log of group chat messages, produce a brief summary noting: key participants, topics discussed, any media or files exchanged, and approximate timeline. Keep it under 200 words. Output only the summary, no preamble.";
 
   try {
-    const res = await askSkye(messages, undefined, creds);
-    const text = res.choices[0]?.message?.content;
+    const res = await askSkye(instructions, formatted, creds);
+    const text = res.output_text;
     if (text) {
       await setSummary(chatId, text);
       log.info(`Chat ${chatId}: summarized ${older.length} older messages`);
     }
   } catch (e: any) {
-    log.err(`Chat ${chatId}: summarization failed: ${e?.message || e}`);
+    log.warn(`Chat ${chatId}: summarization failed: ${e?.message || e}`);
     // Reset counter so we retry next interval
     counters.set(chatId, 0);
   }

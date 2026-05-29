@@ -143,11 +143,9 @@ export async function initMcp(): Promise<void> {
         }
         const openaiTool = {
           type: "function" as const,
-          function: {
-            name: tool.name,
-            description: tool.description ?? "",
-            parameters: tool.inputSchema ?? { type: "object", properties: {} },
-          },
+          name: tool.name,
+          description: tool.description ?? "",
+          parameters: tool.inputSchema ?? { type: "object", properties: {} },
         };
         allTools.push(openaiTool);
         toolMap.set(tool.name, { serverName: name, client, toolName: tool.name });

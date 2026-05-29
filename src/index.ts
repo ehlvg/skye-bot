@@ -6,11 +6,11 @@ import {
   checkModelCapabilities,
   generateImage,
   modelSupportsImages,
-  ApiCredentials,
+  type ApiCredentials,
+  type ResponseInputItem,
 } from "./openai.js";
 import { log } from "./utils/log.js";
-import { buildContext } from "./contextBuilder.js";
-import { buildSystemMessage } from "./prompt.js";
+import { buildSystemPrompt } from "./prompt.js";
 import { getMemories, clearMemories, memoryTools, executeMemoryTool } from "./memory.js";
 import { initMcp, getMcpTools, isMcpTool, executeMcpTool, shutdownMcp } from "./mcp.js";
 import { getChatConfig, setChatFastMode, setChatVoiceMode } from "./chatConfig.js";
@@ -108,29 +108,33 @@ function threadKey(chatId: number, threadId?: number): string {
   return threadId != null ? `${chatId}:${threadId}` : String(chatId);
 }
 
-// Simple rolling memory per thread (stores Chat Completion message objects)
-const memory = new Map<string, Array<any>>();
+// Rolling input history per thread (stores Responses API input items).
+// Each entry is a user message or assistant message item; tool call pairs are
+// stored together so the buffer never splits an exchange.
+const memory = new Map<string, ResponseInputItem[]>();
 
-function storeMessage(key: string, msg: any) {
+function storeItems(key: string, ...items: ResponseInputItem[]) {
   if (!memory.has(key)) memory.set(key, []);
   const list = memory.get(key)!;
-  list.push(msg);
-  if (list.length > 15) list.shift();
+  list.push(...items);
+  // Keep at most 30 items (15 exchanges), drop oldest pairs from the front
+  while (list.length > 30) list.shift();
 }
 
 /**
- * If the model doesn't support images, strip image_url parts from context
- * so that old image messages in history don't break subsequent requests.
+ * If the model doesn't support images, strip image content parts from history
+ * so that old image messages don't break subsequent requests.
  */
-function sanitizeContext(messages: any[]): any[] {
-  if (modelSupportsImages() !== false) return messages;
-  return messages.map((msg) => {
-    if (!Array.isArray(msg.content)) return msg;
-    const textParts = msg.content.filter((p: any) => p.type !== "image_url");
-    if (textParts.length === 0) return { ...msg, content: "[image]" };
-    if (textParts.length === 1 && textParts[0].text) return { ...msg, content: textParts[0].text };
-    return { ...msg, content: textParts };
-  });
+function sanitizeHistory(items: ResponseInputItem[]): ResponseInputItem[] {
+  if (modelSupportsImages() !== false) return items;
+  return items.map((item: any) => {
+    if (item.type !== "message" || !Array.isArray(item.content)) return item;
+    const textParts = item.content.filter((p: any) => p.type !== "input_image");
+    if (textParts.length === 0) {
+      return { ...item, content: [{ type: "input_text", text: "[image]" }] };
+    }
+    return { ...item, content: textParts };
+  }) as ResponseInputItem[];
 }
 
 // Rate limiting (very light): 1 request per 2s per thread
@@ -414,13 +418,13 @@ function buildFinalReply(
 }
 
 /**
- * Chat helper: builds system message with memories, runs the tool-calling loop,
- * and returns the final text response.  Supports streaming via optional onChunk
- * callback that receives the accumulated text snapshot on each content delta.
+ * Chat helper: builds instructions from memories/context, runs the Responses API
+ * tool-calling loop, and returns the final text response.
+ * Supports streaming via optional onChunk callback (accumulated text snapshot).
  */
 async function chat(
   chatId: number,
-  messages: any[],
+  input: ResponseInputItem[],
   creds?: ApiCredentials,
   onChunk?: (snapshot: string) => void,
   onToolCalls?: (calls: ToolCallRecord[]) => void
@@ -428,60 +432,106 @@ async function chat(
   const memories = getMemories(chatId);
   const chatContext = getChatContext(chatId);
   const mcpTools = getMcpTools();
-  const mcpToolNames = mcpTools.map((t: any) => t.function.name);
+  const mcpToolNames = mcpTools.map((t: any) => t.name);
   const allTools = [...memoryTools, ...mcpTools];
 
-  const systemMsg = buildSystemMessage(memories, chatContext, mcpToolNames);
-  const msgs = [systemMsg, ...messages];
+  const instructions = buildSystemPrompt(memories, chatContext, mcpToolNames);
 
-  // Log request summary (text + attachments)
-  const lastMsg = msgs[msgs.length - 1];
+  // Log request summary (last user item text + attachments)
+  const lastItem = input[input.length - 1];
   let requestSummary = "";
   const requestAttachments: string[] = [];
-  if (lastMsg) {
-    if (typeof lastMsg.content === "string") {
-      requestSummary = lastMsg.content.slice(0, 200);
-    } else if (Array.isArray(lastMsg.content)) {
-      for (const part of lastMsg.content) {
-        if (part.type === "text") requestSummary += part.text;
-        else if (part.type === "image_url") requestAttachments.push("image");
-        else requestAttachments.push(String(part.type));
-      }
-      requestSummary = requestSummary.slice(0, 200);
+  if (lastItem?.type === "message" && Array.isArray(lastItem.content)) {
+    for (const part of lastItem.content as any[]) {
+      if (part.type === "input_text") requestSummary += part.text;
+      else if (part.type === "input_image") requestAttachments.push("image");
+      else requestAttachments.push(String(part.type));
     }
+    requestSummary = requestSummary.slice(0, 200);
+  } else if (lastItem?.type === "message" && typeof (lastItem as any).content === "string") {
+    requestSummary = ((lastItem as any).content as string).slice(0, 200);
   }
   log.info({ chatId, requestSummary, requestAttachments, toolCount: allTools.length }, "LLM request");
 
+  // Mutable input accumulates tool call/output pairs across iterations
+  const currentInput: ResponseInputItem[] = [...input];
   let iterations = 0;
+
   while (iterations <= 5) {
-    const stream = askSkyeStream(msgs, allTools.length > 0 ? allTools : undefined, creds);
+    const stream = askSkyeStream(
+      instructions,
+      currentInput,
+      allTools.length > 0 ? allTools : undefined,
+      creds
+    );
 
-    // Only wire up streaming for the content phase (not tool-call iterations)
     if (onChunk) {
-      stream.on("content", (_delta, snapshot) => onChunk(snapshot));
+      stream.on("response.output_text.delta", (event) => onChunk(event.snapshot));
     }
 
-    const completion = await stream.finalChatCompletion();
-    const choice = completion.choices[0];
+    const response = await stream.finalResponse();
 
-    if (!choice?.message?.tool_calls?.length) {
-      return choice?.message?.content || "";
+    log.debug(
+      {
+        outputItems: response.output.map((o: any) => ({
+          type: o.type,
+          contentType: Array.isArray(o.content)
+            ? o.content.map((c: any) => c.type)
+            : typeof o.content,
+        })),
+        output_text: response.output_text,
+      },
+      "LLM response"
+    );
+
+    // Collect function_call items from output
+    const fnCalls = response.output.filter(
+      (item): item is Extract<typeof item, { type: "function_call" }> =>
+        item.type === "function_call"
+    );
+
+    if (fnCalls.length === 0) {
+      // output_text is populated by the SDK only when content items have type 'output_text'.
+      // Some providers (e.g. Ollama) return message content in a different shape, so we
+      // extract text manually as a fallback.
+      if (response.output_text) return response.output_text;
+      for (const item of response.output) {
+        if (item.type === "message") {
+          const content = (item as any).content;
+          if (typeof content === "string") return content;
+          if (Array.isArray(content)) {
+            const text = content
+              .map((c: any) => c.text ?? c.content ?? "")
+              .join("");
+            if (text) return text;
+          }
+        }
+      }
+      return "";
     }
 
-    // Tool calls — process and loop
-    msgs.push(choice.message);
+    // Tool calls — execute and feed results back
     const currentToolCalls: ToolCallRecord[] = [];
-    for (const tc of choice.message.tool_calls) {
-      if (tc.type !== "function") continue;
-      const fnName = tc.function.name;
-      const args = safeJsonParse(tc.function.arguments);
-      currentToolCalls.push({ name: fnName, args, isMcp: isMcpTool(fnName) });
+    const toolOutputItems: ResponseInputItem[] = [];
 
-      const result = isMcpTool(fnName)
-        ? await executeMcpTool(fnName, args)
-        : await executeMemoryTool(chatId, tc);
-      msgs.push({ role: "tool", tool_call_id: tc.id, content: result });
+    for (const fc of fnCalls) {
+      const args = safeJsonParse(fc.arguments);
+      currentToolCalls.push({ name: fc.name, args, isMcp: isMcpTool(fc.name) });
+
+      const result = isMcpTool(fc.name)
+        ? await executeMcpTool(fc.name, args)
+        : await executeMemoryTool(chatId, fc);
+
+      toolOutputItems.push({
+        type: "function_call_output",
+        call_id: fc.call_id,
+        output: result,
+      } as any);
     }
+
+    // Append the assistant's function_call items, then the outputs
+    for (const fc of fnCalls) currentInput.push(fc as any);
+    currentInput.push(...toolOutputItems);
 
     if (onToolCalls && currentToolCalls.length > 0) {
       onToolCalls(currentToolCalls);
@@ -492,7 +542,6 @@ async function chat(
   return "";
 }
 
-// reset context (per-thread)
 bot.command("reset", async (ctx) => {
   const tk = threadKey(ctx.chat.id, ctx.message?.message_thread_id);
   memory.delete(tk);
@@ -626,12 +675,15 @@ bot.on("message:text", async (ctx) => {
     const creds = getCredentials(ctx.chat.id);
     const tag = senderTag(ctx);
     const inputText = ctx.message.text || "";
-    const userMsg = {
-      role: "user" as const,
+    const userItem: ResponseInputItem = {
+      type: "message",
+      role: "user",
       content: tag + inputText,
     };
-    const history = memory.get(tk) || [];
-    const context = sanitizeContext(buildContext([...history, userMsg]));
+    const history = sanitizeHistory(memory.get(tk) || []);
+    // Cap history at 20 items before appending the new message
+    const cappedHistory = history.slice(-20);
+    const inputItems: ResponseInputItem[] = [...cappedHistory, userItem];
 
     const draft = createDraftManager(ctx, "HTML");
     const toolCallHistory: ToolCallRecord[] = [];
@@ -654,7 +706,7 @@ bot.on("message:text", async (ctx) => {
     };
 
     try {
-      const text = cleanMd(await chat(ctx.chat.id, context, creds, onChunk, onToolCalls));
+      const text = cleanMd(await chat(ctx.chat.id, inputItems, creds, onChunk, onToolCalls));
 
       if (!text) {
         await draft.delete();
@@ -672,8 +724,7 @@ bot.on("message:text", async (ctx) => {
         return;
       }
 
-      storeMessage(tk, userMsg);
-      storeMessage(tk, { role: "assistant", content: text });
+      storeItems(tk, userItem, { type: "message", role: "assistant", content: text } as ResponseInputItem);
 
       const chatCfg = getChatConfig(ctx.chat.id);
       if (chatCfg.voiceMode && isTTSAvailable()) {
@@ -870,16 +921,16 @@ bot.on("message:photo", async (ctx) => {
       const dataUrl = await toDataUrl(telegramUrl);
 
       const tag = senderTag(ctx);
-      const parts: any[] = [];
-      if (captionRaw) parts.push({ type: "text", text: tag + captionRaw });
-      else if (tag) parts.push({ type: "text", text: tag.trim() });
-      parts.push({ type: "image_url", image_url: { url: dataUrl } });
+      const contentParts: any[] = [];
+      if (captionRaw) contentParts.push({ type: "input_text", text: tag + captionRaw });
+      else if (tag) contentParts.push({ type: "input_text", text: tag.trim() });
+      contentParts.push({ type: "input_image", image_url: dataUrl });
 
-      const userMsg = { role: "user" as const, content: parts };
-      const history = memory.get(tk) || [];
-      const context = buildContext([...history, userMsg]);
+      const userItem: ResponseInputItem = { type: "message", role: "user", content: contentParts };
+      const history = sanitizeHistory(memory.get(tk) || []);
+      const inputItems: ResponseInputItem[] = [...history.slice(-20), userItem];
 
-      const text = cleanMd(await chat(ctx.chat.id, context, creds, onChunk, onToolCalls));
+      const text = cleanMd(await chat(ctx.chat.id, inputItems, creds, onChunk, onToolCalls));
 
       if (!text) {
         await draft.delete();
@@ -897,8 +948,7 @@ bot.on("message:photo", async (ctx) => {
         return;
       }
 
-      storeMessage(tk, userMsg);
-      storeMessage(tk, { role: "assistant", content: text });
+      storeItems(tk, userItem, { type: "message", role: "assistant", content: text } as ResponseInputItem);
 
       const { text: finalText, options: replyOptions } = buildFinalReply(toolCallHistory, text);
       await draft.delete();
@@ -1010,14 +1060,15 @@ bot.on("message:voice", async (ctx) => {
       };
 
       const tag = senderTag(ctx);
-      const userMsg = {
-        role: "user" as const,
+      const userItem: ResponseInputItem = {
+        type: "message",
+        role: "user",
         content: tag + recognized,
       };
-      const history = memory.get(tk) || [];
-      const context = sanitizeContext(buildContext([...history, userMsg]));
+      const history = sanitizeHistory(memory.get(tk) || []);
+      const inputItems: ResponseInputItem[] = [...history.slice(-20), userItem];
 
-      const text = cleanMd(await chat(ctx.chat.id, context, creds, onChunk, onToolCalls));
+      const text = cleanMd(await chat(ctx.chat.id, inputItems, creds, onChunk, onToolCalls));
 
       if (!text) {
         await draft.delete();
@@ -1035,8 +1086,7 @@ bot.on("message:voice", async (ctx) => {
         return;
       }
 
-      storeMessage(tk, userMsg);
-      storeMessage(tk, { role: "assistant", content: text });
+      storeItems(tk, userItem, { type: "message", role: "assistant", content: text } as ResponseInputItem);
 
       if (isTTSAvailable()) {
         await ctx.api.sendChatAction(ctx.chat.id, "record_voice");
