@@ -1,5 +1,5 @@
 import { Bot, InputFile, Context, NextFunction } from "grammy";
-import { BOT_TOKEN, ALLOWED_IDS, BASE_URL, OLLAMA_BASE_URL, OLLAMA_MODEL } from "./config.js";
+import { BOT_TOKEN, ALLOWED_IDS, BASE_URL, OLLAMA_BASE_URL, OLLAMA_MODEL, WEBAPP_URL } from "./config.js";
 import { cleanMd } from "./utils/markdown.js";
 import {
   askSkyeStream,
@@ -24,6 +24,8 @@ import {
   synthesizeSpeechStream,
 } from "./speech.js";
 import { logRequest, scheduleAuditPruning, type AuditEntry } from "./audit.js";
+import { getUserConfig } from "./userConfig.js";
+import { startPanelServer } from "./panel/server.js";
 
 const bot = new Bot(BOT_TOKEN);
 
@@ -264,12 +266,34 @@ function extractLogEntry(ctx: Context): LogEntry {
 
 // --- Access control helpers ---
 
-function getCredentials(chatId: number): ApiCredentials | undefined {
+function getCredentials(chatId: number, userId?: number): ApiCredentials | undefined {
   const cfg = getChatConfig(chatId);
   if (cfg.fastMode) {
     return { apiKey: "ollama", baseUrl: OLLAMA_BASE_URL, model: OLLAMA_MODEL };
   }
-  if (ALLOWED_IDS.has(chatId)) return undefined; // use global
+  if (ALLOWED_IDS.has(chatId)) {
+    if (userId) {
+      const userCfg = getUserConfig(userId);
+      if (userCfg.apiKey) {
+        return {
+          apiKey: userCfg.apiKey,
+          baseUrl: userCfg.baseUrl ?? BASE_URL,
+          model: userCfg.model,
+        };
+      }
+    }
+    return undefined;
+  }
+  if (userId) {
+    const userCfg = getUserConfig(userId);
+    if (userCfg.apiKey) {
+      return {
+        apiKey: userCfg.apiKey,
+        baseUrl: userCfg.baseUrl ?? BASE_URL,
+        model: userCfg.model,
+      };
+    }
+  }
   if (!cfg.apiKey) return undefined;
   return {
     apiKey: cfg.apiKey,
@@ -277,10 +301,15 @@ function getCredentials(chatId: number): ApiCredentials | undefined {
   };
 }
 
-function hasAccess(chatId: number): boolean {
+function hasAccess(chatId: number, userId?: number): boolean {
   if (ALLOWED_IDS.has(chatId)) return true;
   const cfg = getChatConfig(chatId);
-  return !!cfg.apiKey || cfg.fastMode;
+  if (cfg.apiKey || cfg.fastMode) return true;
+  if (userId) {
+    const userCfg = getUserConfig(userId);
+    return !!userCfg.apiKey;
+  }
+  return false;
 }
 
 // --- Handler registration order matters ---
@@ -313,7 +342,7 @@ async function accessGate(ctx: Context, next: NextFunction) {
   // /config, /fast, /voice always pass through
   if (isOurCommand && ["config", "fast", "voice"].includes(cmdMatch![1])) return next();
 
-  if (!hasAccess(chatId)) {
+  if (!hasAccess(chatId, ctx.from?.id)) {
     const isMention = botUsername ? text.includes(`@${botUsername}`) : false;
 
     // In groups, only respond when directly @mentioned or our command is used
@@ -335,7 +364,7 @@ bot.on("message", async (ctx, next) => {
   if (ctx.chat?.type === "group" || ctx.chat?.type === "supergroup") {
     const entry = extractLogEntry(ctx);
     if (logMessage(ctx.chat.id, entry, ctx.chat.title)) {
-      void summarizeChat(ctx.chat.id, getCredentials(ctx.chat.id));
+      void summarizeChat(ctx.chat.id, getCredentials(ctx.chat.id, ctx.from?.id));
     }
   }
   return next();
@@ -427,15 +456,18 @@ async function chat(
   input: ResponseInputItem[],
   creds?: ApiCredentials,
   onChunk?: (snapshot: string) => void,
-  onToolCalls?: (calls: ToolCallRecord[]) => void
+  onToolCalls?: (calls: ToolCallRecord[]) => void,
+  userId?: number
 ): Promise<string> {
   const memories = getMemories(chatId);
   const chatContext = getChatContext(chatId);
-  const mcpTools = getMcpTools();
+  const mcpTools = getMcpTools(userId);
   const mcpToolNames = mcpTools.map((t: any) => t.name);
   const allTools = [...memoryTools, ...mcpTools];
 
-  const instructions = buildSystemPrompt(memories, chatContext, mcpToolNames);
+  const userCfg = userId ? getUserConfig(userId) : undefined;
+
+  const instructions = buildSystemPrompt(memories, chatContext, mcpToolNames, userCfg?.systemPrompt);
 
   // Log request summary (last user item text + attachments)
   const lastItem = input[input.length - 1];
@@ -559,7 +591,7 @@ bot.command("image", async (ctx) => {
   const tk = threadKey(ctx.chat.id, ctx.message?.message_thread_id);
   if (!canRespond(tk)) return;
 
-  const creds = getCredentials(ctx.chat.id);
+  const creds = getCredentials(ctx.chat.id, ctx.from?.id);
 
   void (async () => {
     const t0 = Date.now();
@@ -672,7 +704,7 @@ bot.on("message:text", async (ctx) => {
     const t0 = Date.now();
     log.info({ chatId: ctx.chat.id, userId: ctx.from?.id }, "Incoming text message");
 
-    const creds = getCredentials(ctx.chat.id);
+    const creds = getCredentials(ctx.chat.id, ctx.from?.id);
     const tag = senderTag(ctx);
     const inputText = ctx.message.text || "";
     const userItem: ResponseInputItem = {
@@ -706,7 +738,7 @@ bot.on("message:text", async (ctx) => {
     };
 
     try {
-      const text = cleanMd(await chat(ctx.chat.id, inputItems, creds, onChunk, onToolCalls));
+      const text = cleanMd(await chat(ctx.chat.id, inputItems, creds, onChunk, onToolCalls, ctx.from?.id));
 
       if (!text) {
         await draft.delete();
@@ -805,7 +837,7 @@ bot.on("message:photo", async (ctx) => {
 
     if (!canRespond(tk)) return;
 
-    const creds = getCredentials(ctx.chat.id);
+    const creds = getCredentials(ctx.chat.id, ctx.from?.id);
 
     void (async () => {
       const t0 = Date.now();
@@ -889,7 +921,7 @@ bot.on("message:photo", async (ctx) => {
 
   if (!canRespond(tk)) return;
 
-  const creds = getCredentials(ctx.chat.id);
+  const creds = getCredentials(ctx.chat.id, ctx.from?.id);
 
   void (async () => {
     const t0 = Date.now();
@@ -930,7 +962,7 @@ bot.on("message:photo", async (ctx) => {
       const history = sanitizeHistory(memory.get(tk) || []);
       const inputItems: ResponseInputItem[] = [...history.slice(-20), userItem];
 
-      const text = cleanMd(await chat(ctx.chat.id, inputItems, creds, onChunk, onToolCalls));
+      const text = cleanMd(await chat(ctx.chat.id, inputItems, creds, onChunk, onToolCalls, ctx.from?.id));
 
       if (!text) {
         await draft.delete();
@@ -1001,7 +1033,7 @@ bot.on("message:voice", async (ctx) => {
   const tk = threadKey(ctx.chat.id, ctx.message?.message_thread_id);
   if (!canRespond(tk)) return;
 
-  const creds = getCredentials(ctx.chat.id);
+  const creds = getCredentials(ctx.chat.id, ctx.from?.id);
 
   void (async () => {
     const t0 = Date.now();
@@ -1068,7 +1100,7 @@ bot.on("message:voice", async (ctx) => {
       const history = sanitizeHistory(memory.get(tk) || []);
       const inputItems: ResponseInputItem[] = [...history.slice(-20), userItem];
 
-      const text = cleanMd(await chat(ctx.chat.id, inputItems, creds, onChunk, onToolCalls));
+      const text = cleanMd(await chat(ctx.chat.id, inputItems, creds, onChunk, onToolCalls, ctx.from?.id));
 
       if (!text) {
         await draft.delete();
@@ -1150,6 +1182,10 @@ checkModelCapabilities()
   .then(() => initMcp())
   .finally(() => {
     scheduleAuditPruning();
+    startPanelServer();
+    bot.api.setChatMenuButton({ menu_button: { type: "web_app", text: "Settings", web_app: { url: WEBAPP_URL } } }).catch((e) => {
+      log.warn({ err: e }, "Failed to set menu button");
+    });
     bot.start({ drop_pending_updates: true });
     log.info("Skye is alive");
   });

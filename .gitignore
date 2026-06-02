@@ -4,3 +4,6 @@ dist
 node_modules
 .DS_Store
 data/
+web/dist
+web/node_modules
+*.tsbuildinfo

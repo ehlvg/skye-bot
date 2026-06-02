@@ -18,8 +18,8 @@ beforeEach(async () => {
 });
 
 describe("getChatConfig", () => {
-  test("returns empty object for unknown chatId", () => {
-    expect(getChatConfig(9999)).toEqual({});
+  test("returns defaults for unknown chatId", () => {
+    expect(getChatConfig(9999)).toEqual({ fastMode: false, voiceMode: false });
   });
 });
 
@@ -53,7 +53,7 @@ describe("resetChatApiKey", () => {
   test("cleans up the row when both fields are null", async () => {
     await setChatApiKey(CHAT, "sk-only");
     await resetChatApiKey(CHAT);
-    expect(getChatConfig(CHAT)).toEqual({});
+    expect(getChatConfig(CHAT)).toEqual({ fastMode: false, voiceMode: false });
   });
 
   test("preserves baseUrl when only apiKey is reset", async () => {

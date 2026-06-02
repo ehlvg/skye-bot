@@ -7,10 +7,6 @@ const __dirname = dirname(fileURLToPath(import.meta.url));
 
 let _db: Database.Database | null = null;
 
-/**
- * Lazy singleton — first call creates and migrates the DB.
- * Set process.env.DB_PATH = ":memory:" before first call in tests.
- */
 export function getDb(): Database.Database {
   if (_db) return _db;
 
@@ -66,6 +62,32 @@ export function getDb(): Database.Database {
     CREATE INDEX IF NOT EXISTS idx_rl_ts      ON request_logs(ts);
     CREATE INDEX IF NOT EXISTS idx_rl_user_id ON request_logs(user_id);
     CREATE INDEX IF NOT EXISTS idx_rl_chat_id ON request_logs(chat_id);
+
+    CREATE TABLE IF NOT EXISTS user_configs (
+      user_id      INTEGER PRIMARY KEY,
+      api_key      TEXT,
+      base_url     TEXT,
+      model        TEXT,
+      max_tokens   INTEGER,
+      system_prompt TEXT
+    );
+
+    CREATE TABLE IF NOT EXISTS user_mcp_servers (
+      id         INTEGER PRIMARY KEY AUTOINCREMENT,
+      user_id    INTEGER NOT NULL,
+      name       TEXT    NOT NULL,
+      config     TEXT    NOT NULL,
+      created_at TEXT    NOT NULL
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_umcp_user_id ON user_mcp_servers(user_id);
+
+    CREATE TABLE IF NOT EXISTS user_mcp_inputs (
+      server_id  INTEGER NOT NULL,
+      input_id   TEXT    NOT NULL,
+      value      TEXT    NOT NULL,
+      PRIMARY KEY (server_id, input_id)
+    );
   `);
 
   const cols = new Set(

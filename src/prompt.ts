@@ -88,9 +88,14 @@ export interface ChatContext {
 export function buildSystemPrompt(
   memories: MemoryEntry[],
   chatContext?: ChatContext,
-  mcpToolNames?: string[]
+  mcpToolNames?: string[],
+  customPrompt?: string
 ): string {
   let content = SYSTEM_PROMPT;
+
+  if (customPrompt) {
+    content += `\n\n## Custom Instructions\n\n${customPrompt}`;
+  }
 
   if (chatContext) {
     const date = new Date().toLocaleDateString("en-US", {

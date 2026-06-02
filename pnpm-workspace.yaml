@@ -1,3 +1,6 @@
+packages:
+  - web
+
 allowBuilds:
   better-sqlite3: true
   esbuild: true
@@ -10,4 +13,3 @@ minimumReleaseAgeExclude:
   - '@vitest/spy@3.2.6'
   - '@vitest/utils@3.2.6'
   - vitest@3.2.6
-

@@ -1,0 +1,27 @@
+@import "tailwindcss";
+
+@theme {
+  --color-tg-bg: var(--tg-theme-bg-color, #ffffff);
+  --color-tg-text: var(--tg-theme-text-color, #000000);
+  --color-tg-hint: var(--tg-theme-hint-color, #999999);
+  --color-tg-link: var(--tg-theme-link-color, #2481cc);
+  --color-tg-button: var(--tg-theme-button-color, #2481cc);
+  --color-tg-button-text: var(--tg-theme-button-text-color, #ffffff);
+  --color-tg-secondary-bg: var(--tg-theme-secondary-bg-color, #f0f0f0);
+  --color-tg-section-bg: var(--tg-theme-section-bg-color, #ffffff);
+  --color-tg-section-header: var(--tg-theme-section-header-text-color, #6d6d71);
+  --color-tg-destructive: var(--tg-theme-destructive-text-color, #ff3b30);
+  --color-tg-subtitle: var(--tg-theme-subtitle-text-color, #999999);
+  --color-tg-accent: var(--tg-theme-accent-text-color, #2481cc);
+  --color-tg-section-separator: var(--tg-theme-section-separator-color, #e0e0e0);
+}
+
+body {
+  background-color: var(--color-tg-bg);
+  color: var(--color-tg-text);
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  margin: 0;
+  padding: 0;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
