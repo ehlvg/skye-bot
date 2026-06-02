@@ -50,7 +50,7 @@ function getUserId(req: Request): number {
   return tgUsers.get(req)!.user.id;
 }
 
-export function startPanelServer() {
+export function startPanelServer(): express.Application {
   const app = express();
   app.use(express.json());
 
