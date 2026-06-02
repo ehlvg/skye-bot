@@ -44,7 +44,7 @@ export function ConfigSection() {
 
   return (
     <Stack gap={5}>
-      <Box bg="bg.muted" rounded="2xl" p={4}>
+      <Box bg="bg.default" rounded="2xl" p={4}>
         <Heading size="sm" mb={1}>
           API Configuration
         </Heading>
@@ -63,7 +63,6 @@ export function ConfigSection() {
               }
               placeholder="sk-..."
               rounded="lg"
-              bg="bg.default"
             />
             <Field.HelperText>
               Your OpenAI-compatible API key
@@ -80,7 +79,6 @@ export function ConfigSection() {
               }
               placeholder="https://openrouter.ai/api/v1"
               rounded="lg"
-              bg="bg.default"
             />
             <Field.HelperText>API endpoint (default: OpenRouter)</Field.HelperText>
           </Field.Root>
@@ -94,7 +92,6 @@ export function ConfigSection() {
               }
               placeholder="openai/gpt-oss-120b"
               rounded="lg"
-              bg="bg.default"
             />
             <Field.HelperText>Model ID (e.g. openai/gpt-oss-120b)</Field.HelperText>
           </Field.Root>
@@ -112,7 +109,7 @@ export function ConfigSection() {
               }
             >
               <Slider.Control w="full">
-                <Slider.Track bg="bg.default" rounded="full" h={2}>
+                <Slider.Track bg="bg.subtle" rounded="full" h={2}>
                   <Slider.Range bg="accent.default" rounded="full" />
                 </Slider.Track>
                 <Slider.Thumb

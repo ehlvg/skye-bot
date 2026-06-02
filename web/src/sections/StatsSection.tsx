@@ -53,7 +53,7 @@ export function StatsSection() {
           <Card.Root
             key={item.label}
             rounded="xl"
-            bg="bg.muted"
+            bg="bg.default"
           >
             <Card.Body p={4}>
               <Stack gap={1}>

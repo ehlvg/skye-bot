@@ -163,7 +163,7 @@ export function McpSection() {
           {editingId ? "Edit Server" : "Add MCP Server"}
         </Heading>
 
-        <Box bg="bg.muted" rounded="2xl" p={4}>
+        <Box bg="bg.default" rounded="2xl" p={4}>
           <Stack gap={4}>
             <Field.Root>
               <Field.Label>Name</Field.Label>
@@ -174,7 +174,6 @@ export function McpSection() {
                 }
                 placeholder="my-server"
                 rounded="lg"
-                bg="bg.default"
               />
             </Field.Root>
 
@@ -215,7 +214,6 @@ export function McpSection() {
                     }
                     placeholder="https://example.com/mcp"
                     rounded="lg"
-                    bg="bg.default"
                   />
                 </Field.Root>
                 <Field.Root>
@@ -228,7 +226,6 @@ export function McpSection() {
                     placeholder='{"Authorization": "Bearer token"}'
                     rows={3}
                     rounded="lg"
-                    bg="bg.default"
                   />
                   <Field.HelperText>
                     e.g. {"{"}"Authorization": "Bearer ..."{"}"}
@@ -246,7 +243,6 @@ export function McpSection() {
                     }
                     placeholder="npx"
                     rounded="lg"
-                    bg="bg.default"
                   />
                 </Field.Root>
                 <Field.Root>
@@ -258,7 +254,6 @@ export function McpSection() {
                     }
                     placeholder='["-y", "my-mcp-server"]'
                     rounded="lg"
-                    bg="bg.default"
                   />
                 </Field.Root>
                 <Field.Root>
@@ -271,7 +266,6 @@ export function McpSection() {
                     placeholder='{"API_KEY": "..."}'
                     rows={3}
                     rounded="lg"
-                    bg="bg.default"
                   />
                   <Field.HelperText>Additional env vars</Field.HelperText>
                 </Field.Root>
@@ -332,7 +326,7 @@ export function McpSection() {
             <Card.Root
               key={server.id}
               rounded="xl"
-              bg="bg.muted"
+              bg="bg.default"
             >
               <Card.Body p={4}>
                 <HStack justify="space-between" align="start" gap={3}>

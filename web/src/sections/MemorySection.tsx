@@ -57,7 +57,7 @@ export function MemorySection() {
             <Card.Root
               key={m.id}
               rounded="xl"
-              bg="bg.muted"
+              bg="bg.default"
             >
               <Card.Body p={4}>
                 <HStack justify="space-between" align="start" gap={3}>

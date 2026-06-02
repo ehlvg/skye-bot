@@ -63,7 +63,7 @@ export function PreferencesSection() {
 
   return (
     <Stack gap={5}>
-      <Box bg="bg.muted" rounded="2xl" p={4}>
+      <Box bg="bg.default" rounded="2xl" p={4}>
         <Heading size="sm" mb={1}>
           Chat Toggles
         </Heading>
@@ -110,7 +110,7 @@ export function PreferencesSection() {
         </Stack>
       </Box>
 
-      <Box bg="bg.muted" rounded="2xl" p={4}>
+      <Box bg="bg.default" rounded="2xl" p={4}>
         <Heading size="sm" mb={1}>
           System Prompt
         </Heading>
@@ -128,7 +128,6 @@ export function PreferencesSection() {
             placeholder="e.g. Always respond in Spanish. Be more formal."
             rows={5}
             rounded="lg"
-            bg="bg.default"
           />
           <Field.HelperText>
             Append to the default system prompt

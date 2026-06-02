@@ -27,7 +27,7 @@ export function App() {
   const [tab, setTab] = useState<Tab>("config");
 
   return (
-    <Box h="100dvh" display="flex" flexDirection="column" bg="bg.default">
+    <Box h="100dvh" display="flex" flexDirection="column" bg="bg.subtle">
       <Box flex="1" overflowY="auto" p={3}>
         {tab === "config" && <ConfigSection />}
         {tab === "mcp" && <McpSection />}
