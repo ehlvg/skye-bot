@@ -1,16 +1,18 @@
 import { useState, useEffect } from "react";
 import {
-  List,
-  Section,
-  Cell,
+  Stack,
+  Box,
   Button,
   Input,
-  Textarea,
-  Radio,
-  Badge,
-  Subheadline,
   Text,
-} from "@telegram-apps/telegram-ui";
+  Heading,
+  Badge,
+  HStack,
+  Card,
+  Textarea,
+} from "@chakra-ui/react";
+import { Field } from "@chakra-ui/react";
+import { RadioGroup } from "@chakra-ui/react";
 import { api, type McpServer } from "../api";
 
 type ServerForm = {
@@ -131,196 +133,232 @@ export function McpSection() {
   };
 
   const handleDelete = (server: McpServer) => {
-    window.Telegram.WebApp.showConfirm(`Delete "${server.name}"?`, async (ok) => {
-      if (!ok) return;
-      try {
-        await api.deleteMcpServer(server.id);
-        window.Telegram.WebApp.HapticFeedback.notificationOccurred("success");
-        load();
-      } catch (e) {
-        window.Telegram.WebApp.showAlert(`Failed: ${e}`);
+    window.Telegram.WebApp.showConfirm(
+      `Delete "${server.name}"?`,
+      async (ok) => {
+        if (!ok) return;
+        try {
+          await api.deleteMcpServer(server.id);
+          window.Telegram.WebApp.HapticFeedback.notificationOccurred("success");
+          load();
+        } catch (e) {
+          window.Telegram.WebApp.showAlert(`Failed: ${e}`);
+        }
       }
-    });
+    );
   };
 
   if (loading) {
     return (
-      <List>
-        <Section>
-          <Cell>
-            <Text>Loading...</Text>
-          </Cell>
-        </Section>
-      </List>
+      <Stack gap={4}>
+        <Text color="fg.muted">Loading...</Text>
+      </Stack>
     );
   }
 
   if (showForm) {
     return (
-      <List>
-        <Section header={editingId ? "Edit Server" : "Add MCP Server"}>
-          <Cell>
-            <Subheadline>Name</Subheadline>
+      <Stack gap={6}>
+        <Heading size="sm">
+          {editingId ? "Edit Server" : "Add MCP Server"}
+        </Heading>
+
+        <Stack gap={4}>
+          <Field.Root>
+            <Field.Label>Name</Field.Label>
             <Input
               value={form.name}
-              onChange={(e) => setForm((f) => ({ ...f, name: e.target.value }))}
+              onChange={(e) =>
+                setForm((f) => ({ ...f, name: e.target.value }))
+              }
               placeholder="my-server"
             />
-          </Cell>
+          </Field.Root>
 
-          <Cell>
-            <Subheadline>Type</Subheadline>
-            <div style={{ display: "flex", gap: "12px", marginTop: "8px" }}>
-              <Radio
-                checked={form.type === "http"}
-                onChange={() => setForm((f) => ({ ...f, type: "http" }))}
-              >
-                HTTP
-              </Radio>
-              <Radio
-                checked={form.type === "stdio"}
-                onChange={() => setForm((f) => ({ ...f, type: "stdio" }))}
-              >
-                Stdio
-              </Radio>
-            </div>
-          </Cell>
+          <Box>
+            <Text fontSize="sm" fontWeight="medium" mb={2}>
+              Type
+            </Text>
+            <RadioGroup.Root
+              value={form.type}
+              onValueChange={(details) =>
+                setForm((f) => ({ ...f, type: details.value as "http" | "stdio" }))
+              }
+            >
+              <HStack gap={4}>
+                <RadioGroup.Item value="http">
+                  <RadioGroup.ItemHiddenInput />
+                  <RadioGroup.ItemControl />
+                  <RadioGroup.ItemText>HTTP</RadioGroup.ItemText>
+                </RadioGroup.Item>
+                <RadioGroup.Item value="stdio">
+                  <RadioGroup.ItemHiddenInput />
+                  <RadioGroup.ItemControl />
+                  <RadioGroup.ItemText>Stdio</RadioGroup.ItemText>
+                </RadioGroup.Item>
+              </HStack>
+            </RadioGroup.Root>
+          </Box>
 
           {form.type === "http" ? (
             <>
-              <Cell>
-                <Subheadline>URL</Subheadline>
+              <Field.Root>
+                <Field.Label>URL</Field.Label>
                 <Input
                   type="url"
                   value={form.url}
-                  onChange={(e) => setForm((f) => ({ ...f, url: e.target.value }))}
+                  onChange={(e) =>
+                    setForm((f) => ({ ...f, url: e.target.value }))
+                  }
                   placeholder="https://example.com/mcp"
                 />
-              </Cell>
-              <Cell>
-                <Subheadline>Headers (JSON)</Subheadline>
+              </Field.Root>
+              <Field.Root>
+                <Field.Label>Headers (JSON)</Field.Label>
                 <Textarea
                   value={form.headers}
-                  onChange={(e) => setForm((f) => ({ ...f, headers: e.target.value }))}
+                  onChange={(e) =>
+                    setForm((f) => ({ ...f, headers: e.target.value }))
+                  }
                   placeholder='{"Authorization": "Bearer token"}'
                   rows={3}
                 />
-                <Text style={{ fontSize: "12px", opacity: 0.6, marginTop: "4px" }}>
+                <Field.HelperText>
                   e.g. {"{"}"Authorization": "Bearer ..."{"}"}
-                </Text>
-              </Cell>
+                </Field.HelperText>
+              </Field.Root>
             </>
           ) : (
             <>
-              <Cell>
-                <Subheadline>Command</Subheadline>
+              <Field.Root>
+                <Field.Label>Command</Field.Label>
                 <Input
                   value={form.command}
-                  onChange={(e) => setForm((f) => ({ ...f, command: e.target.value }))}
+                  onChange={(e) =>
+                    setForm((f) => ({ ...f, command: e.target.value }))
+                  }
                   placeholder="npx"
                 />
-              </Cell>
-              <Cell>
-                <Subheadline>Args (JSON array or space-separated)</Subheadline>
+              </Field.Root>
+              <Field.Root>
+                <Field.Label>Args (JSON array or space-separated)</Field.Label>
                 <Input
                   value={form.args}
-                  onChange={(e) => setForm((f) => ({ ...f, args: e.target.value }))}
+                  onChange={(e) =>
+                    setForm((f) => ({ ...f, args: e.target.value }))
+                  }
                   placeholder='["-y", "my-mcp-server"]'
                 />
-              </Cell>
-              <Cell>
-                <Subheadline>Environment (JSON)</Subheadline>
+              </Field.Root>
+              <Field.Root>
+                <Field.Label>Environment (JSON)</Field.Label>
                 <Textarea
                   value={form.env}
-                  onChange={(e) => setForm((f) => ({ ...f, env: e.target.value }))}
+                  onChange={(e) =>
+                    setForm((f) => ({ ...f, env: e.target.value }))
+                  }
                   placeholder='{"API_KEY": "..."}'
                   rows={3}
                 />
-                <Text style={{ fontSize: "12px", opacity: 0.6, marginTop: "4px" }}>
-                  Additional env vars
-                </Text>
-              </Cell>
+                <Field.HelperText>Additional env vars</Field.HelperText>
+              </Field.Root>
             </>
           )}
-        </Section>
+        </Stack>
 
-        <Section>
-          <div style={{ display: "flex", gap: "8px" }}>
-            <Button
-              size="l"
-              stretched
-              mode="bezeled"
-              onClick={() => {
-                setShowForm(false);
-                setEditingId(null);
-              }}
-            >
-              Cancel
-            </Button>
-            <Button
-              size="l"
-              stretched
-              mode="filled"
-              onClick={handleSave}
-              disabled={saving}
-            >
-              {saving ? "Saving..." : "Save"}
-            </Button>
-          </div>
-        </Section>
-      </List>
+        <HStack gap={3}>
+          <Button
+            variant="outline"
+            flex={1}
+            onClick={() => {
+              setShowForm(false);
+              setEditingId(null);
+            }}
+          >
+            Cancel
+          </Button>
+          <Button
+            colorPalette="teal"
+            flex={1}
+            onClick={handleSave}
+            disabled={saving}
+            loading={saving}
+          >
+            {saving ? "Saving..." : "Save"}
+          </Button>
+        </HStack>
+      </Stack>
     );
   }
 
   return (
-    <List>
-      <Section
-        header="MCP Servers"
-        footer={`${servers.length} server(s) configured`}
-      >
+    <Stack gap={6}>
+      <Box>
+        <Heading size="sm" mb={1}>
+          MCP Servers
+        </Heading>
+        <Text fontSize="sm" color="fg.muted">
+          {servers.length} server(s) configured
+        </Text>
+      </Box>
+
+      <Stack gap={3}>
         {servers.length === 0 ? (
-          <Cell>
-            <Text style={{ opacity: 0.6 }}>
-              No MCP servers configured. Add one to extend the bot with external tools.
-            </Text>
-          </Cell>
+          <Text color="fg.muted">
+            No MCP servers configured. Add one to extend the bot with external
+            tools.
+          </Text>
         ) : (
           servers.map((server) => (
-            <Cell
-              key={server.id}
-              after={
-                <Badge type="dot" mode="primary" style={{ backgroundColor: server.connected ? "#34c759" : "#ff3b30" }} />
-              }
-            >
-              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", width: "100%" }}>
-                <div style={{ flex: 1 }}>
-                  <Subheadline>{server.name}</Subheadline>
-                  <Text style={{ fontSize: "12px", opacity: 0.6, marginTop: "2px" }}>
-                    {server.config.type === "http" || server.config.url
-                      ? `HTTP: ${server.config.url}`
-                      : `Stdio: ${server.config.command}`}
-                    {server.toolCount != null && ` · ${server.toolCount} tools`}
-                  </Text>
-                </div>
-                <div style={{ display: "flex", gap: "4px" }}>
-                  <Button size="s" mode="bezeled" onClick={() => openEdit(server)}>
-                    Edit
-                  </Button>
-                  <Button size="s" mode="bezeled" onClick={() => handleDelete(server)}>
-                    Delete
-                  </Button>
-                </div>
-              </div>
-            </Cell>
+            <Card.Root key={server.id} variant="outline">
+              <Card.Body p={3}>
+                <HStack justify="space-between" align="start">
+                  <Stack gap={0.5} flex={1}>
+                    <HStack gap={2} align="center">
+                      <Text fontWeight="semibold">{server.name}</Text>
+                      <Badge
+                        size="sm"
+                        colorPalette={server.connected ? "green" : "red"}
+                        variant="solid"
+                      >
+                        {server.connected ? "Connected" : "Disconnected"}
+                      </Badge>
+                    </HStack>
+                    <Text fontSize="xs" color="fg.muted">
+                      {server.config.type === "http" || server.config.url
+                        ? `HTTP: ${server.config.url}`
+                        : `Stdio: ${server.config.command}`}
+                      {server.toolCount != null &&
+                        ` · ${server.toolCount} tools`}
+                    </Text>
+                  </Stack>
+                  <HStack gap={2}>
+                    <Button
+                      size="xs"
+                      variant="outline"
+                      onClick={() => openEdit(server)}
+                    >
+                      Edit
+                    </Button>
+                    <Button
+                      size="xs"
+                      variant="outline"
+                      colorPalette="red"
+                      onClick={() => handleDelete(server)}
+                    >
+                      Delete
+                    </Button>
+                  </HStack>
+                </HStack>
+              </Card.Body>
+            </Card.Root>
           ))
         )}
-      </Section>
+      </Stack>
 
-      <Section>
-        <Button size="l" stretched mode="filled" onClick={openAdd}>
-          + Add Server
-        </Button>
-      </Section>
-    </List>
+      <Button colorPalette="teal" onClick={openAdd} w="full">
+        + Add Server
+      </Button>
+    </Stack>
   );
 }

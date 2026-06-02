@@ -1,14 +1,7 @@
 import { useState, useEffect } from "react";
-import {
-  List,
-  Section,
-  Cell,
-  Input,
-  Slider,
-  Button,
-  Subheadline,
-  Text,
-} from "@telegram-apps/telegram-ui";
+import { Stack, Box, Button, Input, Text, Heading } from "@chakra-ui/react";
+import { Field } from "@chakra-ui/react";
+import { Slider } from "@chakra-ui/react";
 import { api, type UserConfig } from "../api";
 
 export function ConfigSection() {
@@ -43,86 +36,98 @@ export function ConfigSection() {
 
   if (loading) {
     return (
-      <List>
-        <Section>
-          <Cell>
-            <Text>Loading...</Text>
-          </Cell>
-        </Section>
-      </List>
+      <Stack gap={4}>
+        <Text color="fg.muted">Loading...</Text>
+      </Stack>
     );
   }
 
   return (
-    <List>
-      <Section header="API Configuration" footer="Override default model and provider settings">
-        <Cell>
-          <Subheadline>API Key</Subheadline>
-          <Input
-            type="password"
-            value={config.apiKey ?? ""}
-            onChange={(e) => update({ apiKey: e.target.value || undefined })}
-            placeholder="sk-..."
-          />
-          <Text style={{ fontSize: "12px", opacity: 0.6, marginTop: "4px" }}>
-            Your OpenAI-compatible API key
-          </Text>
-        </Cell>
+    <Stack gap={6}>
+      <Box>
+        <Heading size="sm" mb={2}>
+          API Configuration
+        </Heading>
+        <Text fontSize="sm" color="fg.muted" mb={4}>
+          Override default model and provider settings
+        </Text>
 
-        <Cell>
-          <Subheadline>Base URL</Subheadline>
-          <Input
-            type="url"
-            value={config.baseUrl ?? ""}
-            onChange={(e) => update({ baseUrl: e.target.value || undefined })}
-            placeholder="https://openrouter.ai/api/v1"
-          />
-          <Text style={{ fontSize: "12px", opacity: 0.6, marginTop: "4px" }}>
-            API endpoint (default: OpenRouter)
-          </Text>
-        </Cell>
+        <Stack gap={4}>
+          <Field.Root>
+            <Field.Label>API Key</Field.Label>
+            <Input
+              type="password"
+              value={config.apiKey ?? ""}
+              onChange={(e) =>
+                update({ apiKey: e.target.value || undefined })
+              }
+              placeholder="sk-..."
+            />
+            <Field.HelperText>
+              Your OpenAI-compatible API key
+            </Field.HelperText>
+          </Field.Root>
 
-        <Cell>
-          <Subheadline>Model</Subheadline>
-          <Input
-            type="text"
-            value={config.model ?? ""}
-            onChange={(e) => update({ model: e.target.value || undefined })}
-            placeholder="openai/gpt-oss-120b"
-          />
-          <Text style={{ fontSize: "12px", opacity: 0.6, marginTop: "4px" }}>
-            Model ID (e.g. openai/gpt-oss-120b)
-          </Text>
-        </Cell>
+          <Field.Root>
+            <Field.Label>Base URL</Field.Label>
+            <Input
+              type="url"
+              value={config.baseUrl ?? ""}
+              onChange={(e) =>
+                update({ baseUrl: e.target.value || undefined })
+              }
+              placeholder="https://openrouter.ai/api/v1"
+            />
+            <Field.HelperText>API endpoint (default: OpenRouter)</Field.HelperText>
+          </Field.Root>
 
-        <Cell>
-          <Subheadline>Max Tokens</Subheadline>
-          <Slider
-            min={100}
-            max={4096}
-            step={100}
-            value={config.maxTokens ?? 500}
-            onChange={(value) => update({ maxTokens: value })}
-          />
-          <Text style={{ fontSize: "12px", opacity: 0.6, textAlign: "right", marginTop: "4px" }}>
-            {config.maxTokens ?? 500}
-          </Text>
-        </Cell>
-      </Section>
+          <Field.Root>
+            <Field.Label>Model</Field.Label>
+            <Input
+              value={config.model ?? ""}
+              onChange={(e) =>
+                update({ model: e.target.value || undefined })
+              }
+              placeholder="openai/gpt-oss-120b"
+            />
+            <Field.HelperText>Model ID (e.g. openai/gpt-oss-120b)</Field.HelperText>
+          </Field.Root>
+
+          <Field.Root>
+            <Field.Label>Max Tokens</Field.Label>
+            <Slider.Root
+              min={100}
+              max={4096}
+              step={100}
+              value={[config.maxTokens ?? 500]}
+              onValueChange={(details) =>
+                update({ maxTokens: details.value[0] })
+              }
+            >
+              <Slider.Control>
+                <Slider.Track bg="bg.emphasized">
+                  <Slider.Range bg="teal.500" />
+                </Slider.Track>
+                <Slider.Thumb index={0} />
+              </Slider.Control>
+            </Slider.Root>
+            <Text fontSize="sm" color="fg.muted" textAlign="right" mt={1}>
+              {config.maxTokens ?? 500}
+            </Text>
+          </Field.Root>
+        </Stack>
+      </Box>
 
       {dirty && (
-        <Section>
-          <Button
-            size="l"
-            stretched
-            mode="filled"
-            onClick={save}
-            disabled={saving}
-          >
-            {saving ? "Saving..." : "Save Changes"}
-          </Button>
-        </Section>
+        <Button
+          colorPalette="teal"
+          onClick={save}
+          disabled={saving}
+          loading={saving}
+        >
+          {saving ? "Saving..." : "Save Changes"}
+        </Button>
       )}
-    </List>
+    </Stack>
   );
 }

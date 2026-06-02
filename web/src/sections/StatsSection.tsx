@@ -1,11 +1,5 @@
 import { useState, useEffect } from "react";
-import {
-  List,
-  Section,
-  Cell,
-  Subheadline,
-  Text,
-} from "@telegram-apps/telegram-ui";
+import { Stack, Box, Text, Heading, SimpleGrid, Card } from "@chakra-ui/react";
 import { api, type UsageStats } from "../api";
 
 export function StatsSection() {
@@ -18,66 +12,62 @@ export function StatsSection() {
 
   if (loading) {
     return (
-      <List>
-        <Section>
-          <Cell>
-            <Text>Loading...</Text>
-          </Cell>
-        </Section>
-      </List>
+      <Stack gap={4}>
+        <Text color="fg.muted">Loading...</Text>
+      </Stack>
     );
   }
 
   if (!stats) {
     return (
-      <List>
-        <Section>
-          <Cell>
-            <Text style={{ opacity: 0.6 }}>No data available</Text>
-          </Cell>
-        </Section>
-      </List>
+      <Stack gap={4}>
+        <Text color="fg.muted">No data available</Text>
+      </Stack>
     );
   }
 
+  const statItems = [
+    { label: "Total Requests", value: stats.totalRequests.toLocaleString() },
+    { label: "Today", value: stats.requestsToday.toLocaleString() },
+    { label: "Avg Latency", value: `${Math.round(stats.avgLatencyMs)}ms` },
+    {
+      label: "Error Rate",
+      value: `${(stats.errorRate * 100).toFixed(1)}%`,
+      color: stats.errorRate > 0.1 ? "red.500" : undefined,
+    },
+  ];
+
   return (
-    <List>
-      <Section header="Usage Statistics" footer="Your request history">
-        <Cell>
-          <Subheadline>Total Requests</Subheadline>
-          <Text style={{ fontSize: "24px", fontWeight: 600, marginTop: "4px" }}>
-            {stats.totalRequests.toLocaleString()}
-          </Text>
-        </Cell>
+    <Stack gap={6}>
+      <Box>
+        <Heading size="sm" mb={1}>
+          Usage Statistics
+        </Heading>
+        <Text fontSize="sm" color="fg.muted">
+          Your request history
+        </Text>
+      </Box>
 
-        <Cell>
-          <Subheadline>Today</Subheadline>
-          <Text style={{ fontSize: "24px", fontWeight: 600, marginTop: "4px" }}>
-            {stats.requestsToday.toLocaleString()}
-          </Text>
-        </Cell>
-
-        <Cell>
-          <Subheadline>Avg Latency</Subheadline>
-          <Text style={{ fontSize: "24px", fontWeight: 600, marginTop: "4px" }}>
-            {Math.round(stats.avgLatencyMs)}ms
-          </Text>
-        </Cell>
-
-        <Cell>
-          <Subheadline>Error Rate</Subheadline>
-          <Text
-            style={{
-              fontSize: "24px",
-              fontWeight: 600,
-              marginTop: "4px",
-              color: stats.errorRate > 0.1 ? "#ff3b30" : undefined,
-            }}
-          >
-            {(stats.errorRate * 100).toFixed(1)}%
-          </Text>
-        </Cell>
-      </Section>
-    </List>
+      <SimpleGrid columns={2} gap={3}>
+        {statItems.map((item) => (
+          <Card.Root key={item.label} variant="outline">
+            <Card.Body p={3}>
+              <Stack gap={1}>
+                <Text fontSize="xs" color="fg.muted" fontWeight="medium">
+                  {item.label}
+                </Text>
+                <Text
+                  fontSize="xl"
+                  fontWeight="bold"
+                  color={item.color ?? "fg.default"}
+                >
+                  {item.value}
+                </Text>
+              </Stack>
+            </Card.Body>
+          </Card.Root>
+        ))}
+      </SimpleGrid>
+    </Stack>
   );
 }

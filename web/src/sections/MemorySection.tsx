@@ -1,11 +1,5 @@
 import { useState, useEffect } from "react";
-import {
-  List,
-  Section,
-  Cell,
-  Button,
-  Text,
-} from "@telegram-apps/telegram-ui";
+import { Stack, Box, Button, Text, Heading, Card, HStack } from "@chakra-ui/react";
 import { api, type MemoryEntry } from "../api";
 
 export function MemorySection() {
@@ -35,50 +29,59 @@ export function MemorySection() {
 
   if (loading) {
     return (
-      <List>
-        <Section>
-          <Cell>
-            <Text>Loading...</Text>
-          </Cell>
-        </Section>
-      </List>
+      <Stack gap={4}>
+        <Text color="fg.muted">Loading...</Text>
+      </Stack>
     );
   }
 
   return (
-    <List>
-      <Section header="Saved Memories" footer={`${memories.length} memories across all chats`}>
+    <Stack gap={6}>
+      <Box>
+        <Heading size="sm" mb={1}>
+          Saved Memories
+        </Heading>
+        <Text fontSize="sm" color="fg.muted">
+          {memories.length} memories across all chats
+        </Text>
+      </Box>
+
+      <Stack gap={3}>
         {memories.length === 0 ? (
-          <Cell>
-            <Text style={{ opacity: 0.6 }}>
-              No memories saved yet. The bot automatically saves important information during conversations.
-            </Text>
-          </Cell>
+          <Text color="fg.muted">
+            No memories saved yet. The bot automatically saves important
+            information during conversations.
+          </Text>
         ) : (
           memories.map((m) => (
-            <Cell key={m.id}>
-              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: "8px", width: "100%" }}>
-                <div style={{ flex: 1 }}>
-                  <Text>{m.content}</Text>
-                  <Text style={{ fontSize: "11px", opacity: 0.5, marginTop: "4px" }}>
-                    {new Date(m.createdAt).toLocaleDateString()} · {m.id}
-                  </Text>
-                </div>
-                <Button
-                  size="s"
-                  mode="bezeled"
-                  onClick={() => {
-                    const chatId = Number(m.id.split("_")[0]) || 0;
-                    handleDelete(chatId, m.id);
-                  }}
-                >
-                  Delete
-                </Button>
-              </div>
-            </Cell>
+            <Card.Root key={m.id} variant="outline">
+              <Card.Body p={3}>
+                <HStack justify="space-between" align="start" gap={3}>
+                  <Stack gap={1} flex={1}>
+                    <Text fontSize="sm" lineHeight="short">
+                      {m.content}
+                    </Text>
+                    <Text fontSize="xs" color="fg.muted">
+                      {new Date(m.createdAt).toLocaleDateString()} · {m.id}
+                    </Text>
+                  </Stack>
+                  <Button
+                    size="xs"
+                    variant="outline"
+                    colorPalette="red"
+                    onClick={() => {
+                      const chatId = Number(m.id.split("_")[0]) || 0;
+                      handleDelete(chatId, m.id);
+                    }}
+                  >
+                    Delete
+                  </Button>
+                </HStack>
+              </Card.Body>
+            </Card.Root>
           ))
         )}
-      </Section>
-    </List>
+      </Stack>
+    </Stack>
   );
 }
