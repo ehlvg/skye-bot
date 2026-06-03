@@ -1,13 +1,375 @@
 <!doctype html>
-<html lang="en">
+<html lang="en" data-color-scheme="light">
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
     <title>Skye Settings</title>
-    <script src="https://telegram.org/js/telegram-web-app.js"></script>
+    <script src="https://telegram.org/js/telegram-web-app.js?57"></script>
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <script type="module" src="/src/main.js"></script>
   </head>
-  <body>
-    <div id="root"></div>
-    <script type="module" src="/src/main.tsx"></script>
+  <body x-data="app" x-cloak>
+    <!-- Top header — title + bot subtitle, mirrors iOS modal sheet title -->
+    <header class="topbar" :style="`padding-top: calc(env(safe-area-inset-top) + 12px)`">
+      <h1 class="topbar-title">Skye</h1>
+      <p class="topbar-subtitle">Settings</p>
+    </header>
+
+    <main class="content" :style="`padding-bottom: calc(env(safe-area-inset-bottom) + 80px)`">
+      <!-- Profile tab -->
+      <section x-show="tab === 'profile'" x-transition.opacity>
+        <!-- Account card -->
+        <div class="caption">Account</div>
+        <ul class="list">
+          <li class="row">
+            <div class="row-leading">
+              <span class="row-icon row-icon-tint" x-html="icons.userCircleFill"></span>
+            </div>
+            <div class="row-content">
+              <div class="row-title" x-text="user.name || 'Guest'"></div>
+              <div class="row-subtitle" x-text="user.handle"></div>
+            </div>
+          </li>
+        </ul>
+
+        <!-- Provider card -->
+        <div class="caption">AI Provider</div>
+        <ul class="list">
+          <li class="row row-input">
+            <label class="row-label">API Key</label>
+            <input
+              type="password"
+              class="row-field"
+              placeholder="sk-…"
+              x-model="config.apiKey"
+              @input="markDirty"
+              autocomplete="off"
+              spellcheck="false"
+            />
+          </li>
+          <li class="row row-input">
+            <label class="row-label">Base URL</label>
+            <input
+              type="url"
+              class="row-field"
+              placeholder="https://api.openai.com/v1"
+              x-model="config.baseUrl"
+              @input="markDirty"
+              autocomplete="off"
+              spellcheck="false"
+            />
+          </li>
+          <li class="row row-input">
+            <label class="row-label">Model</label>
+            <input
+              type="text"
+              class="row-field"
+              placeholder="openai/gpt-oss-120b"
+              x-model="config.model"
+              @input="markDirty"
+              autocomplete="off"
+              spellcheck="false"
+            />
+          </li>
+          <li class="row row-input">
+            <label class="row-label">Max Tokens</label>
+            <input
+              type="number"
+              class="row-field"
+              placeholder="500"
+              min="1"
+              x-model.number="config.maxTokens"
+              @input="markDirty"
+            />
+          </li>
+        </ul>
+        <p class="footnote">
+          Used for chat requests when this chat isn't on the allow-list. Empty fields fall back to the
+          server defaults.
+        </p>
+
+        <!-- Custom instructions card -->
+        <div class="caption">Custom Instructions</div>
+        <ul class="list">
+          <li class="row row-textarea">
+            <textarea
+              class="row-field row-field-textarea"
+              rows="5"
+              placeholder="e.g. Always respond in Spanish. Be more formal."
+              x-model="config.systemPrompt"
+              @input="markDirty"
+            ></textarea>
+          </li>
+        </ul>
+        <p class="footnote">Appended to the default Skye personality.</p>
+
+        <!-- Chat behaviour card -->
+        <div class="caption">Chat</div>
+        <ul class="list">
+          <li class="row" @click="toggleVoice()">
+            <div class="row-leading">
+              <span class="row-icon row-icon-tint" x-html="icons.waveformFill"></span>
+            </div>
+            <div class="row-content">
+              <div class="row-title">Voice Mode</div>
+              <div class="row-subtitle">Send replies as voice notes via Yandex SpeechKit</div>
+            </div>
+            <div class="row-trailing">
+              <button
+                type="button"
+                class="switch"
+                :class="chatConfig.voiceMode && 'is-on'"
+                role="switch"
+                :aria-checked="chatConfig.voiceMode"
+                @click.stop="toggleVoice()"
+              >
+                <span class="switch-thumb"></span>
+              </button>
+            </div>
+          </li>
+        </ul>
+      </section>
+
+      <!-- Tools (MCP) tab -->
+      <section x-show="tab === 'tools'" x-transition.opacity>
+        <div class="caption">MCP Servers</div>
+        <ul class="list" x-show="mcpServers.length > 0">
+          <template x-for="server in mcpServers" :key="server.id">
+            <li class="row row-tap" @click="openServerEditor(server)">
+              <div class="row-leading">
+                <span class="row-icon row-icon-tint" x-html="icons.plugFill"></span>
+              </div>
+              <div class="row-content">
+                <div class="row-title" x-text="server.name"></div>
+                <div class="row-subtitle">
+                  <span x-text="server.toolCount"></span> tools
+                </div>
+              </div>
+              <div class="row-trailing">
+                <span class="row-chevron" x-html="icons.caretRight"></span>
+              </div>
+            </li>
+          </template>
+        </ul>
+
+        <ul class="list" x-show="mcpServers.length === 0">
+          <li class="row row-empty">
+            <div class="row-content">
+              <div class="row-title">No servers connected</div>
+              <div class="row-subtitle">Add one to expose extra tools to the model.</div>
+            </div>
+          </li>
+        </ul>
+
+        <button class="button button-fill" @click="openServerEditor(null)">
+          <span class="button-icon" x-html="icons.plusBold"></span>
+          Add Server
+        </button>
+        <p class="footnote">
+          MCP servers expose extra tools to the LLM. Stdio and Streamable HTTP transports are supported.
+        </p>
+      </section>
+
+      <!-- Memory tab -->
+      <section x-show="tab === 'memory'" x-transition.opacity>
+        <div class="caption">Saved Memories</div>
+        <ul class="list" x-show="memories.length > 0">
+          <template x-for="memory in memories" :key="memory.id + ':' + memory.chatId">
+            <li class="row row-tap" @click="confirmDeleteMemory(memory)">
+              <div class="row-leading">
+                <span class="row-icon row-icon-tint" x-html="icons.brainFill"></span>
+              </div>
+              <div class="row-content">
+                <div class="row-title row-title-multiline" x-text="memory.content"></div>
+                <div class="row-subtitle" x-text="formatDate(memory.createdAt)"></div>
+              </div>
+              <div class="row-trailing">
+                <span class="row-chevron row-chevron-destructive" x-html="icons.trash"></span>
+              </div>
+            </li>
+          </template>
+        </ul>
+
+        <ul class="list" x-show="memories.length === 0">
+          <li class="row row-empty">
+            <div class="row-content">
+              <div class="row-title">No memories yet</div>
+              <div class="row-subtitle">Ask Skye to remember something during a chat.</div>
+            </div>
+          </li>
+        </ul>
+
+        <p class="footnote">
+          Tap a memory to delete it. Memories are scoped to a specific chat — clearing them only affects
+          that chat's history.
+        </p>
+      </section>
+
+      <!-- Stats tab -->
+      <section x-show="tab === 'stats'" x-transition.opacity>
+        <div class="caption">Usage</div>
+        <ul class="list">
+          <li class="row">
+            <div class="row-leading">
+              <span class="row-icon row-icon-tint" x-html="icons.chartBarFill"></span>
+            </div>
+            <div class="row-content">
+              <div class="row-title">Total Requests</div>
+            </div>
+            <div class="row-trailing">
+              <span class="row-value" x-text="stats.totalRequests"></span>
+            </div>
+          </li>
+          <li class="row">
+            <div class="row-leading">
+              <span class="row-icon row-icon-tint" x-html="icons.calendarBlankFill"></span>
+            </div>
+            <div class="row-content">
+              <div class="row-title">Today</div>
+            </div>
+            <div class="row-trailing">
+              <span class="row-value" x-text="stats.requestsToday"></span>
+            </div>
+          </li>
+          <li class="row">
+            <div class="row-leading">
+              <span class="row-icon row-icon-tint" x-html="icons.timerFill"></span>
+            </div>
+            <div class="row-content">
+              <div class="row-title">Avg Latency</div>
+            </div>
+            <div class="row-trailing">
+              <span class="row-value" x-text="`${Math.round(stats.avgLatencyMs)} ms`"></span>
+            </div>
+          </li>
+          <li class="row">
+            <div class="row-leading">
+              <span class="row-icon row-icon-destructive" x-html="icons.warningOctagonFill"></span>
+            </div>
+            <div class="row-content">
+              <div class="row-title">Error Rate</div>
+            </div>
+            <div class="row-trailing">
+              <span class="row-value" x-text="`${(stats.errorRate * 100).toFixed(1)}%`"></span>
+            </div>
+          </li>
+        </ul>
+        <p class="footnote">
+          Computed from the server-side audit log. Older entries are pruned automatically.
+        </p>
+      </section>
+    </main>
+
+    <!-- Bottom tab bar — fixed, safe-area aware -->
+    <nav class="tabbar" :style="`padding-bottom: calc(env(safe-area-inset-bottom) + 6px)`">
+      <button
+        class="tab"
+        :class="tab === 'profile' && 'is-active'"
+        @click="setTab('profile')"
+      >
+        <span class="tab-icon" x-html="tab === 'profile' ? icons.userFill : icons.user"></span>
+        <span class="tab-label">Profile</span>
+      </button>
+      <button
+        class="tab"
+        :class="tab === 'tools' && 'is-active'"
+        @click="setTab('tools')"
+      >
+        <span class="tab-icon" x-html="tab === 'tools' ? icons.wrenchFill : icons.wrench"></span>
+        <span class="tab-label">Tools</span>
+      </button>
+      <button
+        class="tab"
+        :class="tab === 'memory' && 'is-active'"
+        @click="setTab('memory')"
+      >
+        <span class="tab-icon" x-html="tab === 'memory' ? icons.brainFill : icons.brain"></span>
+        <span class="tab-label">Memory</span>
+      </button>
+      <button
+        class="tab"
+        :class="tab === 'stats' && 'is-active'"
+        @click="setTab('stats')"
+      >
+        <span class="tab-icon" x-html="tab === 'stats' ? icons.chartBarFill : icons.chartBar"></span>
+        <span class="tab-label">Stats</span>
+      </button>
+    </nav>
+
+    <!-- MCP editor sheet — iOS-style full-height modal -->
+    <div
+      class="sheet"
+      x-show="editor.open"
+      x-transition:enter="sheet-enter"
+      x-transition:leave="sheet-leave"
+      @click.self="closeServerEditor"
+    >
+      <div class="sheet-panel" :style="`padding-bottom: calc(env(safe-area-inset-bottom) + 16px)`">
+        <header class="sheet-header">
+          <button class="sheet-action" @click="closeServerEditor">Cancel</button>
+          <h2 class="sheet-title" x-text="editor.id ? 'Edit Server' : 'Add Server'"></h2>
+          <button class="sheet-action sheet-action-strong" @click="saveServer" :disabled="!editor.name || !editor.config">
+            Save
+          </button>
+        </header>
+
+        <div class="sheet-content">
+          <div class="caption">Name</div>
+          <ul class="list">
+            <li class="row row-input">
+              <input
+                type="text"
+                class="row-field"
+                placeholder="my-server"
+                x-model="editor.name"
+                autocomplete="off"
+                spellcheck="false"
+              />
+            </li>
+          </ul>
+
+          <div class="caption">Server Config (JSON)</div>
+          <ul class="list">
+            <li class="row row-textarea">
+              <textarea
+                class="row-field row-field-textarea row-field-mono"
+                rows="8"
+                placeholder='{"command": "npx", "args": ["-y", "@some/mcp-server"]}'
+                x-model="editor.config"
+                spellcheck="false"
+              ></textarea>
+            </li>
+          </ul>
+          <p class="footnote">
+            Use <code>${input:name}</code> placeholders to reference per-server inputs declared below,
+            or <code>${ENV_VAR}</code> for environment variables.
+          </p>
+
+          <div class="caption" x-show="editor.inputKeys.length > 0">Inputs</div>
+          <ul class="list" x-show="editor.inputKeys.length > 0">
+            <template x-for="key in editor.inputKeys" :key="key">
+              <li class="row row-input">
+                <label class="row-label" x-text="key"></label>
+                <input
+                  type="text"
+                  class="row-field"
+                  placeholder="value"
+                  x-model="editor.inputs[key]"
+                  autocomplete="off"
+                  spellcheck="false"
+                />
+              </li>
+            </template>
+          </ul>
+
+          <template x-if="editor.id">
+            <button class="button button-destructive" @click="deleteServer">
+              <span class="button-icon" x-html="icons.trashBold"></span>
+              Delete Server
+            </button>
+          </template>
+        </div>
+      </div>
+    </div>
   </body>
 </html>

@@ -1,0 +1,602 @@
+/* ============================================================================
+   Skye Panel — vanilla CSS, iOS Telegram style.
+   Drives every color from Telegram's --tg-theme-* variables. Each one has a
+   sensible light fallback so the panel renders in a normal browser too.
+   ============================================================================ */
+
+:root {
+  /* Telegram theme variables (fallback to standard iOS Settings palette). */
+  --tg-bg: var(--tg-theme-bg-color, #ffffff);
+  --tg-secondary-bg: var(--tg-theme-secondary-bg-color, #efeff4);
+  --tg-section-bg: var(--tg-theme-section-bg-color, #ffffff);
+  --tg-text: var(--tg-theme-text-color, #000000);
+  --tg-hint: var(--tg-theme-hint-color, #8e8e93);
+  --tg-link: var(--tg-theme-link-color, #007aff);
+  --tg-button: var(--tg-theme-button-color, #007aff);
+  --tg-button-text: var(--tg-theme-button-text-color, #ffffff);
+  --tg-section-header: var(--tg-theme-section-header-text-color, #6d6d72);
+  --tg-section-separator: var(--tg-theme-section-separator-color, rgba(60, 60, 67, 0.13));
+  --tg-accent: var(--tg-theme-accent-text-color, #007aff);
+  --tg-subtitle: var(--tg-theme-subtitle-text-color, #8e8e93);
+  --tg-destructive: var(--tg-theme-destructive-text-color, #ff3b30);
+  --tg-bottom-bg: var(--tg-theme-bottom-bar-bg-color, var(--tg-bg));
+
+  /* Derived semantic tokens. */
+  --bg: var(--tg-secondary-bg);
+  --card: var(--tg-section-bg);
+  --text: var(--tg-text);
+  --hint: var(--tg-hint);
+  --accent: var(--tg-accent);
+  --link: var(--tg-link);
+  --separator: var(--tg-section-separator);
+  --caption: var(--tg-section-header);
+  --destructive: var(--tg-destructive);
+
+  --radius: 10px;
+  --row-gutter: 16px;
+  --row-min-height: 44px;
+  --section-spacing: 28px;
+  --tabbar-height: 56px;
+
+  --shadow-sheet: 0 -8px 24px rgba(0, 0, 0, 0.08);
+
+  /* iOS-like dynamic type. */
+  font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", "SF Pro Display",
+    "Helvetica Neue", system-ui, sans-serif;
+  font-size: 17px;
+  line-height: 1.3;
+  color: var(--text);
+  -webkit-text-size-adjust: 100%;
+  -webkit-tap-highlight-color: transparent;
+}
+
+[data-color-scheme="dark"] {
+  /* Telegram already overrides --tg-theme-* in dark themes, but provide
+     usable fallbacks for the standalone browser preview. */
+  --tg-bg: var(--tg-theme-bg-color, #000000);
+  --tg-secondary-bg: var(--tg-theme-secondary-bg-color, #1c1c1e);
+  --tg-section-bg: var(--tg-theme-section-bg-color, #2c2c2e);
+  --tg-text: var(--tg-theme-text-color, #ffffff);
+  --tg-hint: var(--tg-theme-hint-color, #8e8e93);
+  --tg-section-header: var(--tg-theme-section-header-text-color, #8e8e93);
+  --tg-section-separator: var(--tg-theme-section-separator-color, rgba(84, 84, 88, 0.35));
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  margin: 0;
+  padding: 0;
+  background: var(--bg);
+  color: var(--text);
+  min-height: 100vh;
+  min-height: 100dvh;
+  overscroll-behavior-y: none;
+}
+
+[x-cloak] {
+  display: none !important;
+}
+
+a {
+  color: var(--link);
+  text-decoration: none;
+}
+
+code {
+  font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+  font-size: 0.92em;
+  padding: 1px 4px;
+  background: rgba(120, 120, 128, 0.16);
+  border-radius: 4px;
+}
+
+/* ============================================================================
+   Top bar — modal-sheet style with title + bot subtitle.
+   ============================================================================ */
+.topbar {
+  position: sticky;
+  top: 0;
+  z-index: 10;
+  background: var(--bg);
+  padding: 12px 16px 12px;
+  text-align: center;
+}
+
+.topbar-title {
+  margin: 0;
+  font-size: 17px;
+  font-weight: 600;
+  letter-spacing: -0.4px;
+  color: var(--text);
+}
+
+.topbar-subtitle {
+  margin: 2px 0 0;
+  font-size: 13px;
+  font-weight: 400;
+  color: var(--hint);
+}
+
+/* ============================================================================
+   Main content area + grouped lists (iOS Settings).
+   ============================================================================ */
+.content {
+  padding: 8px 16px 0;
+  max-width: 640px;
+  margin: 0 auto;
+}
+
+.caption {
+  text-transform: uppercase;
+  font-size: 13px;
+  font-weight: 400;
+  color: var(--caption);
+  letter-spacing: -0.08px;
+  padding: 16px 16px 6px;
+}
+
+.footnote {
+  font-size: 13px;
+  line-height: 1.35;
+  color: var(--caption);
+  margin: 6px 16px 0;
+  padding-bottom: 8px;
+}
+
+.list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  background: var(--card);
+  border-radius: var(--radius);
+  overflow: hidden;
+}
+
+/* ============================================================================
+   Rows — leading icon, content (title/subtitle), trailing value/chevron.
+   Internal hairline separator inset to align with content (iOS convention).
+   ============================================================================ */
+.row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-height: var(--row-min-height);
+  padding: 11px var(--row-gutter);
+  position: relative;
+  background: var(--card);
+}
+
+.row + .row::before {
+  content: "";
+  position: absolute;
+  left: calc(var(--row-gutter) + 36px); /* aligns with row-content */
+  right: 0;
+  top: 0;
+  height: 1px;
+  background: var(--separator);
+  transform: scaleY(0.5);
+  transform-origin: top;
+  pointer-events: none;
+}
+
+.row:has(+ .row.row-input)::before,
+.row.row-input + .row::before {
+  left: var(--row-gutter);
+}
+
+.row-leading {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  flex-shrink: 0;
+}
+
+.row-icon {
+  display: inline-flex;
+  width: 24px;
+  height: 24px;
+}
+
+.row-icon svg {
+  width: 100%;
+  height: 100%;
+  display: block;
+}
+
+.row-icon-tint {
+  color: var(--accent);
+}
+
+.row-icon-destructive {
+  color: var(--destructive);
+}
+
+.row-content {
+  flex: 1;
+  min-width: 0;
+}
+
+.row-title {
+  font-size: 17px;
+  font-weight: 400;
+  color: var(--text);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.row-title-multiline {
+  white-space: normal;
+  line-height: 1.35;
+}
+
+.row-subtitle {
+  font-size: 13px;
+  color: var(--hint);
+  margin-top: 2px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.row-trailing {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-shrink: 0;
+  color: var(--hint);
+}
+
+.row-value {
+  font-size: 17px;
+  font-weight: 400;
+  color: var(--hint);
+}
+
+.row-chevron {
+  display: inline-flex;
+  width: 18px;
+  height: 18px;
+  color: rgba(60, 60, 67, 0.3);
+}
+
+.row-chevron svg {
+  width: 100%;
+  height: 100%;
+  display: block;
+}
+
+[data-color-scheme="dark"] .row-chevron {
+  color: rgba(235, 235, 245, 0.3);
+}
+
+.row-chevron-destructive {
+  color: var(--destructive);
+  opacity: 0.7;
+}
+
+.row-tap {
+  cursor: pointer;
+  transition: background-color 80ms ease-out;
+}
+
+.row-tap:active {
+  background: rgba(120, 120, 128, 0.18);
+}
+
+.row-empty .row-title {
+  color: var(--hint);
+}
+
+/* ============================================================================
+   Input rows — label aligned left, free-form input to the right.
+   Textarea rows give the field full width below an optional label.
+   ============================================================================ */
+.row-input {
+  align-items: center;
+}
+
+.row-label {
+  font-size: 17px;
+  color: var(--text);
+  flex-shrink: 0;
+  min-width: 90px;
+}
+
+.row-field {
+  flex: 1;
+  appearance: none;
+  border: none;
+  background: transparent;
+  font: inherit;
+  color: var(--text);
+  outline: none;
+  padding: 4px 0;
+  text-align: right;
+  min-width: 0;
+}
+
+.row-field::placeholder {
+  color: var(--hint);
+  opacity: 1;
+}
+
+.row-textarea {
+  align-items: stretch;
+  flex-direction: column;
+}
+
+.row-field-textarea {
+  text-align: left;
+  width: 100%;
+  resize: vertical;
+  min-height: 120px;
+  font-family: inherit;
+  line-height: 1.4;
+}
+
+.row-field-mono {
+  font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+  font-size: 14px;
+}
+
+/* ============================================================================
+   iOS-style switch.
+   ============================================================================ */
+.switch {
+  --switch-w: 51px;
+  --switch-h: 31px;
+  --switch-thumb: 27px;
+
+  appearance: none;
+  border: none;
+  width: var(--switch-w);
+  height: var(--switch-h);
+  border-radius: var(--switch-h);
+  background: rgba(120, 120, 128, 0.32);
+  padding: 2px;
+  position: relative;
+  cursor: pointer;
+  transition: background-color 180ms ease-out;
+  flex-shrink: 0;
+}
+
+.switch.is-on {
+  background: var(--accent, #34c759);
+}
+
+.switch-thumb {
+  display: block;
+  width: var(--switch-thumb);
+  height: var(--switch-thumb);
+  border-radius: 50%;
+  background: #ffffff;
+  box-shadow: 0 3px 8px rgba(0, 0, 0, 0.15), 0 1px 1px rgba(0, 0, 0, 0.06);
+  transform: translateX(0);
+  transition: transform 200ms cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.switch.is-on .switch-thumb {
+  transform: translateX(calc(var(--switch-w) - var(--switch-thumb) - 4px));
+}
+
+/* ============================================================================
+   Buttons — full-width fill / destructive / sheet actions.
+   ============================================================================ */
+.button {
+  appearance: none;
+  border: none;
+  cursor: pointer;
+  font: inherit;
+  font-weight: 600;
+  font-size: 17px;
+  border-radius: var(--radius);
+  padding: 14px 16px;
+  width: 100%;
+  margin-top: 12px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  transition: opacity 100ms ease-out, transform 100ms ease-out;
+}
+
+.button:active {
+  opacity: 0.7;
+  transform: scale(0.985);
+}
+
+.button-icon {
+  display: inline-flex;
+  width: 18px;
+  height: 18px;
+}
+
+.button-icon svg {
+  width: 100%;
+  height: 100%;
+  display: block;
+}
+
+.button-fill {
+  background: var(--accent);
+  color: #ffffff;
+}
+
+.button-destructive {
+  background: var(--card);
+  color: var(--destructive);
+}
+
+/* ============================================================================
+   Bottom tab bar — fixed, blurred surface, icons + label.
+   ============================================================================ */
+.tabbar {
+  position: fixed;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  z-index: 20;
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  background: var(--tg-bottom-bg);
+  border-top: 1px solid var(--separator);
+  padding: 6px 0 6px;
+  backdrop-filter: saturate(180%) blur(20px);
+  -webkit-backdrop-filter: saturate(180%) blur(20px);
+}
+
+.tab {
+  appearance: none;
+  background: none;
+  border: none;
+  cursor: pointer;
+  font: inherit;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+  padding: 4px 0;
+  color: var(--hint);
+  transition: color 120ms ease-out;
+}
+
+.tab.is-active {
+  color: var(--accent);
+}
+
+.tab-icon {
+  display: inline-flex;
+  width: 24px;
+  height: 24px;
+}
+
+.tab-icon svg {
+  width: 100%;
+  height: 100%;
+  display: block;
+}
+
+.tab-label {
+  font-size: 10px;
+  font-weight: 500;
+  letter-spacing: 0.04px;
+}
+
+/* ============================================================================
+   Modal sheet — for the MCP server editor.
+   ============================================================================ */
+.sheet {
+  position: fixed;
+  inset: 0;
+  z-index: 100;
+  background: rgba(0, 0, 0, 0.35);
+  display: flex;
+  align-items: flex-end;
+  justify-content: center;
+}
+
+.sheet-panel {
+  width: 100%;
+  max-width: 640px;
+  max-height: 92dvh;
+  background: var(--bg);
+  border-top-left-radius: 14px;
+  border-top-right-radius: 14px;
+  box-shadow: var(--shadow-sheet);
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+}
+
+.sheet-header {
+  position: sticky;
+  top: 0;
+  display: grid;
+  grid-template-columns: 1fr auto 1fr;
+  align-items: center;
+  gap: 12px;
+  padding: 12px 16px;
+  background: var(--bg);
+  border-bottom: 1px solid var(--separator);
+  z-index: 1;
+}
+
+.sheet-title {
+  margin: 0;
+  font-size: 17px;
+  font-weight: 600;
+  text-align: center;
+}
+
+.sheet-action {
+  appearance: none;
+  border: none;
+  background: none;
+  cursor: pointer;
+  font: inherit;
+  font-size: 17px;
+  color: var(--accent);
+  padding: 6px 0;
+  text-align: left;
+}
+
+.sheet-action:last-child {
+  text-align: right;
+}
+
+.sheet-action-strong {
+  font-weight: 600;
+}
+
+.sheet-action:disabled {
+  color: var(--hint);
+  cursor: default;
+}
+
+.sheet-content {
+  padding: 0 16px 32px;
+}
+
+@keyframes sheet-in {
+  from {
+    transform: translateY(100%);
+  }
+  to {
+    transform: translateY(0);
+  }
+}
+
+@keyframes sheet-out {
+  from {
+    transform: translateY(0);
+  }
+  to {
+    transform: translateY(100%);
+  }
+}
+
+.sheet-enter .sheet-panel {
+  animation: sheet-in 240ms cubic-bezier(0.32, 0.72, 0, 1);
+}
+
+.sheet-leave .sheet-panel {
+  animation: sheet-out 200ms cubic-bezier(0.4, 0, 0.6, 1);
+}
+
+/* ============================================================================
+   Reduced motion + accessibility niceties.
+   ============================================================================ */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    transition: none !important;
+    animation: none !important;
+  }
+}
