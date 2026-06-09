@@ -31,21 +31,27 @@ export const telegramModule: SkyeModule = {
     const llm = ctx.services.get("llm");
     await llm.checkCapabilities();
 
-    installTelegram(bot, {
-      llm,
-      mcp: ctx.services.get("mcp"),
-      memory: ctx.services.get("memory"),
-      chatLog: ctx.services.get("chatLog"),
-      chatConfig: ctx.services.get("chatConfig"),
-      userConfig: ctx.services.get("userConfig"),
-      speech: ctx.services.get("speech"),
-      audit: ctx.services.get("audit"),
-      botToken: String(ctx.config.BOT_TOKEN),
-      allowedIds: parseAllowedIds(String(ctx.config.ALLOWED_IDS ?? "")),
-      webappUrl: String(ctx.config.WEBAPP_URL),
-      defaultBaseUrl: String(ctx.config.BASE_URL),
-      defaultModel: String(ctx.config.MODEL),
-    }, contributions);
+    installTelegram(
+      bot,
+      {
+        llm,
+        mcp: ctx.services.get("mcp"),
+        memory: ctx.services.get("memory"),
+        chatLog: ctx.services.get("chatLog"),
+        chatConfig: ctx.services.get("chatConfig"),
+        userConfig: ctx.services.get("userConfig"),
+        speech: ctx.services.get("speech"),
+        audit: ctx.services.get("audit"),
+        workspace: ctx.services.get("workspace"),
+        skills: ctx.services.get("skills"),
+        botToken: String(ctx.config.BOT_TOKEN),
+        allowedIds: parseAllowedIds(String(ctx.config.ALLOWED_IDS ?? "")),
+        webappUrl: String(ctx.config.WEBAPP_URL),
+        defaultBaseUrl: String(ctx.config.BASE_URL),
+        defaultModel: String(ctx.config.MODEL),
+      },
+      contributions
+    );
 
     void bot.api
       .setChatMenuButton({

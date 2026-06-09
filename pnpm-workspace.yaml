@@ -5,11 +5,11 @@ allowBuilds:
   better-sqlite3: true
   esbuild: true
 minimumReleaseAgeExclude:
-  - '@vitest/expect@3.2.6'
-  - '@vitest/mocker@3.2.6'
-  - '@vitest/pretty-format@3.2.6'
-  - '@vitest/runner@3.2.6'
-  - '@vitest/snapshot@3.2.6'
-  - '@vitest/spy@3.2.6'
-  - '@vitest/utils@3.2.6'
+  - "@vitest/expect@3.2.6"
+  - "@vitest/mocker@3.2.6"
+  - "@vitest/pretty-format@3.2.6"
+  - "@vitest/runner@3.2.6"
+  - "@vitest/snapshot@3.2.6"
+  - "@vitest/spy@3.2.6"
+  - "@vitest/utils@3.2.6"
   - vitest@3.2.6

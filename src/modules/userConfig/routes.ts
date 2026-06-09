@@ -118,12 +118,7 @@ export function buildRoutes(ctx: ModuleContext): PanelRoute[] {
         }
 
         if (mcp) await mcp.disconnectUserServer(userId, id);
-        userConfig.updateMcpServer(
-          id,
-          userId,
-          name ?? existing.name,
-          config ?? existing.config
-        );
+        userConfig.updateMcpServer(id, userId, name ?? existing.name, config ?? existing.config);
 
         if (inputs && typeof inputs === "object") {
           for (const [inputId, value] of Object.entries(inputs)) {

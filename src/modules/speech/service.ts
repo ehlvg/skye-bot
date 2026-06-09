@@ -110,5 +110,4 @@ export class SpeechService {
       return null;
     }
   }
-
 }

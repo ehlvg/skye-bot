@@ -49,4 +49,18 @@ export const api = {
     request(`/memories/${chatId}`, { method: "DELETE" }),
 
   getStats: () => request("/stats"),
+
+  getSkills: () => request("/skills"),
+  uploadSkill: (formData) =>
+    fetch("/api/skills", {
+      method: "POST",
+      headers: { "x-telegram-init-data": window.Telegram?.WebApp?.initData ?? "" },
+      body: formData,
+    }).then((res) => {
+      if (!res.ok) return res.json().then((body) => { throw new Error(body?.error || `${res.status}`); });
+      return res.json();
+    }),
+  toggleSkill: (id, enabled) =>
+    request(`/skills/${id}`, { method: "PUT", body: JSON.stringify({ enabled }) }),
+  deleteSkill: (id) => request(`/skills/${id}`, { method: "DELETE" }),
 };

@@ -1,9 +1,4 @@
-import {
-  Bot,
-  InputFile,
-  type Context as GrammyContext,
-  type NextFunction,
-} from "grammy";
+import { Bot, InputFile, type Context as GrammyContext, type NextFunction } from "grammy";
 import type { LlmClient, ResponseInputItem } from "../llm/client.js";
 import type { McpService } from "../mcp/service.js";
 import type { MemoryService } from "../memory/service.js";
@@ -12,11 +7,9 @@ import type { ChatConfigService } from "../chatConfig/service.js";
 import type { UserConfigService } from "../userConfig/service.js";
 import type { SpeechService } from "../speech/service.js";
 import type { AuditService } from "../audit/service.js";
-import type {
-  Contributions,
-  TelegramCommand,
-  ToolDefinition,
-} from "../../core/module.js";
+import type { WorkspaceService } from "../workspace/service.js";
+import type { SkillsService } from "../skills/service.js";
+import type { Contributions, TelegramCommand, ToolDefinition } from "../../core/module.js";
 import { tenantFromGrammy, threadKey } from "../../core/tenant.js";
 import { resolveCredentials, hasAccess, type AccessDeps } from "./access.js";
 import { runChatLoop } from "./chat.js";
@@ -45,6 +38,8 @@ export interface TelegramDeps {
   userConfig: UserConfigService;
   speech: SpeechService;
   audit: AuditService;
+  workspace: WorkspaceService;
+  skills: SkillsService;
   botToken: string;
   allowedIds: Set<number>;
   webappUrl: string;
@@ -54,11 +49,7 @@ export interface TelegramDeps {
 
 const IMAGE_CMD_RE = /^\/image(?:@\S+)?\s*([\s\S]*)$/;
 
-export function installTelegram(
-  bot: Bot,
-  deps: TelegramDeps,
-  contributions: Contributions
-): void {
+export function installTelegram(bot: Bot, deps: TelegramDeps, contributions: Contributions): void {
   const access: AccessDeps = {
     chatConfig: deps.chatConfig,
     userConfig: deps.userConfig,
@@ -91,9 +82,7 @@ export function installTelegram(
     return items.map((item) => {
       const m = item as { type?: string; content?: unknown };
       if (m.type !== "message" || !Array.isArray(m.content)) return item;
-      const parts = (m.content as { type: string }[]).filter(
-        (p) => p.type !== "input_image"
-      );
+      const parts = (m.content as { type: string }[]).filter((p) => p.type !== "input_image");
       if (parts.length === 0) {
         return { ...item, content: [{ type: "input_text", text: "[image]" }] } as ResponseInputItem;
       }
@@ -206,9 +195,7 @@ export function installTelegram(
 
   // Advertise commands once.
   void bot.api.setMyCommands(
-    allCommands
-      .map((c) => ({ command: c.name, description: c.description }))
-      .filter(uniqByCommand)
+    allCommands.map((c) => ({ command: c.name, description: c.description })).filter(uniqByCommand)
   );
 
   // --- Access gate ---
@@ -285,7 +272,12 @@ export function installTelegram(
   }
 
   // --- Built-in tools (memory) come from contributions ---
-  const builtinTools: ToolDefinition[] = contributions.tools;
+  const builtinTools: ToolDefinition[] = contributions.tools.filter(
+    (t) => t.name === "save_memory" || t.name === "delete_memory"
+  );
+  const extraTools: ToolDefinition[] = contributions.tools.filter(
+    (t) => t.name !== "save_memory" && t.name !== "delete_memory"
+  );
 
   // --- Text handler ---
   bot.on("message:text", async (ctx) => {
@@ -340,7 +332,10 @@ export function installTelegram(
               memory: deps.memory,
               chatLog: deps.chatLog,
               userConfig: deps.userConfig,
+              workspace: deps.workspace,
+              skills: deps.skills,
               builtinTools,
+              extraTools,
             },
             tenant,
             inputItems,
@@ -581,7 +576,10 @@ export function installTelegram(
               memory: deps.memory,
               chatLog: deps.chatLog,
               userConfig: deps.userConfig,
+              workspace: deps.workspace,
+              skills: deps.skills,
               builtinTools,
+              extraTools,
             },
             tenant,
             inputItems,
@@ -707,10 +705,7 @@ export function installTelegram(
           return;
         }
 
-        log.info(
-          { chatId: tenant.chatId, recognizedLen: recognized.length },
-          "STT recognized"
-        );
+        log.info({ chatId: tenant.chatId, recognizedLen: recognized.length }, "STT recognized");
 
         let lastDraftTs = 0;
         const onChunk = (snapshot: string) => {
@@ -745,7 +740,10 @@ export function installTelegram(
               memory: deps.memory,
               chatLog: deps.chatLog,
               userConfig: deps.userConfig,
+              workspace: deps.workspace,
+              skills: deps.skills,
               builtinTools,
+              extraTools,
             },
             tenant,
             inputItems,
@@ -835,10 +833,6 @@ export function installTelegram(
   });
 }
 
-function uniqByCommand<T extends { command: string }>(
-  v: T,
-  i: number,
-  arr: T[]
-): boolean {
+function uniqByCommand<T extends { command: string }>(v: T, i: number, arr: T[]): boolean {
   return arr.findIndex((x) => x.command === v.command) === i;
 }

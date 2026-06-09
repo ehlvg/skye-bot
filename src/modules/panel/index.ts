@@ -1,9 +1,4 @@
-import express, {
-  type Request,
-  type Response,
-  type NextFunction,
-  type Express,
-} from "express";
+import express, { type Request, type Response, type NextFunction, type Express } from "express";
 import { join, dirname } from "path";
 import { fileURLToPath } from "url";
 import { existsSync } from "fs";
@@ -52,9 +47,7 @@ export const panelModule: SkyeModule = {
     for (const route of contributions.panelRoutes) {
       const fullPath = route.path.startsWith("/api") ? route.path : `/api${route.path}`;
       app[route.method](fullPath, (req, res, next) => {
-        Promise.resolve(
-          route.handler(req as PanelRequest, res, next)
-        ).catch(next);
+        Promise.resolve(route.handler(req as PanelRequest, res, next)).catch(next);
       });
     }
 

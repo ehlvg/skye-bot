@@ -12,9 +12,10 @@ function generateId(): string {
 
 export function getMemories(chatId: number): MemoryEntry[] {
   return getDb()
-    .prepare<[number], MemoryEntry>(
-      "SELECT id, content, created_at AS createdAt FROM memories WHERE chat_id = ? ORDER BY created_at"
-    )
+    .prepare<
+      [number],
+      MemoryEntry
+    >("SELECT id, content, created_at AS createdAt FROM memories WHERE chat_id = ? ORDER BY created_at")
     .all(chatId);
 }
 

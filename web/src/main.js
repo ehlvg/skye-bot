@@ -94,6 +94,7 @@ document.addEventListener("alpine:init", () => {
     config: { apiKey: "", baseUrl: "", model: "", maxTokens: null, systemPrompt: "" },
     chatConfig: { voiceMode: false },
     mcpServers: [],
+    skills: [],
     memories: [],
     stats: { totalRequests: 0, requestsToday: 0, avgLatencyMs: 0, errorRate: 0 },
 
@@ -136,16 +137,18 @@ document.addEventListener("alpine:init", () => {
       });
 
       try {
-        const [cfg, chatCfg, mcps, mems, st] = await Promise.all([
+        const [cfg, chatCfg, mcps, skls, mems, st] = await Promise.all([
           api.getConfig(),
           api.getChatConfig(),
           api.getMcpServers(),
+          api.getSkills(),
           api.getMemories(),
           api.getStats(),
         ]);
         Object.assign(this.config, cfg);
         Object.assign(this.chatConfig, chatCfg);
         this.mcpServers = mcps;
+        this.skills = skls;
         this.memories = mems;
         this.stats = st;
       } catch (e) {
@@ -315,6 +318,83 @@ document.addEventListener("alpine:init", () => {
         });
       } catch {
         return iso ?? "";
+      }
+    },
+
+    // --- Skills management ---
+    skillUpload: {
+      open: false,
+      pending: false,
+      error: null,
+    },
+
+    async uploadSkill() {
+      if (this.skillUpload.pending) return;
+      this.skillUpload.open = true;
+      this.skillUpload.error = null;
+      this.skillUpload.pending = true;
+
+      tg?.BackButton?.show?.();
+      tg?.BackButton?.onClick?.(() => {
+        this.skillUpload.open = false;
+        tg?.BackButton?.hide?.();
+      });
+
+      const file = await new Promise((resolve) => {
+        // Create a hidden file input
+        const input = document.createElement("input");
+        input.type = "file";
+        input.accept = ".zip,.md";
+        input.onchange = () => resolve(input.files?.[0] ?? null);
+        input.click();
+      });
+
+      if (!file) {
+        this.skillUpload.pending = false;
+        this.skillUpload.open = false;
+        tg?.BackButton?.hide?.();
+        return;
+      }
+
+      try {
+        const formData = new FormData();
+        formData.append("file", file);
+        const created = await api.uploadSkill(formData);
+        this.skills.push(created);
+        haptic.success();
+        this.skillUpload.open = false;
+        tg?.BackButton?.hide?.();
+        popupAlert(`Skill "${created.name}" uploaded successfully. Use /${created.name} in chat to activate it.`);
+      } catch (e) {
+        this.skillUpload.error = e.message;
+        haptic.error();
+      } finally {
+        this.skillUpload.pending = false;
+      }
+    },
+
+    async toggleSkill(skill) {
+      haptic.selection();
+      try {
+        const updated = await api.toggleSkill(skill.id, !skill.enabled);
+        const idx = this.skills.findIndex((s) => s.id === skill.id);
+        if (idx >= 0) this.skills[idx] = updated;
+      } catch (e) {
+        haptic.error();
+        popupAlert(`Update failed: ${e.message}`);
+      }
+    },
+
+    async deleteSkill(skill) {
+      const ok = await popupConfirm(`Delete skill "${skill.name}"? This will remove all uploaded files.`);
+      if (!ok) return;
+      try {
+        await api.deleteSkill(skill.id);
+        this.skills = this.skills.filter((s) => s.id !== skill.id);
+        haptic.success();
+      } catch (e) {
+        haptic.error();
+        popupAlert(`Delete failed: ${e.message}`);
       }
     },
   }));

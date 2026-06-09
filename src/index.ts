@@ -18,14 +18,17 @@ import { llmModule } from "./modules/llm/index.js";
 import { mcpModule } from "./modules/mcp/index.js";
 import { memoryModule } from "./modules/memory/index.js";
 import { panelModule } from "./modules/panel/index.js";
+import { skillsModule } from "./modules/skills/index.js";
 import { speechModule } from "./modules/speech/index.js";
 import { telegramModule } from "./modules/telegram/index.js";
 import { userConfigModule } from "./modules/userConfig/index.js";
+import { workspaceModule } from "./modules/workspace/index.js";
 
 /**
  * Module load order matters:
  *   - llm initialized before chatLog (chatLog uses it for summarization)
  *   - userConfig initialized before mcp (mcp reads user servers from it)
+ *   - workspace and skills provide tools for the chat loop
  *   - audit, memory, chatConfig come before panel (their routes contribute)
  *   - telegram is last (consumes every other service)
  *   - panel start() runs after all modules' init() returned their routes
@@ -39,6 +42,8 @@ const modules: readonly SkyeModule[] = [
   speechModule,
   auditModule,
   mcpModule,
+  workspaceModule,
+  skillsModule,
   panelModule,
   telegramModule,
 ];

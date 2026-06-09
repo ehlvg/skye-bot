@@ -12,27 +12,31 @@ export function buildRoutes(): PanelRoute[] {
         const today = new Date().toISOString().slice(0, 10);
 
         const total = getDb()
-          .prepare<[number], { count: number }>(
-            `SELECT COUNT(*) as count FROM request_logs WHERE user_id = ?`
-          )
+          .prepare<
+            [number],
+            { count: number }
+          >(`SELECT COUNT(*) as count FROM request_logs WHERE user_id = ?`)
           .get(userId);
 
         const todayCount = getDb()
-          .prepare<[number, string], { count: number }>(
-            `SELECT COUNT(*) as count FROM request_logs WHERE user_id = ? AND ts LIKE ?`
-          )
+          .prepare<
+            [number, string],
+            { count: number }
+          >(`SELECT COUNT(*) as count FROM request_logs WHERE user_id = ? AND ts LIKE ?`)
           .get(userId, `${today}%`);
 
         const avgLatency = getDb()
-          .prepare<[number], { avg: number }>(
-            `SELECT AVG(latency_ms) as avg FROM request_logs WHERE user_id = ?`
-          )
+          .prepare<
+            [number],
+            { avg: number }
+          >(`SELECT AVG(latency_ms) as avg FROM request_logs WHERE user_id = ?`)
           .get(userId);
 
         const errors = getDb()
-          .prepare<[number], { count: number }>(
-            `SELECT COUNT(*) as count FROM request_logs WHERE user_id = ? AND status = 'error'`
-          )
+          .prepare<
+            [number],
+            { count: number }
+          >(`SELECT COUNT(*) as count FROM request_logs WHERE user_id = ? AND status = 'error'`)
           .get(userId);
 
         const totalReqs = total?.count ?? 0;

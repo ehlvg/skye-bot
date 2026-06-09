@@ -26,9 +26,7 @@ export function composeAndParseEnv(
   const schema = z.object(shape);
   const result = schema.safeParse(process.env);
   if (!result.success) {
-    const issues = result.error.issues
-      .map((i) => `  ${i.path.join(".")}: ${i.message}`)
-      .join("\n");
+    const issues = result.error.issues.map((i) => `  ${i.path.join(".")}: ${i.message}`).join("\n");
     throw new Error(`Invalid environment variables:\n${issues}`);
   }
   return Object.freeze(result.data);
@@ -87,9 +85,7 @@ export async function startModules(
 /**
  * Call shutdown on each module in reverse order.
  */
-export async function shutdownModules(
-  modules: readonly SkyeModule[]
-): Promise<void> {
+export async function shutdownModules(modules: readonly SkyeModule[]): Promise<void> {
   for (let i = modules.length - 1; i >= 0; i--) {
     const mod = modules[i];
     if (!mod.shutdown) continue;
@@ -102,9 +98,7 @@ export async function shutdownModules(
 }
 
 /** One-shot helper: build a ModuleContext from already-parsed env. */
-export function makeContext(
-  config: Readonly<Record<string, unknown>>
-): ModuleContext {
+export function makeContext(config: Readonly<Record<string, unknown>>): ModuleContext {
   return {
     db: getDb(),
     events: new EventBus(),

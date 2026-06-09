@@ -89,9 +89,14 @@ export function buildSystemPrompt(
   memories: MemoryEntry[],
   chatContext?: ChatContext,
   mcpToolNames?: string[],
-  customPrompt?: string
+  customPrompt?: string,
+  skillPrompt?: string
 ): string {
   let content = SYSTEM_PROMPT;
+
+  if (skillPrompt) {
+    content += `\n\n## Loaded Skills\n\n${skillPrompt}`;
+  }
 
   if (customPrompt) {
     content += `\n\n## Custom Instructions\n\n${customPrompt}`;

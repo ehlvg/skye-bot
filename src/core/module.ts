@@ -32,10 +32,7 @@ export interface ToolDefinition {
   name: string;
   description: string;
   parameters: Record<string, unknown>;
-  execute: (
-    args: Record<string, unknown>,
-    tenant: TenantContext
-  ) => Promise<string> | string;
+  execute: (args: Record<string, unknown>, tenant: TenantContext) => Promise<string> | string;
 }
 
 /** A Telegram bot command (/name). */

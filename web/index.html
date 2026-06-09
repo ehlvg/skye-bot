@@ -170,6 +170,68 @@
         </p>
       </section>
 
+      <!-- Skills tab -->
+      <section x-show="tab === 'skills'" x-transition.opacity>
+        <div class="caption">Agent Skills</div>
+        <ul class="list" x-show="skills.length > 0">
+          <template x-for="skill in skills" :key="skill.id">
+            <li class="row">
+              <div class="row-leading">
+                <span class="row-icon row-icon-tint" x-html="icons.wrenchFill"></span>
+              </div>
+              <div class="row-content">
+                <div class="row-title">/<span x-text="skill.name"></span></div>
+                <div class="row-subtitle" x-text="skill.enabled ? 'Enabled' : 'Disabled'"></div>
+              </div>
+              <div class="row-trailing">
+                <button
+                  type="button"
+                  class="switch"
+                  :class="skill.enabled && 'is-on'"
+                  role="switch"
+                  :aria-checked="skill.enabled"
+                  @click.stop="toggleSkill(skill)"
+                >
+                  <span class="switch-thumb"></span>
+                </button>
+                <button
+                  type="button"
+                  class="row-action-delete"
+                  @click.stop="deleteSkill(skill)"
+                >
+                  <span x-html="icons.trash"></span>
+                </button>
+              </div>
+            </li>
+          </template>
+        </ul>
+
+        <ul class="list" x-show="skills.length === 0">
+          <li class="row row-empty">
+            <div class="row-content">
+              <div class="row-title">No skills uploaded</div>
+              <div class="row-subtitle">Upload a SKILL.md or .zip to add a new agent skill.</div>
+            </div>
+          </li>
+        </ul>
+
+        <template x-if="!skillUpload.open">
+          <button class="button button-fill" @click="uploadSkill">
+            <span class="button-icon" x-html="icons.plusBold"></span>
+            Upload Skill
+          </button>
+        </template>
+        <template x-if="skillUpload.open && skillUpload.pending">
+          <div class="caption">Uploading...</div>
+        </template>
+        <template x-if="skillUpload.error">
+          <p class="footnote footnote-error" x-text="skillUpload.error"></p>
+        </template>
+        <p class="footnote">
+          Upload a <code>.zip</code> archive containing a <code>SKILL.md</code> file. Use <code>/skill-name</code> in chat to activate a skill. The SKILL.md is loaded into the model's context as instructions.
+        </p>
+      </section>
+
       <!-- Memory tab -->
       <section x-show="tab === 'memory'" x-transition.opacity>
         <div class="caption">Saved Memories</div>
@@ -277,6 +339,14 @@
       >
         <span class="tab-icon" x-html="tab === 'tools' ? icons.wrenchFill : icons.wrench"></span>
         <span class="tab-label">Tools</span>
+      </button>
+      <button
+        class="tab"
+        :class="tab === 'skills' && 'is-active'"
+        @click="setTab('skills')"
+      >
+        <span class="tab-icon" x-html="tab === 'skills' ? icons.plugFill : icons.plugFill"></span>
+        <span class="tab-label">Skills</span>
       </button>
       <button
         class="tab"

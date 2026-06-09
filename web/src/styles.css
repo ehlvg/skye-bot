@@ -147,6 +147,10 @@ code {
   padding-bottom: 8px;
 }
 
+.footnote-error {
+  color: var(--destructive);
+}
+
 .list {
   list-style: none;
   margin: 0;
@@ -278,6 +282,32 @@ code {
 .row-chevron-destructive {
   color: var(--destructive);
   opacity: 0.7;
+}
+
+.row-action-delete {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  margin-left: 8px;
+  border: none;
+  background: none;
+  color: var(--destructive);
+  opacity: 0.6;
+  cursor: pointer;
+  border-radius: 6px;
+  transition: opacity 80ms ease-out;
+  flex-shrink: 0;
+}
+
+.row-action-delete:active {
+  opacity: 1;
+}
+
+.row-action-delete svg {
+  width: 18px;
+  height: 18px;
 }
 
 .row-tap {
