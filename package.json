@@ -44,6 +44,7 @@
     "openai": "^6.17.0",
     "pino": "^10.3.1",
     "pino-pretty": "^10.3.1",
+    "socks-proxy-agent": "^10.1.0",
     "zod": "^4.3.6"
   }
 }

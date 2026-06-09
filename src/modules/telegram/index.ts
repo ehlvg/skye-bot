@@ -3,6 +3,7 @@ import type { SkyeModule } from "../../core/module.js";
 import { telegramEnvSchema, parseAllowedIds } from "./env.js";
 import { installTelegram } from "./handlers.js";
 import { log } from "../../utils/log.js";
+import { SocksProxyAgent } from "socks-proxy-agent";
 
 let botRef: Bot | null = null;
 
@@ -17,7 +18,18 @@ export const telegramModule: SkyeModule = {
   envSchema: telegramEnvSchema,
   async init(ctx) {
     const token = String(ctx.config.BOT_TOKEN);
-    const bot = new Bot(token);
+    const proxyUrl = ctx.config.BOT_PROXY as string | undefined;
+    const bot = new Bot(token, {
+      client: proxyUrl
+        ? {
+            baseFetchConfig: {
+              agent: new SocksProxyAgent(proxyUrl),
+              compress: true,
+            },
+          }
+        : undefined,
+    });
+    if (proxyUrl) log.info({ proxy: proxyUrl.replace(/\/\/[^@]+@/, "//***@") }, "Bot proxy configured");
     botRef = bot;
     // Expose the bot in the registry so other modules (e.g. panel for menu
     // buttons) can access it during start().
