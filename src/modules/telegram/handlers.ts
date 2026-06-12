@@ -21,14 +21,15 @@ import { tenantFromGrammy, threadKey } from "../../core/tenant.js";
 import { resolveCredentials, hasAccess, type AccessDeps } from "./access.js";
 import { runChatLoop } from "./chat.js";
 import {
-  buildDraftHtml,
+  buildDraftMarkdown,
   buildFinalReply,
+  createChatActionTicker,
   createDraftManager,
   ctxAudit,
-  escapeHtml,
   extractLogEntry,
   fmtError,
   senderTag,
+  sendRichReply,
   serializeError,
   toDataUrl,
   type ToolCallRecord,
@@ -312,7 +313,8 @@ export function installTelegram(
       const history = sanitizeHistory(memory.get(tk) || []);
       const inputItems: ResponseInputItem[] = [...history.slice(-20), userItem];
 
-      const draft = createDraftManager(ctx, "HTML");
+      const draft = createDraftManager(ctx);
+      const actionTicker = createChatActionTicker(ctx, "typing");
       const toolCallHistory: ToolCallRecord[] = [];
 
       let lastDraftTs = 0;
@@ -321,17 +323,18 @@ export function installTelegram(
         if (now - lastDraftTs < 300) return;
         lastDraftTs = now;
         if (toolCallHistory.length > 0) {
-          void draft.send(buildDraftHtml(toolCallHistory, snapshot));
+          void draft.send(buildDraftMarkdown(toolCallHistory, snapshot));
         } else {
-          void draft.send(escapeHtml(snapshot));
+          void draft.send(snapshot);
         }
       };
       const onToolCalls = (calls: ToolCallRecord[]) => {
         toolCallHistory.push(...calls);
-        void draft.send(buildDraftHtml(toolCallHistory, "Thinking..."));
+        void draft.send(buildDraftMarkdown(toolCallHistory, "Thinking..."));
       };
 
       try {
+        actionTicker.start();
         const text = cleanMd(
           await runChatLoop(
             {
@@ -394,12 +397,9 @@ export function installTelegram(
           log.warn("Voice mode TTS failed, falling back to text reply");
         }
 
-        const { text: finalText, options: replyOptions } = buildFinalReply(toolCallHistory, text);
+        const finalText = buildFinalReply(toolCallHistory, text);
         await draft.delete();
-        await ctx.reply(finalText, {
-          reply_to_message_id: ctx.message.message_id,
-          ...replyOptions,
-        });
+        await sendRichReply(ctx, finalText);
         deps.audit.log({
           ...ctxAudit(ctx),
           msgType: "text",
@@ -426,6 +426,8 @@ export function installTelegram(
           status: "error",
           errorMsg: fmtError(e),
         });
+      } finally {
+        actionTicker.stop();
       }
     })();
   });
@@ -535,7 +537,8 @@ export function installTelegram(
       const t0 = Date.now();
       log.info({ chatId: tenant.chatId, userId: tenant.userId }, "Photo vision request");
 
-      const draft = createDraftManager(ctx, "HTML");
+      const draft = createDraftManager(ctx);
+      const actionTicker = createChatActionTicker(ctx, "typing");
       const toolCallHistory: ToolCallRecord[] = [];
 
       let lastDraftTs = 0;
@@ -544,17 +547,18 @@ export function installTelegram(
         if (now - lastDraftTs < 300) return;
         lastDraftTs = now;
         if (toolCallHistory.length > 0) {
-          void draft.send(buildDraftHtml(toolCallHistory, snapshot));
+          void draft.send(buildDraftMarkdown(toolCallHistory, snapshot));
         } else {
-          void draft.send(escapeHtml(snapshot));
+          void draft.send(snapshot);
         }
       };
       const onToolCalls = (calls: ToolCallRecord[]) => {
         toolCallHistory.push(...calls);
-        void draft.send(buildDraftHtml(toolCallHistory, "Thinking..."));
+        void draft.send(buildDraftMarkdown(toolCallHistory, "Thinking..."));
       };
 
       try {
+        actionTicker.start();
         const file = await ctx.api.getFile(ctx.message.photo.pop()!.file_id);
         const telegramUrl = `https://api.telegram.org/file/bot${deps.botToken}/${file.file_path}`;
         const dataUrl = await toDataUrl(telegramUrl);
@@ -613,12 +617,9 @@ export function installTelegram(
           content: text,
         } as ResponseInputItem);
 
-        const { text: finalText, options: replyOptions } = buildFinalReply(toolCallHistory, text);
+        const finalText = buildFinalReply(toolCallHistory, text);
         await draft.delete();
-        await ctx.reply(finalText, {
-          reply_to_message_id: ctx.message.message_id,
-          ...replyOptions,
-        });
+        await sendRichReply(ctx, finalText);
         deps.audit.log({
           ...ctxAudit(ctx),
           msgType: "photo",
@@ -645,6 +646,8 @@ export function installTelegram(
           status: "error",
           errorMsg: fmtError(e),
         });
+      } finally {
+        actionTicker.stop();
       }
     })();
   });
@@ -674,10 +677,12 @@ export function installTelegram(
       const t0 = Date.now();
       log.info({ chatId: tenant.chatId, userId: tenant.userId }, "Voice message");
 
-      const draft = createDraftManager(ctx, "HTML");
+      const draft = createDraftManager(ctx);
+      const actionTicker = createChatActionTicker(ctx, "typing");
       const toolCallHistory: ToolCallRecord[] = [];
 
       try {
+        actionTicker.start();
         await ctx.api.sendChatAction(tenant.chatId, "typing");
 
         const file = await ctx.api.getFile(ctx.message.voice.file_id);
@@ -718,14 +723,14 @@ export function installTelegram(
           if (now - lastDraftTs < 300) return;
           lastDraftTs = now;
           if (toolCallHistory.length > 0) {
-            void draft.send(buildDraftHtml(toolCallHistory, snapshot));
+            void draft.send(buildDraftMarkdown(toolCallHistory, snapshot));
           } else {
-            void draft.send(escapeHtml(snapshot));
+            void draft.send(snapshot);
           }
         };
         const onToolCalls = (calls: ToolCallRecord[]) => {
           toolCallHistory.push(...calls);
-          void draft.send(buildDraftHtml(toolCallHistory, "Thinking..."));
+          void draft.send(buildDraftMarkdown(toolCallHistory, "Thinking..."));
         };
 
         const tag = senderTag(ctx);
@@ -798,12 +803,9 @@ export function installTelegram(
           log.warn("TTS synthesis failed, falling back to text reply");
         }
 
-        const { text: finalText, options: replyOptions } = buildFinalReply(toolCallHistory, text);
+        const finalText = buildFinalReply(toolCallHistory, text);
         await draft.delete();
-        await ctx.reply(finalText, {
-          reply_to_message_id: ctx.message.message_id,
-          ...replyOptions,
-        });
+        await sendRichReply(ctx, finalText);
         deps.audit.log({
           ...ctxAudit(ctx),
           msgType: "voice",
@@ -830,6 +832,8 @@ export function installTelegram(
           status: "error",
           errorMsg: fmtError(e),
         });
+      } finally {
+        actionTicker.stop();
       }
     })();
   });

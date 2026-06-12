@@ -1,4 +1,5 @@
 import type { Context as GrammyContext } from "grammy";
+import type { Message } from "grammy/types";
 import type { LogEntry } from "../chatLog/service.js";
 import type { AuditEntry } from "../audit/service.js";
 import { log } from "../../utils/log.js";
@@ -191,52 +192,289 @@ export function formatToolCalls(calls: ToolCallRecord[]): string {
     .join("\n");
 }
 
-export function buildDraftHtml(toolCalls: ToolCallRecord[], suffix?: string): string {
+export function buildDraftMarkdown(toolCalls: ToolCallRecord[], suffix?: string): string {
   const prefix = formatToolCalls(toolCalls);
-  const blockquote = `<blockquote>${escapeHtml(prefix)}</blockquote>`;
-  return suffix ? `${blockquote}\n${escapeHtml(suffix)}` : blockquote;
+  const blockquote = prefix
+    .split("\n")
+    .map((line) => `> ${line}`)
+    .join("\n");
+  return suffix ? `${blockquote}\n\n${suffix}` : blockquote;
 }
 
 export function buildFinalReply(
   toolCalls: ToolCallRecord[],
   text: string
-): { text: string; options?: { parse_mode: "HTML" } } {
-  if (toolCalls.length === 0) return { text };
+): string {
+  if (toolCalls.length === 0) return text;
+  return `${buildDraftMarkdown(toolCalls)}\n\n${text}`;
+}
+
+type ChatAction =
+  | "typing"
+  | "upload_photo"
+  | "record_video"
+  | "upload_video"
+  | "record_voice"
+  | "upload_voice"
+  | "upload_document"
+  | "choose_sticker"
+  | "find_location"
+  | "record_video_note"
+  | "upload_video_note";
+
+type RichRawApi = {
+  sendRichMessage: (
+    payload: {
+      chat_id: number | string;
+      message_thread_id?: number;
+      rich_message: InputRichMessage;
+      reply_parameters?: { message_id: number };
+    },
+    signal?: AbortSignal
+  ) => Promise<Message>;
+  sendRichMessageDraft: (
+    payload: {
+      chat_id: number;
+      message_thread_id?: number;
+      draft_id: number;
+      rich_message: InputRichMessage;
+    },
+    signal?: AbortSignal
+  ) => Promise<true>;
+};
+
+interface InputRichMessage {
+  markdown?: string;
+  html?: string;
+  is_rtl?: boolean;
+  skip_entity_detection?: boolean;
+}
+
+const THINKING_CUSTOM_EMOJI_ID = "5368324170671202286";
+const DRAFT_MIN_INTERVAL_MS = 5000;
+const FINAL_RETRY_LIMIT = 3;
+const MAX_DRAFT_MARKDOWN_CHARS = 3500;
+const RICH_DRAFT_PEER_INVALID = "TEXTDRAFT_PEER_INVALID";
+
+function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+function retryAfterMs(e: unknown): number | undefined {
+  const retryAfter = (e as { parameters?: { retry_after?: unknown } })?.parameters?.retry_after;
+  return typeof retryAfter === "number" ? retryAfter * 1000 : undefined;
+}
+
+function countMatches(text: string, pattern: RegExp): number {
+  return text.match(pattern)?.length ?? 0;
+}
+
+function countSingleDollarDelimiters(text: string): number {
+  let count = 0;
+  for (let i = 0; i < text.length; i++) {
+    if (text[i] !== "$") continue;
+    if (text[i - 1] === "\\" || text[i - 1] === "$" || text[i + 1] === "$") continue;
+    count++;
+  }
+  return count;
+}
+
+export function stabilizeStreamingMarkdown(markdown: string): string {
+  let stable = markdown.trim();
+  if (stable.length > MAX_DRAFT_MARKDOWN_CHARS) {
+    stable = `${stable.slice(0, MAX_DRAFT_MARKDOWN_CHARS).trimEnd()}\n\n...`;
+  }
+
+  if (countMatches(stable, /```/g) % 2 === 1) {
+    stable += "\n```";
+  }
+
+  if (countMatches(stable, /\$\$/g) % 2 === 1) {
+    stable += "\n$$";
+  }
+
+  if (countSingleDollarDelimiters(stable) % 2 === 1) {
+    stable += "$";
+  }
+
+  return stable;
+}
+
+async function withTelegramRetry<T>(
+  operation: () => Promise<T>,
+  options: { attempts?: number; context: string }
+): Promise<T> {
+  const attempts = options.attempts ?? FINAL_RETRY_LIMIT;
+  let lastError: unknown;
+
+  for (let attempt = 0; attempt < attempts; attempt++) {
+    try {
+      return await operation();
+    } catch (e) {
+      lastError = e;
+      const waitMs = retryAfterMs(e);
+      if (waitMs == null || attempt === attempts - 1) break;
+      log.warn({ err: e, waitMs, context: options.context }, "Telegram rate limit, retrying");
+      await sleep(waitMs + 500);
+    }
+  }
+
+  throw lastError;
+}
+
+function richRaw(ctx: GrammyContext): RichRawApi {
+  return ctx.api.raw as unknown as RichRawApi;
+}
+
+function threadId(ctx: GrammyContext): number | undefined {
+  return ctx.message?.message_thread_id;
+}
+
+function replyParameters(ctx: GrammyContext): { message_id: number } | undefined {
+  const id = ctx.message?.message_id;
+  return id == null ? undefined : { message_id: id };
+}
+
+export async function sendRichReply(
+  ctx: GrammyContext,
+  markdown: string
+): Promise<Message> {
+  return withTelegramRetry(
+    () =>
+      richRaw(ctx).sendRichMessage({
+        chat_id: ctx.chat!.id,
+        message_thread_id: threadId(ctx),
+        rich_message: { markdown },
+        reply_parameters: replyParameters(ctx),
+      }),
+    { context: "sendRichMessage" }
+  );
+}
+
+async function sendRichDraft(ctx: GrammyContext, draftId: number, markdown: string): Promise<true> {
+  return withTelegramRetry(
+    () =>
+      richRaw(ctx).sendRichMessageDraft({
+        chat_id: ctx.chat!.id,
+        message_thread_id: threadId(ctx),
+        draft_id: draftId,
+        rich_message: { markdown },
+      }),
+    { attempts: 1, context: "sendRichMessageDraft" }
+  );
+}
+
+function telegramDescription(e: unknown): string {
+  return String((e as { description?: unknown })?.description ?? "");
+}
+
+function isPermanentDraftError(e: unknown): boolean {
+  const description = telegramDescription(e);
+  return description.includes(RICH_DRAFT_PEER_INVALID) || retryAfterMs(e) == null;
+}
+
+export function createChatActionTicker(ctx: GrammyContext, action: ChatAction, intervalMs = 4000) {
+  let timer: NodeJS.Timeout | undefined;
+  const send = () => ctx.api.sendChatAction(ctx.chat!.id, action).catch(() => {});
+
   return {
-    text: buildDraftHtml(toolCalls, text),
-    options: { parse_mode: "HTML" },
+    start: () => {
+      send();
+      timer = setInterval(send, intervalMs);
+    },
+    stop: () => {
+      if (timer) clearInterval(timer);
+      timer = undefined;
+    },
   };
 }
 
-export function createDraftManager(ctx: GrammyContext, parseMode?: "HTML") {
-  let msgId: number | undefined;
+export function createDraftManager(ctx: GrammyContext) {
+  const draftId = ctx.update.update_id || ctx.message?.message_id || Date.now();
+  let enabled = ctx.chat?.type === "private";
   let lastText = "";
-  const extraOpts = parseMode ? { parse_mode: parseMode } : {};
+  let pendingText: string | undefined;
+  let sending = false;
+  let stopped = false;
+  let nextAllowedAt = 0;
+  let idleWaiters: Array<() => void> = [];
+
+  const thinkingPrefix = `<tg-thinking><tg-emoji emoji-id="${THINKING_CUSTOM_EMOJI_ID}">💭</tg-emoji> Thinking...</tg-thinking>`;
+  const buildThinkingDraft = (markdown: string) =>
+    `${thinkingPrefix}\n\n${stabilizeStreamingMarkdown(markdown)}`.trim();
+
+  const notifyIdle = () => {
+    if (sending || pendingText != null) return;
+    const waiters = idleWaiters;
+    idleWaiters = [];
+    for (const resolve of waiters) resolve();
+  };
+
+  const pump = async () => {
+    if (sending) return;
+    sending = true;
+
+    try {
+      while (!stopped && pendingText != null) {
+        const text = pendingText;
+        pendingText = undefined;
+
+        if (!enabled) {
+          lastText = text;
+          continue;
+        }
+
+        const waitMs = nextAllowedAt - Date.now();
+        if (waitMs > 0) await sleep(waitMs);
+
+        try {
+          await sendRichDraft(ctx, draftId, buildThinkingDraft(text));
+          lastText = text;
+          nextAllowedAt = Date.now() + DRAFT_MIN_INTERVAL_MS;
+        } catch (e) {
+          const waitMsFromError = retryAfterMs(e);
+          if (waitMsFromError != null) {
+            nextAllowedAt = Date.now() + waitMsFromError + 500;
+            pendingText = text;
+            log.warn({ err: e, waitMs: waitMsFromError }, "Rich draft rate limited");
+            continue;
+          }
+          if (isPermanentDraftError(e)) {
+            enabled = false;
+            lastText = text;
+            log.debug({ err: e }, "Rich drafts disabled for this peer");
+            continue;
+          }
+          log.warn({ err: e }, "sendRichMessageDraft failed");
+        }
+      }
+    } finally {
+      sending = false;
+      if (!stopped && pendingText != null) {
+        void pump();
+      } else {
+        notifyIdle();
+      }
+    }
+  };
 
   return {
-    send: async (text: string) => {
-      if (text === lastText) return;
-      lastText = text;
-      if (!msgId) {
-        const m = await ctx.reply(text, {
-          reply_to_message_id: ctx.message!.message_id,
-          ...extraOpts,
-        });
-        msgId = m.message_id;
-      } else {
-        await ctx.api
-          .editMessageText(ctx.chat!.id, msgId, text, extraOpts)
-          .catch((e: { description?: string }) => {
-            if (e?.description?.includes("not modified")) return;
-            log.warn({ err: e }, "Failed to edit draft message");
-          });
-      }
+    send: (text: string) => {
+      if (stopped || !enabled || text === lastText || text === pendingText) return;
+      pendingText = text;
+      void pump();
+    },
+    flush: async () => {
+      if (!sending && pendingText == null) return;
+      await new Promise<void>((resolve) => idleWaiters.push(resolve));
     },
     delete: async () => {
-      if (!msgId) return;
-      await ctx.api.deleteMessage(ctx.chat!.id, msgId).catch(() => {});
-      msgId = undefined;
-      lastText = "";
+      stopped = true;
+      pendingText = undefined;
+      if (sending) {
+        await new Promise<void>((resolve) => idleWaiters.push(resolve));
+      }
+      notifyIdle();
     },
   };
 }

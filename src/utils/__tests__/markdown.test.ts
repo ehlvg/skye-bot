@@ -2,20 +2,25 @@ import { test, expect, describe } from "vitest";
 import { cleanMd } from "../markdown.js";
 
 describe("cleanMd", () => {
-  test("strips asterisks", () => {
-    expect(cleanMd("hello *world*")).toBe("hello world");
+  test("keeps rich markdown emphasis", () => {
+    expect(cleanMd("hello *world*")).toBe("hello *world*");
   });
 
-  test("strips underscores", () => {
-    expect(cleanMd("_italic_")).toBe("italic");
+  test("keeps underscores", () => {
+    expect(cleanMd("_italic_")).toBe("_italic_");
   });
 
-  test("strips tildes", () => {
-    expect(cleanMd("~~strikethrough~~")).toBe("strikethrough");
+  test("keeps strikethrough", () => {
+    expect(cleanMd("~~strikethrough~~")).toBe("~~strikethrough~~");
   });
 
-  test("strips backticks", () => {
-    expect(cleanMd("`code`")).toBe("code");
+  test("keeps code spans", () => {
+    expect(cleanMd("`code`")).toBe("`code`");
+  });
+
+  test("keeps rich blocks", () => {
+    const markdown = "# Heading\n\n| A | B |\n|---|---|\n| $x$ | ==marked== |";
+    expect(cleanMd(markdown)).toBe(markdown);
   });
 
   test("unescapes punctuation after backslash", () => {

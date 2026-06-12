@@ -1,8 +1,6 @@
-// Telegram supports a tiny subset of Markdown. Strip everything else.
+// Telegram rich messages support GitHub-flavored Markdown plus Telegram
+// extensions. Keep model formatting intact and only normalize common escaping
+// artifacts produced for the older MarkdownV2 path.
 export function cleanMd(text: string) {
-  // Remove common markdown formatting markers that could confuse Telegram
-  let cleaned = text.replace(/[*_~`]/g, "");
-  // Ensure no literal backslashes remain before punctuation (from prior escaping)
-  cleaned = cleaned.replace(/\\([.!(){}[\]])/g, "$1");
-  return cleaned;
+  return text.replace(/\\([.!(){}[\]])/g, "$1").trim();
 }
