@@ -3,9 +3,34 @@ services:
     build: .
     container_name: skye-bot
     restart: unless-stopped
-    # Secrets live in .env (gitignored), injected at runtime — not baked into the image.
+    # Local installs may keep secrets in .env, while deploy platforms often inject
+    # real environment variables without creating a file.
     env_file:
-      - .env
+      - path: .env
+        required: false
+    environment:
+      BOT_TOKEN: ${BOT_TOKEN:-}
+      ALLOWED_IDS: ${ALLOWED_IDS:-}
+      OPENAI_KEY: ${OPENAI_KEY:-}
+      MODEL: ${MODEL:-openai/gpt-oss-120b}
+      BASE_URL: ${BASE_URL:-https://openrouter.ai/api/v1}
+      MAX_COMPLETION_TOKENS: ${MAX_COMPLETION_TOKENS:-500}
+      IMAGE_BASE_URL: ${IMAGE_BASE_URL:-}
+      IMAGE_API_KEY: ${IMAGE_API_KEY:-}
+      IMAGE_MODEL: ${IMAGE_MODEL:-google/gemini-3.1-flash-image-preview}
+      YC_API_KEY: ${YC_API_KEY:-}
+      YC_FOLDER_ID: ${YC_FOLDER_ID:-}
+      YC_TTS_VOICE: ${YC_TTS_VOICE:-jane}
+      YC_TTS_EMOTION: ${YC_TTS_EMOTION:-neutral}
+      YC_TTS_LANG: ${YC_TTS_LANG:-ru-RU}
+      YC_TTS_SPEED: ${YC_TTS_SPEED:-1.0}
+      LOG_LEVEL: ${LOG_LEVEL:-info}
+      AUDIT_RETENTION_DAYS: ${AUDIT_RETENTION_DAYS:-90}
+      AUDIT_MAX_ROWS: ${AUDIT_MAX_ROWS:-100000}
+      MCP_CONFIG_PATH: ${MCP_CONFIG_PATH:-}
+      WEBAPP_URL: ${WEBAPP_URL:-http://localhost:3001}
+      WEBAPP_PORT: ${WEBAPP_PORT:-3001}
+      DB_PATH: ${DB_PATH:-/app/data/skye.db}
     ports:
       # Expose the Telegram Mini App / settings panel served by the bot.
       - "${WEBAPP_PORT:-3001}:${WEBAPP_PORT:-3001}"
