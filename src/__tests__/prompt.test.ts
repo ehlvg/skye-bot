@@ -57,4 +57,15 @@ describe("buildSystemPrompt", () => {
     expect(pos1).toBeGreaterThan(-1);
     expect(pos2).toBeGreaterThan(pos1);
   });
+
+  test("includes sandbox section when enabled", () => {
+    const prompt = buildSystemPrompt([], undefined, undefined, undefined, true);
+    expect(prompt).toContain("Vercel Sandbox");
+    expect(prompt).toContain("sandbox_run_command");
+  });
+
+  test("omits sandbox section when disabled", () => {
+    const prompt = buildSystemPrompt([], undefined, undefined, undefined, false);
+    expect(prompt).not.toContain("Vercel Sandbox");
+  });
 });

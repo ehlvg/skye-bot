@@ -104,9 +104,7 @@ export function addUserMcpServer(
   config: Record<string, unknown>
 ): number {
   const result = getDb()
-    .prepare(
-      `INSERT INTO user_mcp_servers (user_id, name, config, created_at) VALUES (?, ?, ?, ?)`
-    )
+    .prepare(`INSERT INTO user_mcp_servers (user_id, name, config, created_at) VALUES (?, ?, ?, ?)`)
     .run(userId, name, JSON.stringify(config), new Date().toISOString());
   return Number(result.lastInsertRowid);
 }
@@ -142,9 +140,10 @@ export function setUserMcpInput(serverId: number, inputId: string, value: string
 
 export function getUserMcpInputs(serverId: number): Record<string, string> {
   const rows = getDb()
-    .prepare<[number], { inputId: string; value: string }>(
-      `SELECT input_id AS inputId, value FROM user_mcp_inputs WHERE server_id = ?`
-    )
+    .prepare<
+      [number],
+      { inputId: string; value: string }
+    >(`SELECT input_id AS inputId, value FROM user_mcp_inputs WHERE server_id = ?`)
     .all(serverId);
   return Object.fromEntries(rows.map((r) => [r.inputId, r.value]));
 }

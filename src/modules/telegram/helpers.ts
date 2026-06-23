@@ -201,12 +201,8 @@ export function buildDraftMarkdown(toolCalls: ToolCallRecord[], suffix?: string)
   return suffix ? `${blockquote}\n\n${suffix}` : blockquote;
 }
 
-export function buildFinalReply(
-  toolCalls: ToolCallRecord[],
-  text: string
-): string {
-  if (toolCalls.length === 0) return text;
-  return `${buildDraftMarkdown(toolCalls)}\n\n${text}`;
+export function buildFinalReply(toolCalls: ToolCallRecord[], text: string): string {
+  return text;
 }
 
 type ChatAction =
@@ -335,20 +331,63 @@ function replyParameters(ctx: GrammyContext): { message_id: number } | undefined
   return id == null ? undefined : { message_id: id };
 }
 
-export async function sendRichReply(
-  ctx: GrammyContext,
-  markdown: string
-): Promise<Message> {
-  return withTelegramRetry(
-    () =>
-      richRaw(ctx).sendRichMessage({
-        chat_id: ctx.chat!.id,
+export async function sendRichReply(ctx: GrammyContext, markdown: string): Promise<Message> {
+  try {
+    return await withTelegramRetry(
+      () =>
+        richRaw(ctx).sendRichMessage({
+          chat_id: ctx.chat!.id,
+          message_thread_id: threadId(ctx),
+          rich_message: { markdown },
+          reply_parameters: replyParameters(ctx),
+        }),
+      { context: "sendRichMessage" }
+    );
+  } catch (e) {
+    log.warn({ err: e }, "sendRichMessage failed, falling back to plain messages");
+    const chunks = splitTelegramText(markdown);
+    let first: Message | undefined;
+    for (const [i, chunk] of chunks.entries()) {
+      const msg = await ctx.reply(chunk, {
         message_thread_id: threadId(ctx),
-        rich_message: { markdown },
-        reply_parameters: replyParameters(ctx),
-      }),
-    { context: "sendRichMessage" }
-  );
+        ...(i === 0 && ctx.message?.message_id
+          ? { reply_to_message_id: ctx.message.message_id }
+          : {}),
+      });
+      first ??= msg;
+    }
+    return first!;
+  }
+}
+
+function splitTelegramText(text: string, limit = 3900): string[] {
+  if (text.length <= limit) return [text];
+  const chunks: string[] = [];
+  let rest = text;
+  while (rest.length > limit) {
+    const at = Math.max(
+      rest.lastIndexOf("\n\n", limit),
+      rest.lastIndexOf("\n", limit),
+      rest.lastIndexOf(" ", limit)
+    );
+    const cut = at > limit * 0.5 ? at : limit;
+    chunks.push(rest.slice(0, cut).trim());
+    rest = rest.slice(cut).trim();
+  }
+  if (rest) chunks.push(rest);
+  return chunks;
+}
+
+export function reactSafely(ctx: GrammyContext, emoji: string, isBig = false): void {
+  if (!ctx.chat?.id || !ctx.message?.message_id) return;
+  void ctx.api.raw
+    .setMessageReaction({
+      chat_id: ctx.chat.id,
+      message_id: ctx.message.message_id,
+      reaction: [{ type: "emoji", emoji } as never],
+      is_big: isBig,
+    })
+    .catch(() => {});
 }
 
 async function sendRichDraft(ctx: GrammyContext, draftId: number, markdown: string): Promise<true> {

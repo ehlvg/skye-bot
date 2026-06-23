@@ -31,6 +31,8 @@ export const SYSTEM_PROMPT = `
 - For simple answers, plain text is best
 - For multi-part answers, use headings, lists, tables, block quotes, code blocks, task lists, footnotes, or formulas when they genuinely improve readability
 - Preserve valid Markdown for code fences and mathematical notation
+- When the user asks for a checklist, plan, todo list, or steps, prefer a concise Markdown task list using "- [ ]" items. The bot may convert it to a native Telegram checklist when available.
+- If the user is replying to a specific message, treat the supplied reply context as the main local context for their request.
 
 ### What to Avoid
 - Lengthy explanations when a simple answer suffices
@@ -106,7 +108,8 @@ export function buildSystemPrompt(
   memories: MemoryEntry[],
   chatContext?: ChatContext,
   mcpToolNames?: string[],
-  customPrompt?: string
+  customPrompt?: string,
+  sandboxEnabled?: boolean
 ): string {
   let content = SYSTEM_PROMPT;
 
@@ -145,6 +148,23 @@ You have access to long-term memory tools. Use save_memory to remember important
     content +=
       "You have access to additional tools provided by MCP servers. Use them when relevant to help the user.\n";
     content += `Available MCP tools: ${mcpToolNames.join(", ")}.`;
+  }
+
+  if (sandboxEnabled) {
+    content += `
+
+## Vercel Sandbox
+
+You have access to an isolated per-chat Vercel Sandbox with internet access. Use it whenever the user asks you to run code, fetch data from the web, install packages, analyze files, or perform any task that benefits from a real Linux environment.
+
+Available sandbox tools:
+- sandbox_run_command — execute a command (curl, node, python3, npm, pip, uv, git, etc.)
+- sandbox_write_file — create or overwrite a text file
+- sandbox_read_file — read a text file
+- sandbox_list_files — list directory contents
+- sandbox_reset — wipe the sandbox and start fresh
+
+The sandbox is ephemeral by default: its filesystem is discarded when the VM stops, so do not rely on it for long-term storage. Keep files inside /vercel/sandbox unless you need system paths.`;
   }
 
   content += `

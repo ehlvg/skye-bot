@@ -5,6 +5,7 @@ import { log } from "../../utils/log.js";
 const MAX_BUFFER = 50;
 const RECENT_COUNT = 20;
 const SUMMARIZE_INTERVAL = 10;
+const MAX_STORED_CONVERSATION_ITEMS = 60;
 
 export interface LogEntry {
   sender: string;
@@ -13,6 +14,22 @@ export interface LogEntry {
   content: string;
   replyTo?: string;
 }
+
+export interface ConversationItem {
+  messageId?: number;
+  role: "user" | "assistant";
+  content: unknown;
+  text: string;
+  createdAt: string;
+}
+
+type ConversationRow = {
+  messageId: number | null;
+  role: "user" | "assistant";
+  contentJson: string;
+  text: string;
+  createdAt: string;
+};
 
 // In-memory ring buffers keyed by chatId (reset on restart is acceptable)
 const logs = new Map<number, LogEntry[]>();
@@ -31,6 +48,105 @@ function getSummary(chatId: number): string {
     .prepare<[number], { summary: string }>("SELECT summary FROM chat_summaries WHERE chat_id = ?")
     .get(chatId);
   return row?.summary ?? "";
+}
+
+function pruneConversation(chatId: number, threadKey: string): void {
+  getDb()
+    .prepare(
+      `DELETE FROM conversation_items
+       WHERE id IN (
+         SELECT id FROM conversation_items
+         WHERE chat_id = ? AND thread_key = ?
+         ORDER BY id DESC
+         LIMIT -1 OFFSET ?
+       )`
+    )
+    .run(chatId, threadKey, MAX_STORED_CONVERSATION_ITEMS);
+}
+
+export function appendConversationItem(
+  chatId: number,
+  threadKey: string,
+  item: Omit<ConversationItem, "createdAt"> & { createdAt?: string }
+): void {
+  const createdAt = item.createdAt ?? new Date().toISOString();
+  getDb()
+    .prepare(
+      `INSERT INTO conversation_items
+        (chat_id, thread_key, message_id, role, content_json, text, created_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?)`
+    )
+    .run(
+      chatId,
+      threadKey,
+      item.messageId ?? null,
+      item.role,
+      JSON.stringify(item.content),
+      item.text,
+      createdAt
+    );
+  pruneConversation(chatId, threadKey);
+}
+
+export function listConversationItems(
+  chatId: number,
+  threadKey: string,
+  limit = 30
+): ConversationItem[] {
+  const rows = getDb()
+    .prepare<[number, string, number], ConversationRow>(
+      `SELECT message_id AS messageId, role, content_json AS contentJson, text, created_at AS createdAt
+       FROM conversation_items
+       WHERE chat_id = ? AND thread_key = ?
+       ORDER BY id DESC
+       LIMIT ?`
+    )
+    .all(chatId, threadKey, limit);
+
+  return rows.reverse().map((row) => ({
+    ...(row.messageId != null ? { messageId: row.messageId } : {}),
+    role: row.role,
+    content: JSON.parse(row.contentJson) as unknown,
+    text: row.text,
+    createdAt: row.createdAt,
+  }));
+}
+
+export function clearConversationItems(chatId: number, threadKey: string): void {
+  getDb()
+    .prepare("DELETE FROM conversation_items WHERE chat_id = ? AND thread_key = ?")
+    .run(chatId, threadKey);
+}
+
+export function countConversationItems(chatId: number, threadKey?: string): number {
+  if (threadKey) {
+    const row = getDb()
+      .prepare<
+        [number, string],
+        { count: number }
+      >("SELECT COUNT(*) AS count FROM conversation_items WHERE chat_id = ? AND thread_key = ?")
+      .get(chatId, threadKey);
+    return row?.count ?? 0;
+  }
+  const row = getDb()
+    .prepare<
+      [number],
+      { count: number }
+    >("SELECT COUNT(*) AS count FROM conversation_items WHERE chat_id = ?")
+    .get(chatId);
+  return row?.count ?? 0;
+}
+
+export function findConversationText(chatId: number, messageId: number): string | undefined {
+  const row = getDb()
+    .prepare<[number, number], { text: string }>(
+      `SELECT text FROM conversation_items
+       WHERE chat_id = ? AND message_id = ?
+       ORDER BY id DESC
+       LIMIT 1`
+    )
+    .get(chatId, messageId);
+  return row?.text;
 }
 
 export function formatLogEntry(entry: LogEntry): string {
@@ -94,11 +210,15 @@ export async function summarizeChat(chatId: number, creds?: ApiCredentials): Pro
   }
 
   const formatted = older.map(formatLogEntry).join("\n");
+  const previous = getSummary(chatId);
+  const input = previous
+    ? `Previous rolling summary:\n${previous}\n\nNew chat log:\n${formatted}`
+    : formatted;
   const instructions =
-    "You are a concise summarizer. Given a log of group chat messages, produce a brief summary noting: key participants, topics discussed, any media or files exchanged, and approximate timeline. Keep it under 200 words. Output only the summary, no preamble.";
+    "You maintain a compact rolling summary for a Telegram group chat. Update the previous summary if present. Keep it under 240 words with these compact sections: Participants, Topics, Decisions, Open questions, Shared media/files, Timeline. Output only the updated summary.";
 
   try {
-    const res = await llmRef.ask(instructions, formatted, creds);
+    const res = await llmRef.ask(instructions, input, creds);
     const text = res.output_text;
     if (text) {
       await setSummary(chatId, text);
@@ -115,10 +235,24 @@ export interface ChatLogService {
   log(chatId: number, entry: LogEntry, chatTitle?: string): boolean;
   context(chatId: number): { chatTitle: string; summary: string; recentLog: string } | undefined;
   summarize(chatId: number, creds?: ApiCredentials): Promise<void>;
+  appendConversation(
+    chatId: number,
+    threadKey: string,
+    item: Omit<ConversationItem, "createdAt">
+  ): void;
+  listConversation(chatId: number, threadKey: string, limit?: number): ConversationItem[];
+  clearConversation(chatId: number, threadKey: string): void;
+  countConversation(chatId: number, threadKey?: string): number;
+  findConversationText(chatId: number, messageId: number): string | undefined;
 }
 
 export const chatLogService: ChatLogService = {
   log: logMessage,
   context: getChatContext,
   summarize: summarizeChat,
+  appendConversation: appendConversationItem,
+  listConversation: listConversationItems,
+  clearConversation: clearConversationItems,
+  countConversation: countConversationItems,
+  findConversationText,
 };

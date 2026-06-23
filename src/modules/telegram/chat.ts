@@ -1,12 +1,9 @@
-import type {
-  ApiCredentials,
-  LlmClient,
-  ResponseInputItem,
-} from "../llm/client.js";
+import type { ApiCredentials, LlmClient, ResponseInputItem } from "../llm/client.js";
 import type { McpService } from "../mcp/service.js";
 import type { MemoryService } from "../memory/service.js";
 import type { ChatLogService } from "../chatLog/service.js";
 import type { UserConfigService } from "../userConfig/service.js";
+import type { SandboxService } from "../sandbox/service.js";
 import type { ToolDefinition } from "../../core/module.js";
 import type { TenantContext } from "../../core/tenant.js";
 import { buildSystemPrompt } from "../llm/prompt.js";
@@ -19,6 +16,7 @@ export interface ChatLoopDeps {
   memory: MemoryService;
   chatLog: ChatLogService;
   userConfig: UserConfigService;
+  sandbox?: SandboxService;
   /** Built-in (non-MCP) tools — currently just memory tools. */
   builtinTools: ToolDefinition[];
 }
@@ -60,7 +58,8 @@ export async function runChatLoop(
     memories,
     chatContext,
     mcpToolNames,
-    userCfg?.systemPrompt
+    userCfg?.systemPrompt,
+    deps.sandbox?.isEnabled()
   );
 
   // Log the request summary (last user item text + attachments).
@@ -78,7 +77,7 @@ export async function runChatLoop(
     lastItem?.type === "message" &&
     typeof (lastItem as { content?: unknown }).content === "string"
   ) {
-    requestSummary = ((lastItem as { content: string }).content).slice(0, 200);
+    requestSummary = (lastItem as { content: string }).content.slice(0, 200);
   }
   log.info(
     { chatId: tenant.chatId, requestSummary, requestAttachments, toolCount: allTools.length },
@@ -102,14 +101,12 @@ export async function runChatLoop(
 
     const response = await stream.finalResponse();
 
-    const fnCalls = (
-      response.output.filter((item) => item.type === "function_call") as Array<{
-        type: "function_call";
-        call_id: string;
-        name: string;
-        arguments: string;
-      }>
-    );
+    const fnCalls = response.output.filter((item) => item.type === "function_call") as Array<{
+      type: "function_call";
+      call_id: string;
+      name: string;
+      arguments: string;
+    }>;
 
     if (fnCalls.length === 0) {
       if (response.output_text) return response.output_text;

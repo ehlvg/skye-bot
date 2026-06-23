@@ -1,7 +1,15 @@
 import { getDb } from "../../core/db.js";
 import { log } from "../../utils/log.js";
 
-export type MsgType = "text" | "voice" | "photo" | "image" | "image_edit";
+export type MsgType =
+  | "text"
+  | "voice"
+  | "photo"
+  | "image"
+  | "image_edit"
+  | "document"
+  | "audio"
+  | "video_note";
 
 export interface AuditEntry {
   chatId: number;

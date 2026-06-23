@@ -159,10 +159,7 @@ export class McpService {
   ): Promise<{ client: Client; tools: OpenAITool[] } | null> {
     try {
       const cfg = resolveConfig(rawCfg, extraVars);
-      const client = new Client(
-        { name: `skye-${name}`, version: "1.0.0" },
-        { capabilities: {} }
-      );
+      const client = new Client({ name: `skye-${name}`, version: "1.0.0" }, { capabilities: {} });
 
       const transportType = cfg.type ?? (cfg.url ? "http" : "stdio");
 
@@ -194,9 +191,7 @@ export class McpService {
       const tools = result.tools ?? [];
       const openaiTools: OpenAITool[] = [];
       const toolMap =
-        scope === "global"
-          ? this.globalToolMap
-          : this.getOrCreateUserToolMap(userId!, serverId!);
+        scope === "global" ? this.globalToolMap : this.getOrCreateUserToolMap(userId!, serverId!);
 
       for (const tool of tools) {
         if (scope === "global" && this.globalToolMap.has(tool.name)) {

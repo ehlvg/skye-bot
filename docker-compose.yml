@@ -31,6 +31,15 @@ services:
       WEBAPP_URL: ${WEBAPP_URL:-http://localhost:3001}
       WEBAPP_PORT: ${WEBAPP_PORT:-3001}
       DB_PATH: ${DB_PATH:-/app/data/skye.db}
+      VERCEL_ACCESS_TOKEN: ${VERCEL_ACCESS_TOKEN:-}
+      VERCEL_PROJECT_ID: ${VERCEL_PROJECT_ID:-}
+      VERCEL_TEAM_ID: ${VERCEL_TEAM_ID:-}
+      SANDBOX_ENABLED: ${SANDBOX_ENABLED:-true}
+      SANDBOX_RUNTIME: ${SANDBOX_RUNTIME:-node24}
+      SANDBOX_TIMEOUT_MS: ${SANDBOX_TIMEOUT_MS:-300000}
+      SANDBOX_VCPUS: ${SANDBOX_VCPUS:-2}
+      SANDBOX_PERSISTENT: ${SANDBOX_PERSISTENT:-false}
+      SANDBOX_COMMAND_TIMEOUT_MS: ${SANDBOX_COMMAND_TIMEOUT_MS:-60000}
     ports:
       # Expose the Telegram Mini App / settings panel served by the bot.
       - "${WEBAPP_PORT:-3001}:${WEBAPP_PORT:-3001}"

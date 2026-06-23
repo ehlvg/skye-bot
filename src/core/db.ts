@@ -67,12 +67,8 @@ export function runMigrations(
   logger?: Logger
 ): void {
   ensureMigrationsTable(db);
-  const isApplied = db.prepare<[string], { id: string }>(
-    "SELECT id FROM migrations WHERE id = ?"
-  );
-  const record = db.prepare(
-    "INSERT INTO migrations (id, applied_at) VALUES (?, ?)"
-  );
+  const isApplied = db.prepare<[string], { id: string }>("SELECT id FROM migrations WHERE id = ?");
+  const record = db.prepare("INSERT INTO migrations (id, applied_at) VALUES (?, ?)");
 
   for (const mod of modules) {
     if (!mod.migrations?.length) continue;

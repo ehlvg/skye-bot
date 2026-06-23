@@ -92,7 +92,8 @@ class ChatCompletionsStreamAdapter {
 
     try {
       // Await the underlying SDK stream (Promise<Stream<ChatCompletionChunk>>)
-      const stream = (await this.streamPromise) as AsyncIterable<OpenAI.Chat.Completions.ChatCompletionChunk>;
+      const stream = (await this
+        .streamPromise) as AsyncIterable<OpenAI.Chat.Completions.ChatCompletionChunk>;
       for await (const chunk of stream) {
         const delta = chunk.choices?.[0]?.delta;
         if (!delta) continue;

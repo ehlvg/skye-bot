@@ -14,9 +14,10 @@ type ConfigRow = {
 
 export function getChatConfig(chatId: number): ChatApiConfig {
   const row = getDb()
-    .prepare<[number], ConfigRow>(
-      "SELECT api_key AS apiKey, base_url AS baseUrl, voice_mode AS voiceMode FROM chat_configs WHERE chat_id = ?"
-    )
+    .prepare<
+      [number],
+      ConfigRow
+    >("SELECT api_key AS apiKey, base_url AS baseUrl, voice_mode AS voiceMode FROM chat_configs WHERE chat_id = ?")
     .get(chatId);
   if (!row) return { voiceMode: false };
   return {

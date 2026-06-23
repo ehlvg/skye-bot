@@ -50,3 +50,14 @@ For pull requests:
 ## Configuration & Secrets
 
 Create a `.env` file based on `env.example` and set `BOT_TOKEN`, `OPENAI_KEY`, and model configuration values. Never commit real secrets.
+
+## Vercel Sandbox
+
+The bot can spawn one isolated Vercel Sandbox per Telegram chat. Each sandbox has internet access and can run arbitrary commands, read/write files, and install packages.
+
+- Module: `src/modules/sandbox/`.
+- Authentication: set `VERCEL_ACCESS_TOKEN`, `VERCEL_PROJECT_ID`, and `VERCEL_TEAM_ID`. On Vercel hosting the SDK can use `VERCEL_OIDC_TOKEN` instead.
+- Runtime and resource defaults are controlled by `SANDBOX_*` variables in `env.example`.
+- By default sandboxes are non-persistent; the filesystem is discarded when the VM stops.
+- Commands exposed to the LLM: `sandbox_run_command`, `sandbox_write_file`, `sandbox_read_file`, `sandbox_list_files`, `sandbox_reset`.
+- Telegram commands: `/sandbox <command>`, `/sandbox_reset`, `/sandbox_status`.

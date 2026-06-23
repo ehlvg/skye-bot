@@ -3,6 +3,7 @@ import { z } from "zod";
 export const telegramEnvSchema = z.object({
   BOT_TOKEN: z.string().min(1, "BOT_TOKEN is required"),
   ALLOWED_IDS: z.string().default(""),
+  TELEGRAM_POLLING_LOCK: z.string().default("1"),
 });
 
 export type TelegramEnv = z.infer<typeof telegramEnvSchema>;

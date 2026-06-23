@@ -23,11 +23,9 @@ describe("buildFinalReply", () => {
     expect(buildFinalReply([], "# Heading\n\n$x$")).toBe("# Heading\n\n$x$");
   });
 
-  test("prepends tool call summary as markdown quote", () => {
+  test("keeps final replies clean when tools were used", () => {
     const reply = buildFinalReply(calls, "Done.");
-    expect(reply).toContain("> 🧠 save_memory");
-    expect(reply).toContain("> 🔌 search");
-    expect(reply).toContain("\n\nDone.");
+    expect(reply).toBe("Done.");
   });
 });
 

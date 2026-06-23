@@ -4,13 +4,15 @@ Skye supports several interaction modes and commands. This page covers what you 
 
 ## Commands
 
-| Command | What it does | Public? |
-|---|---|---|
-| `/reset` | Clears the current conversation context. Skye forgets the last few messages (but not long-term memories). | Yes |
-| `/config` | Opens the Settings panel where you can set your API key, model, and other preferences. | Yes |
-| `/image <prompt>` | Generates an image from your description. Example: `/image a cat on the moon`. | No |
-| `/voice` | Toggles voice reply mode on/off. When on, Skye speaks its responses as voice notes. | Yes |
-| `/forget` | Clears all long-term memories for the current chat. Conversation history is not affected. | No |
+| Command           | What it does                                                                                              | Public? |
+| ----------------- | --------------------------------------------------------------------------------------------------------- | ------- |
+| `/reset`          | Clears the current conversation context. Skye forgets the last few messages (but not long-term memories). | Yes     |
+| `/config`         | Opens the Settings panel where you can set your API key, model, and other preferences.                    | Yes     |
+| `/image <prompt>` | Generates an image from your description. Example: `/image a cat on the moon`.                            | No      |
+| `/voice`          | Toggles voice reply mode on/off. When on, Skye speaks its responses as voice notes.                       | Yes     |
+| `/forget`         | Clears all long-term memories for the current chat. Conversation history is not affected.                 | No      |
+| `/status`         | Shows current model, vision, voice, memory, context, and MCP capability status.                           | Yes     |
+| `/catchup`        | Summarizes the current group context from the rolling chat summary and recent log.                        | Yes     |
 
 ## Interactions
 
@@ -18,11 +20,18 @@ Skye supports several interaction modes and commands. This page covers what you 
 
 Send a message. In private chats, Skye responds automatically. In groups, mention Skye by its username (e.g., `@skye_bot`) to get a reply.
 
-Conversations are **streaming** — you'll see Skye's response build in real time as a draft, then finalize when complete. The bot remembers the last 30 messages per thread to maintain context. Use `/reset` to clear this buffer.
+Conversations are **streaming** — you'll see Skye's response build in real time as a draft, then finalize when complete. Short bursts of Telegram messages are grouped into one request, and each thread has a serialized queue so messages are not silently dropped. Recent conversation context is stored per thread and restored after restarts. Use `/reset` to clear this buffer.
 
 ### Image generation
 
 Send `/image <prompt>` and Skye generates an image using the configured image model. The default model is Google's Gemini image model through OpenRouter, but you can [change this in configuration](configuration.md#image-generation).
+
+Generated images include compact controls:
+
+- **Variation** — create a polished alternate version.
+- **Prompt+** — rewrite the prompt into a stronger reusable prompt.
+- **Square** — regenerate as a 1:1 composition.
+- **Wide** — regenerate as a 16:9 composition.
 
 ### Image editing
 
@@ -35,6 +44,16 @@ Send a photo with any caption or question. Skye will analyze the image and respo
 ### Voice input
 
 Send a voice message. Skye transcribes it using Yandex Cloud SpeechKit and responds as if you'd typed the message. This requires Yandex Cloud configuration — see [Configuration](configuration.md#voice-speechkit).
+
+### Documents and audio
+
+Send text/code documents such as `.txt`, `.md`, `.json`, `.csv`, source files, logs, YAML, SQL, HTML, or XML. Skye reads the document content and answers using it as context.
+
+Audio files and video notes are handled best-effort through the same SpeechKit transcription path as voice messages. Voice notes are the most reliable format; other audio/video formats may need transcoding before SpeechKit can recognize them.
+
+### Checklists
+
+When you ask for a checklist, todo list, plan, or steps, Skye prefers Markdown task lists. If Telegram exposes a business connection that allows native checklists, Skye sends a native Telegram checklist; otherwise the rich Markdown task list is used as the fallback.
 
 ### Voice output
 
@@ -55,7 +74,8 @@ In groups, Skye:
 
 - **Listens** for mentions and commands addressed to it.
 - **Logs** recent messages (last 50) per group.
-- **Summarizes** older messages every 10 new messages, using an LLM call to create a compact summary. Both the recent log and the summary are included in the system prompt so Skye stays aware of the conversation.
+- **Summarizes** older messages every 10 new messages, using an LLM call to maintain a compact rolling summary with participants, topics, decisions, open questions, shared files/media, and timeline.
+- Supports `/catchup` for a quick summary of what happened recently.
 
 ## MCP tools
 
@@ -67,4 +87,4 @@ While Skye is thinking, you'll see a live-updating draft message. Tool calls are
 
 ## Rate limiting
 
-There's a 2-second cooldown between responses per thread. If you send messages too quickly, Skye may skip them. This prevents spam and API overuse.
+Requests are queued per thread. Short text bursts are grouped before Skye responds, which prevents accidental message drops while still keeping API usage controlled.

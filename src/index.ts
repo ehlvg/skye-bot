@@ -18,6 +18,7 @@ import { llmModule } from "./modules/llm/index.js";
 import { mcpModule } from "./modules/mcp/index.js";
 import { memoryModule } from "./modules/memory/index.js";
 import { panelModule } from "./modules/panel/index.js";
+import { sandboxModule } from "./modules/sandbox/index.js";
 import { speechModule } from "./modules/speech/index.js";
 import { telegramModule } from "./modules/telegram/index.js";
 import { userConfigModule } from "./modules/userConfig/index.js";
@@ -39,6 +40,7 @@ const modules: readonly SkyeModule[] = [
   speechModule,
   auditModule,
   mcpModule,
+  sandboxModule,
   panelModule,
   telegramModule,
 ];

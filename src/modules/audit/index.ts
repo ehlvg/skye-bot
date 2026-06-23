@@ -1,12 +1,7 @@
 import type { SkyeModule } from "../../core/module.js";
 import { migrations } from "./migrations.js";
 import { buildRoutes } from "./routes.js";
-import {
-  type AuditEntry,
-  type AuditService,
-  logRequest,
-  scheduleAuditPruning,
-} from "./service.js";
+import { type AuditEntry, type AuditService, logRequest, scheduleAuditPruning } from "./service.js";
 
 declare module "../../core/module.js" {
   interface SkyeServices {

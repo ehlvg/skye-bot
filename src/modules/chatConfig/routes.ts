@@ -35,9 +35,10 @@ export function buildRoutes(ctx: ModuleContext): PanelRoute[] {
         const body = req.body as { voiceMode?: boolean };
 
         const row = getDb()
-          .prepare<[number], { chatId: number }>(
-            `SELECT DISTINCT chat_id AS chatId FROM request_logs WHERE user_id = ? LIMIT 1`
-          )
+          .prepare<
+            [number],
+            { chatId: number }
+          >(`SELECT DISTINCT chat_id AS chatId FROM request_logs WHERE user_id = ? LIMIT 1`)
           .get(userId);
 
         if (row) {

@@ -10,18 +10,18 @@ Skye is a calm, minimal AI assistant for Telegram. It answers questions, remembe
 
 ## What Skye can do
 
-| Capability | How |
-|---|---|
-| **Chat** | Streaming, context-aware conversations. Calm and concise by design. |
-| **Remember** | Long-term memory: saves and recalls facts across conversations. |
-| **Generate images** | Creates images from text descriptions. |
-| **Edit images** | Send a photo with `/image <prompt>` to transform it. |
-| **See images** | Send a photo with a question and Skye will describe or analyze it. |
-| **Listen to voice** | Voice messages are transcribed and answered. |
-| **Speak back** | Toggle voice replies with `/voice`. |
-| **Use tools** | Built-in memory tools, plus MCP tools you connect yourself. |
+| Capability              | How                                                                 |
+| ----------------------- | ------------------------------------------------------------------- |
+| **Chat**                | Streaming, context-aware conversations. Calm and concise by design. |
+| **Remember**            | Long-term memory: saves and recalls facts across conversations.     |
+| **Generate images**     | Creates images from text descriptions.                              |
+| **Edit images**         | Send a photo with `/image <prompt>` to transform it.                |
+| **See images**          | Send a photo with a question and Skye will describe or analyze it.  |
+| **Listen to voice**     | Voice messages are transcribed and answered.                        |
+| **Speak back**          | Toggle voice replies with `/voice`.                                 |
+| **Use tools**           | Built-in memory tools, plus MCP tools you connect yourself.         |
 | **Group summarization** | In groups, Skye summarizes older messages to stay aware of context. |
-| **Per-user settings** | Each user can bring their own API key, model, and custom prompt. |
+| **Per-user settings**   | Each user can bring their own API key, model, and custom prompt.    |
 
 ## Quick tour of this documentation
 
