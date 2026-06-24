@@ -19,6 +19,7 @@ import { mcpModule } from "./modules/mcp/index.js";
 import { memoryModule } from "./modules/memory/index.js";
 import { panelModule } from "./modules/panel/index.js";
 import { proactiveModule } from "./modules/proactive/index.js";
+import { remindersModule } from "./modules/reminders/index.js";
 import { sandboxModule } from "./modules/sandbox/index.js";
 import { speechModule } from "./modules/speech/index.js";
 import { telegramModule } from "./modules/telegram/index.js";
@@ -43,6 +44,7 @@ const modules: readonly SkyeModule[] = [
   mcpModule,
   sandboxModule,
   proactiveModule,
+  remindersModule,
   panelModule,
   telegramModule,
 ];

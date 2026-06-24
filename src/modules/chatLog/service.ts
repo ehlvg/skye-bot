@@ -271,6 +271,53 @@ export function recentGroupMessages(chatId: number, limit = 30): GroupMessage[] 
   }));
 }
 
+/**
+ * Return group messages within a time range [since, until), formatted as
+ * a single string ready for the LLM. Used by reminder digests and other
+ * time-bounded context queries.
+ */
+export function groupMessagesSince(
+  chatId: number,
+  since: Date,
+  until: Date = new Date()
+): GroupMessage[] {
+  const rows = getDb()
+    .prepare<
+      [number, number, string, string],
+      {
+        message_id: number | null;
+        sender: string;
+        timestamp: string;
+        type: string;
+        content: string;
+        reply_to: string | null;
+      }
+    >(
+      `SELECT message_id, sender, timestamp, type, content, reply_to
+       FROM group_messages
+       WHERE chat_id = ? AND id > (
+         SELECT COALESCE(MAX(id), 0) FROM group_messages
+         WHERE chat_id = ? AND timestamp <= ?
+       )
+       AND timestamp < ?
+       ORDER BY id ASC`
+    )
+    .all(
+      chatId,
+      chatId,
+      since.toISOString(),
+      until.toISOString()
+    );
+  return rows.map((r) => ({
+    messageId: r.message_id,
+    sender: r.sender,
+    timestamp: r.timestamp,
+    type: r.type,
+    content: r.content,
+    ...(r.reply_to != null ? { replyTo: r.reply_to } : {}),
+  }));
+}
+
 export interface ChatLogService {
   log(chatId: number, entry: LogEntry, chatTitle?: string): void;
   context(chatId: number): { chatTitle: string; recentLog: string } | undefined;
@@ -285,6 +332,7 @@ export interface ChatLogService {
   findConversationText(chatId: number, messageId: number): string | undefined;
   loadChatLog(chatId: number): void;
   recentGroupMessages(chatId: number, limit?: number): GroupMessage[];
+  groupMessagesSince(chatId: number, since: Date, until?: Date): GroupMessage[];
 }
 
 export const chatLogService: ChatLogService = {
@@ -297,4 +345,5 @@ export const chatLogService: ChatLogService = {
   findConversationText,
   loadChatLog,
   recentGroupMessages,
+  groupMessagesSince,
 };

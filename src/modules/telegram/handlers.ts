@@ -16,8 +16,10 @@ import type { SpeechService } from "../speech/service.js";
 import type { AuditService } from "../audit/service.js";
 import type { SandboxService } from "../sandbox/service.js";
 import type { ProactiveService } from "../proactive/service.js";
+import type { RemindersService, Reminder } from "../reminders/service.js";
+import type { EventBus } from "../../core/events.js";
 import type { Contributions, TelegramCommand, ToolDefinition } from "../../core/module.js";
-import { tenantFromGrammy, threadKey } from "../../core/tenant.js";
+import { tenantFromGrammy, threadKey, type TenantContext } from "../../core/tenant.js";
 import { resolveCredentials, hasAccess, type AccessDeps } from "./access.js";
 import { runChatLoop } from "./chat.js";
 import {
@@ -49,6 +51,8 @@ export interface TelegramDeps {
   audit: AuditService;
   sandbox?: SandboxService;
   proactive?: ProactiveService;
+  reminders?: RemindersService;
+  events?: EventBus;
   botToken: string;
   allowedIds: Set<number>;
   webappUrl: string;
@@ -365,6 +369,18 @@ export function installTelegram(bot: Bot, deps: TelegramDeps, contributions: Con
     return sanitizeHistory(items);
   };
 
+  const formatGroupMessage = (m: {
+    sender: string;
+    timestamp: string;
+    type: string;
+    content: string;
+    replyTo?: string;
+  }): string => {
+    const reply = m.replyTo ? ` (replying to ${m.replyTo})` : "";
+    const typeTag = m.type !== "text" ? `[${m.type}] ` : "";
+    return `[${m.timestamp}] ${m.sender}${reply}: ${typeTag}${m.content}`;
+  };
+
   const storeConversation = (
     tenant: ReturnType<typeof tenantFromGrammy>,
     role: "user" | "assistant" | "tool",
@@ -542,6 +558,7 @@ export function installTelegram(bot: Bot, deps: TelegramDeps, contributions: Con
         const memoryCount = deps.memory.list(tenant.chatId).length;
         const ctxCount = deps.chatLog.countConversation(tenant.chatId, threadKey(tenant));
         const proactiveOn = deps.proactive?.isEnabled() ?? false;
+        const reminderCount = deps.reminders?.list(tenant.chatId).length ?? 0;
 
         const yes = "✅";
         const no = "❌";
@@ -563,6 +580,7 @@ export function installTelegram(bot: Bot, deps: TelegramDeps, contributions: Con
           `| **MCP tools** | ${mcpTools.length} |`,
           `| **Sandbox** | ${deps.sandbox?.isEnabled() ? yes : no} |`,
           `| **Proactive** | ${proactiveOn ? yes : no} |`,
+          `| **Reminders** | ${reminderCount} |`,
         ].join("\n");
         await sendRichReply(ctx, md);
       },
@@ -594,6 +612,38 @@ export function installTelegram(bot: Bot, deps: TelegramDeps, contributions: Con
           "",
           "| Time | Sender | Type | Content |",
           "|---|---|---|---|",
+          ...rows,
+        ].join("\n");
+        await sendRichReply(ctx, md);
+      },
+    },
+    {
+      name: "reminders",
+      description: "Show active reminders in this chat",
+      public: true,
+      handler: async (ctx, tenant) => {
+        if (!deps.reminders) {
+          await sendRichReply(ctx, "_Reminders are not available._");
+          return;
+        }
+        const reminders = deps.reminders.list(tenant.chatId);
+        if (reminders.length === 0) {
+          await sendRichReply(ctx, "_No active reminders in this chat._");
+          return;
+        }
+        const rows = reminders.map((r) => {
+          const local = new Date(r.fireAt).toLocaleString("en-US", {
+            dateStyle: "medium",
+            timeStyle: "short",
+          });
+          const repeat = r.repeat !== "none" ? ` · ${r.repeat}` : "";
+          return `| \`${r.id}\` | ${local}${repeat} | ${r.prompt.slice(0, 60).replace(/\|/g, "\\|")} |`;
+        });
+        const md = [
+          `## Reminders (${reminders.length})`,
+          "",
+          "| ID | When | Prompt |",
+          "|---|---|---|",
           ...rows,
         ].join("\n");
         await sendRichReply(ctx, md);
@@ -759,6 +809,7 @@ export function installTelegram(bot: Bot, deps: TelegramDeps, contributions: Con
             chatLog: deps.chatLog,
             userConfig: deps.userConfig,
             sandbox: deps.sandbox,
+            reminders: deps.reminders,
             builtinTools,
             hasReferenceImages,
           },
@@ -1416,6 +1467,157 @@ export function installTelegram(bot: Bot, deps: TelegramDeps, contributions: Con
       }
     });
   });
+
+  // --- Reminder firing ---
+  // The reminder scheduler emits "reminders.fired" via EventBus. Here we
+  // turn it into a full agent cycle: build a system-injected user message
+  // with the reminder prompt + chat context, run the LLM loop, and send
+  // the response to the chat — exactly as if a user had spoken.
+  if (deps.events && deps.reminders) {
+    deps.events.on("reminders.fired", (payload: { reminder: Reminder }) => {
+      const { reminder } = payload;
+      const tk =
+        reminder.threadId != null
+          ? `${reminder.chatId}:${reminder.threadId}`
+          : String(reminder.chatId);
+
+      enqueue(tk, async () => {
+        log.info({ id: reminder.id, chatId: reminder.chatId }, "Processing fired reminder");
+
+        const tenant: TenantContext = {
+          chatId: reminder.chatId,
+          chatType: "private",
+          ...(reminder.threadId != null ? { threadId: reminder.threadId } : {}),
+          ...(reminder.userId != null ? { userId: reminder.userId } : {}),
+        };
+
+        // Build context: for repeating reminders, include all group messages
+        // since the previous fire time. For one-time reminders, use the last
+        // 24 hours. This ensures digest-type reminders see the full window.
+        const now = new Date();
+        let since: Date;
+        if (reminder.repeat === "hourly") {
+          since = new Date(now.getTime() - 60 * 60 * 1000);
+        } else if (reminder.repeat === "daily") {
+          since = new Date(now.getTime() - 24 * 60 * 60 * 1000);
+        } else if (reminder.repeat === "weekly") {
+          since = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
+        } else if (reminder.repeat === "monthly") {
+          since = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000);
+        } else {
+          // one-time: last 24h of context
+          since = new Date(now.getTime() - 24 * 60 * 60 * 1000);
+        }
+
+        const periodMessages = deps.chatLog.groupMessagesSince(reminder.chatId, since, now);
+        const recentContext = deps.chatLog.context(reminder.chatId);
+
+        let contextBlock: string;
+        if (periodMessages.length > 0) {
+          const msgLines = periodMessages.map(formatGroupMessage).join("\n");
+          const periodLabel =
+            reminder.repeat === "hourly" ? "last hour"
+            : reminder.repeat === "daily" ? "last 24 hours"
+            : reminder.repeat === "weekly" ? "last week"
+            : reminder.repeat === "monthly" ? "last month"
+            : "last 24 hours";
+          contextBlock = `Messages in this chat during the ${periodLabel} (${periodMessages.length} messages):\n${msgLines}`;
+        } else if (recentContext) {
+          contextBlock = `No messages in the relevant period. Recent activity:\n${recentContext.recentLog}`;
+        } else {
+          contextBlock = "(no recent activity in this chat)";
+        }
+
+        const reminderText = `[System: A reminder you set has just fired]\n\nReminder prompt: ${reminder.prompt}\n\n${contextBlock}\n\nAct on the reminder now. If it's a reminder to tell the user something, tell them. If it's a task, do it. Be natural and concise.`;
+
+        const userItem: ResponseInputItem = {
+          type: "message",
+          role: "user",
+          content: reminderText,
+        };
+
+        storeConversation(
+          tenant as unknown as ReturnType<typeof tenantFromGrammy>,
+          "user",
+          reminderText,
+          `[reminder fired: ${reminder.id}] ${reminder.prompt.slice(0, 200)}`,
+        );
+
+        const creds = resolveCredentials(access, reminder.chatId, reminder.userId);
+        const inputItems: ResponseInputItem[] = [
+          ...historyFor(tenant as unknown as ReturnType<typeof tenantFromGrammy>).slice(-20),
+          userItem,
+        ];
+
+        const actionTicker = {
+          timer: undefined as NodeJS.Timeout | undefined,
+          start: () => {
+            void bot.api
+              .sendChatAction(reminder.chatId, "typing")
+              .catch(() => {});
+            actionTicker.timer = setInterval(() => {
+              void bot.api
+                .sendChatAction(reminder.chatId, "typing")
+                .catch(() => {});
+            }, 4000);
+          },
+          stop: () => {
+            if (actionTicker.timer) clearInterval(actionTicker.timer);
+            actionTicker.timer = undefined;
+          },
+        };
+
+        actionTicker.start();
+        try {
+          const text = cleanMd(
+            await runChatLoop(
+              {
+                llm: deps.llm,
+                mcp: deps.mcp,
+                memory: deps.memory,
+                chatLog: deps.chatLog,
+                userConfig: deps.userConfig,
+                sandbox: deps.sandbox,
+                reminders: deps.reminders,
+                builtinTools,
+              },
+              tenant,
+              inputItems,
+              creds,
+            ),
+          );
+
+          if (!text) {
+            log.warn({ id: reminder.id }, "Reminder produced no response");
+            return;
+          }
+
+          await bot.api.sendMessage(reminder.chatId, text, {
+            parse_mode: "Markdown",
+            ...(reminder.threadId != null
+              ? { message_thread_id: reminder.threadId }
+              : {}),
+          });
+
+          storeConversation(
+            tenant as unknown as ReturnType<typeof tenantFromGrammy>,
+            "assistant",
+            { kind: "reminder_reply", reminderId: reminder.id },
+            `[reminder reply] ${text.slice(0, 200)}`,
+          );
+
+          log.info({ id: reminder.id, chatId: reminder.chatId }, "Reminder processed");
+        } catch (e) {
+          log.error(
+            { ...serializeError(e), reminderId: reminder.id },
+            "Reminder processing failed",
+          );
+        } finally {
+          actionTicker.stop();
+        }
+      });
+    });
+  }
 }
 
 function uniqByCommand<T extends { command: string }>(v: T, i: number, arr: T[]): boolean {

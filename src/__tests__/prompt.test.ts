@@ -65,4 +65,23 @@ describe("buildSystemPrompt", () => {
     const prompt = buildSystemPrompt([], undefined, undefined, undefined, false);
     expect(prompt).not.toContain("Vercel Sandbox");
   });
+
+  test("includes reminders section when enabled", () => {
+    const prompt = buildSystemPrompt([], undefined, undefined, undefined, undefined, undefined, true);
+    expect(prompt).toContain("## Reminders");
+    expect(prompt).toContain("set_reminder");
+  });
+
+  test("omits reminders section when not enabled", () => {
+    const prompt = buildSystemPrompt([]);
+    expect(prompt).not.toContain("## Reminders");
+  });
+
+  test("includes current ISO datetime in chat context", () => {
+    const prompt = buildSystemPrompt([], {
+      chatTitle: "Test",
+      recentLog: "hi",
+    });
+    expect(prompt).toContain("Current ISO datetime");
+  });
 });

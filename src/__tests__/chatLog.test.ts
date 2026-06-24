@@ -3,6 +3,7 @@ import {
   formatLogEntry,
   logMessage,
   getChatContext,
+  groupMessagesSince,
 } from "../modules/chatLog/service.js";
 import type { LogEntry } from "../modules/chatLog/service.js";
 
@@ -58,5 +59,28 @@ describe("getChatContext", () => {
     expect(ctx).toBeDefined();
     expect(ctx!.chatTitle).toBe("Test Group");
     expect(ctx!.recentLog).toContain("hello");
+  });
+});
+
+describe("groupMessagesSince", () => {
+  const CHAT = 1004;
+
+  test("returns messages within the time window", () => {
+    const old = new Date(Date.now() - 2 * 60 * 60 * 1000);
+    const recent = new Date(Date.now() - 30 * 60 * 1000);
+    const now = new Date();
+
+    logMessage(CHAT, { ...entry("old msg"), timestamp: old.toISOString() });
+    logMessage(CHAT, { ...entry("recent msg"), timestamp: recent.toISOString() });
+
+    const since = new Date(Date.now() - 60 * 60 * 1000);
+    const msgs = groupMessagesSince(CHAT, since, now);
+    expect(msgs).toHaveLength(1);
+    expect(msgs[0].content).toBe("recent msg");
+  });
+
+  test("returns empty for a chat with no messages in window", () => {
+    const msgs = groupMessagesSince(99999, new Date(Date.now() - 60 * 1000));
+    expect(msgs).toHaveLength(0);
   });
 });

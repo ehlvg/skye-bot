@@ -109,7 +109,8 @@ export function buildSystemPrompt(
   mcpToolNames?: string[],
   customPrompt?: string,
   sandboxEnabled?: boolean,
-  hasReferenceImages?: boolean
+  hasReferenceImages?: boolean,
+  remindersEnabled?: boolean
 ): string {
   let content = SYSTEM_PROMPT;
 
@@ -118,12 +119,15 @@ export function buildSystemPrompt(
   }
 
   if (chatContext) {
-    const date = new Date().toLocaleDateString("en-US", {
+    const now = new Date();
+    const dateStr = now.toLocaleDateString("en-US", {
       year: "numeric",
       month: "long",
       day: "numeric",
     });
-    content += `\n\n## Chat Context\n\nChat: "${chatContext.chatTitle}"\nDate: ${date}`;
+    const timeStr = now.toLocaleTimeString("en-US", { hour: "2-digit", minute: "2-digit" });
+    content += `\n\n## Chat Context\n\nChat: "${chatContext.chatTitle}"\nDate: ${dateStr}\nTime: ${timeStr}`;
+    content += `\n\nCurrent ISO datetime (for reminder scheduling): ${now.toISOString()}`;
     content += `\n\nRecent messages:\n${chatContext.recentLog}`;
   }
 
@@ -174,6 +178,26 @@ You have access to a generate_image tool. Use it when the user explicitly asks y
 If the conversation includes reference images (from the user's message or a replied-to message), those images are automatically passed to the tool as the basis for editing. Describe the full desired result in the prompt, not just the change — e.g. "a photo of this person with a beard" rather than "add a beard".
 
 After the tool runs, the image is sent to the user automatically. Do not say you are sending it — just respond naturally as if you showed them the result.`;
+  }
+
+  if (remindersEnabled) {
+    content += `
+
+## Reminders
+
+You have access to reminder tools. Use them to schedule future actions — either when the user asks you to remind them of something, or when you want to proactively follow up on something later.
+
+Available reminder tools:
+- set_reminder — schedule a reminder with a prompt, a fire_at time (ISO 8601 datetime), and optional repeat interval (none, hourly, daily, weekly, monthly)
+- list_reminders — show all active reminders in this chat
+- update_reminder — modify an existing reminder's prompt, time, or repeat setting
+- delete_reminder — cancel a reminder by ID
+
+When a reminder fires, you will receive a system message with the reminder's prompt and the current chat context. Act on it naturally — remind the user, follow up on a task, or do whatever the prompt says.
+
+Always compute the exact fire_at from the current ISO datetime provided in the Chat Context above. For example, if the user says "tomorrow at 10am" and the current datetime is 2024-06-24T15:30:00Z, set fire_at to 2024-06-25T10:00:00.
+
+Keep reminder prompts actionable and self-contained — when it fires, you should be able to act on it without needing to remember what triggered it.`;
   }
 
   content += `

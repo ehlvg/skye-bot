@@ -4,6 +4,7 @@ import type { MemoryService } from "../memory/service.js";
 import type { ChatLogService } from "../chatLog/service.js";
 import type { UserConfigService } from "../userConfig/service.js";
 import type { SandboxService } from "../sandbox/service.js";
+import type { RemindersService } from "../reminders/service.js";
 import type { ToolDefinition } from "../../core/module.js";
 import type { TenantContext } from "../../core/tenant.js";
 import { threadKey } from "../../core/tenant.js";
@@ -18,6 +19,7 @@ export interface ChatLoopDeps {
   chatLog: ChatLogService;
   userConfig: UserConfigService;
   sandbox?: SandboxService;
+  reminders?: RemindersService;
   /** Built-in (non-MCP) tools — currently just memory + image generation. */
   builtinTools: ToolDefinition[];
   /** Whether reference images are available for the generate_image tool this turn. */
@@ -68,7 +70,8 @@ export async function runChatLoop(
     mcpToolNames,
     userCfg?.systemPrompt,
     deps.sandbox?.isEnabled(),
-    deps.hasReferenceImages
+    deps.hasReferenceImages,
+    !!deps.reminders
   );
 
   // Log the request summary (last user item text + attachments).

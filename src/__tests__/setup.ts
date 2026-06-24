@@ -13,6 +13,7 @@ import { auditModule } from "../modules/audit/index.js";
 import { chatConfigModule } from "../modules/chatConfig/index.js";
 import { chatLogModule } from "../modules/chatLog/index.js";
 import { memoryModule } from "../modules/memory/index.js";
+import { remindersModule } from "../modules/reminders/index.js";
 import { userConfigModule } from "../modules/userConfig/index.js";
 
 runMigrations(getDb(), [
@@ -21,4 +22,5 @@ runMigrations(getDb(), [
   chatLogModule,
   auditModule,
   userConfigModule,
+  remindersModule,
 ]);
