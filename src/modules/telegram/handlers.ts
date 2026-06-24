@@ -15,6 +15,7 @@ import type { UserConfigService } from "../userConfig/service.js";
 import type { SpeechService } from "../speech/service.js";
 import type { AuditService } from "../audit/service.js";
 import type { SandboxService } from "../sandbox/service.js";
+import type { ProactiveService } from "../proactive/service.js";
 import type { Contributions, TelegramCommand, ToolDefinition } from "../../core/module.js";
 import { tenantFromGrammy, threadKey } from "../../core/tenant.js";
 import { resolveCredentials, hasAccess, type AccessDeps } from "./access.js";
@@ -47,6 +48,7 @@ export interface TelegramDeps {
   speech: SpeechService;
   audit: AuditService;
   sandbox?: SandboxService;
+  proactive?: ProactiveService;
   botToken: string;
   allowedIds: Set<number>;
   webappUrl: string;
@@ -90,6 +92,18 @@ export function installTelegram(bot: Bot, deps: TelegramDeps, contributions: Con
   const imageControls = new Map<string, ImageControl>();
   // Reference images collected per-thread, consumed by the generate_image tool.
   const threadReferenceImages = new Map<string, string[]>();
+  // Media-group (album) accumulator: key=media_group_id, value=all photos in arrival order.
+  // Telegram delivers album photos as separate messages within ~1s; we buffer them and
+  // process once we have the caption + a short grace period has elapsed.
+  const mediaGroups = new Map<
+    string,
+    {
+      tenant: ReturnType<typeof tenantFromGrammy>;
+      ctxs: GrammyContext[];
+      timer: NodeJS.Timeout;
+    }
+  >();
+  const MEDIA_GROUP_GRACE_MS = 700;
 
   const MENTION_RE = /(^|[^\p{L}\p{N}_])(skye|скай)(?=[^\p{L}\p{N}_]|$)/iu;
   const botUserId = () => bot.botInfo.id;
@@ -118,21 +132,40 @@ export function installTelegram(bot: Bot, deps: TelegramDeps, contributions: Con
   }
 
   async function collectReferenceImages(ctx: GrammyContext): Promise<string[]> {
-    const reply = ctx.message && "reply_to_message" in ctx.message
-      ? ctx.message.reply_to_message
-      : undefined;
-    if (!reply) return [];
+    const reply =
+      ctx.message && "reply_to_message" in ctx.message
+        ? ctx.message.reply_to_message
+        : undefined;
     const images: string[] = [];
-    if (reply.photo?.length) {
+    const targets: { photo?: Message["photo"] }[] = [];
+    if (reply?.photo?.length) targets.push(reply);
+    if (ctx.message?.photo?.length) targets.push(ctx.message);
+    for (const t of targets) {
+      if (!t.photo?.length) continue;
       try {
-        const file = await ctx.api.getFile(reply.photo[reply.photo.length - 1].file_id);
+        const file = await ctx.api.getFile(t.photo[t.photo.length - 1].file_id);
         const url = `https://api.telegram.org/file/bot${deps.botToken}/${file.file_path}`;
         images.push(await toDataUrl(url));
       } catch (e) {
-        log.warn({ err: e }, "Failed to download reference image from reply");
+        log.warn({ err: e }, "Failed to download reference image");
       }
     }
     return images;
+  }
+
+  async function downloadPhotos(ctxs: GrammyContext[]): Promise<string[]> {
+    const out: string[] = [];
+    for (const c of ctxs) {
+      if (!c.message?.photo?.length) continue;
+      try {
+        const file = await c.api.getFile(c.message.photo[c.message.photo.length - 1].file_id);
+        const url = `https://api.telegram.org/file/bot${deps.botToken}/${file.file_path}`;
+        out.push(await toDataUrl(url));
+      } catch (e) {
+        log.warn({ err: e }, "Failed to download album photo");
+      }
+    }
+    return out;
   }
 
   const generateImageTool: ToolDefinition = {
@@ -156,16 +189,17 @@ export function installTelegram(bot: Bot, deps: TelegramDeps, contributions: Con
 
       const tk = threadKey(tenant);
       const references = threadReferenceImages.get(tk) ?? [];
-      const referenceUrl = references.length > 0 ? references[0] : undefined;
+      const referenceUrls = references.length > 0 ? references : undefined;
+      const referenceCount = references.length;
 
       try {
-        const buffer = await deps.llm.generateImage(prompt, referenceUrl);
+        const buffer = await deps.llm.generateImage(prompt, referenceUrls);
         if (!buffer) {
           storeConversation(
             tenant,
             "tool",
-            { name: "generate_image", prompt, reference: !!referenceUrl, result: "no image" },
-            `generate_image(prompt=${prompt.slice(0, 100)}) -> no image`
+            { name: "generate_image", prompt, references: referenceCount, result: "no image" },
+            `generate_image(prompt=${prompt.slice(0, 100)}, refs=${referenceCount}) -> no image`
           );
           return "No image was generated. Try a different prompt.";
         }
@@ -180,7 +214,7 @@ export function installTelegram(bot: Bot, deps: TelegramDeps, contributions: Con
         );
         imageControls.set(imageControlKey(tenant.chatId, sent.message_id), {
           prompt,
-          imageUrl: referenceUrl,
+          imageUrl: references[0],
         });
         storeConversation(
           tenant,
@@ -188,10 +222,10 @@ export function installTelegram(bot: Bot, deps: TelegramDeps, contributions: Con
           {
             name: "generate_image",
             prompt,
-            reference: !!referenceUrl,
+            references: referenceCount,
             messageId: sent.message_id,
           },
-          `generate_image(prompt=${prompt.slice(0, 100)}) -> sent image (message_id ${sent.message_id})`
+          `generate_image(prompt=${prompt.slice(0, 100)}, refs=${referenceCount}) -> sent image (message_id ${sent.message_id})`
         );
         return `Image generated and sent to the user (message_id: ${sent.message_id}).`;
       } catch (e) {
@@ -200,8 +234,8 @@ export function installTelegram(bot: Bot, deps: TelegramDeps, contributions: Con
         storeConversation(
           tenant,
           "tool",
-          { name: "generate_image", prompt, reference: !!referenceUrl, error: errMsg },
-          `generate_image(prompt=${prompt.slice(0, 100)}) -> FAILED: ${errMsg}`
+          { name: "generate_image", prompt, references: referenceCount, error: errMsg },
+          `generate_image(prompt=${prompt.slice(0, 100)}, refs=${referenceCount}) -> FAILED: ${errMsg}`
         );
         return `Failed to generate image: ${errMsg}`;
       }
@@ -218,6 +252,62 @@ export function installTelegram(bot: Bot, deps: TelegramDeps, contributions: Con
       });
     queues.set(key, next);
     void next;
+  };
+
+  const maybeReactProactively = (
+    ctx: GrammyContext,
+    tenant: ReturnType<typeof tenantFromGrammy>
+  ): void => {
+    const proactive = deps.proactive;
+    if (!proactive || !proactive.isEnabled()) return;
+    if (!ctx.message?.message_id) return;
+    const triggerMessageId = ctx.message.message_id;
+    const chatId = tenant.chatId;
+    const chatTitle = ctx.chat?.title ?? "Group";
+    const creds = resolveCredentials(access, chatId, tenant.userId);
+
+    void (async () => {
+      const decision = await proactive.maybeReact(chatId, triggerMessageId, chatTitle, creds);
+      if (!decision || decision.kind === "none") return;
+      const targetId = decision.targetMessageId ?? triggerMessageId;
+
+      try {
+        if (decision.kind === "emoji" && decision.emoji) {
+          await bot.api.raw.setMessageReaction({
+            chat_id: chatId,
+            message_id: targetId,
+            reaction: [{ type: "emoji", emoji: decision.emoji } as never],
+            is_big: false,
+          });
+          log.info(
+            { chatId, targetId, emoji: decision.emoji, reason: decision.reason },
+            "Proactive emoji reaction"
+          );
+        } else if (decision.kind === "text" && decision.text) {
+          const sent = await bot.api.sendMessage(chatId, decision.text, {
+            reply_parameters: { message_id: targetId },
+            ...(tenant.threadId != null
+              ? { message_thread_id: tenant.threadId }
+              : {}),
+          });
+          storeConversation(
+            tenant,
+            "assistant",
+            { kind: "proactive_reply", text: decision.text, targetMessageId: targetId },
+            `[proactive reply to msg ${targetId}] ${decision.text}`
+          );
+          log.info(
+            { chatId, targetId, text: decision.text, reason: decision.reason, messageId: sent.message_id },
+            "Proactive text reaction"
+          );
+        }
+      } catch (e) {
+        log.warn(
+          { err: e, chatId, targetId, kind: decision.kind },
+          "Failed to apply proactive reaction"
+        );
+      }
+    })();
   };
 
   const sanitizeHistory = (items: ResponseInputItem[]): ResponseInputItem[] => {
@@ -249,19 +339,27 @@ export function installTelegram(bot: Bot, deps: TelegramDeps, contributions: Con
         }
         continue;
       }
-      const c = row.content as { type?: string } | string;
+      const c = row.content as { type?: string } | string | unknown[];
       if (
         typeof c === "object" &&
         c !== null &&
+        !Array.isArray(c) &&
         c.type === "function_call"
       ) {
         items.push(c as ResponseInputItem);
         continue;
       }
+      // Normalize content for the chat API:
+      // - string content → use as-is
+      // - array content (Responses API parts) → use as-is (sanitizeHistory will strip images)
+      // - object content (our metadata records like image edits, proactive replies)
+      //   → fall back to row.text so the provider gets a plain string, not a map
+      const content =
+        typeof c === "string" || Array.isArray(c) ? c : row.text;
       items.push({
         type: "message",
         role: row.role === "assistant" ? "assistant" : "user",
-        content: row.content,
+        content,
       } as ResponseInputItem);
     }
     return sanitizeHistory(items);
@@ -472,7 +570,6 @@ export function installTelegram(bot: Bot, deps: TelegramDeps, contributions: Con
         }
         const parts = [
           `**${context.chatTitle} catch-up**`,
-          context.summary ? `\n${context.summary}` : "",
           context.recentLog ? `\n**Recent messages**\n${context.recentLog}` : "",
         ];
         await sendRichReply(ctx, parts.filter(Boolean).join("\n"));
@@ -531,12 +628,8 @@ export function installTelegram(bot: Bot, deps: TelegramDeps, contributions: Con
       }
       const entry = extractLogEntry(ctx);
       const tenant = tenantFromGrammy(ctx);
-      if (deps.chatLog.log(tenant.chatId, entry, ctx.chat.title)) {
-        void deps.chatLog.summarize(
-          tenant.chatId,
-          resolveCredentials(access, tenant.chatId, tenant.userId)
-        );
-      }
+      deps.chatLog.log(tenant.chatId, entry, ctx.chat.title);
+      maybeReactProactively(ctx, tenant);
     }
     return next();
   });
@@ -783,8 +876,30 @@ export function installTelegram(bot: Bot, deps: TelegramDeps, contributions: Con
     const imageMatch = captionRaw.match(IMAGE_CMD_RE);
     const tenant = tenantFromGrammy(ctx);
     const tk = threadKey(tenant);
+    const mediaGroupId =
+      (ctx.message as Message & { media_group_id?: string }).media_group_id;
 
-    // --- /image command with photo → editing ---
+    // --- Album / media-group: buffer all photos, process once after grace ---
+    if (mediaGroupId) {
+      const existing = mediaGroups.get(mediaGroupId);
+      if (existing) {
+        existing.ctxs.push(ctx);
+      } else {
+        const entry = {
+          tenant,
+          ctxs: [ctx],
+          timer: undefined as unknown as NodeJS.Timeout,
+        };
+        entry.timer = setTimeout(() => {
+          mediaGroups.delete(mediaGroupId);
+          void processMediaGroup(entry.tenant, entry.ctxs);
+        }, MEDIA_GROUP_GRACE_MS);
+        mediaGroups.set(mediaGroupId, entry);
+      }
+      return;
+    }
+
+    // --- /image command with single photo → editing ---
     if (imageMatch) {
       const prompt = imageMatch[1].trim();
       if (!prompt) {
@@ -793,92 +908,11 @@ export function installTelegram(bot: Bot, deps: TelegramDeps, contributions: Con
         });
         return;
       }
-      void (async () => {
-        const t0 = Date.now();
-        log.info({ chatId: tenant.chatId, userId: tenant.userId }, "Image editing");
-
-        const actionInterval = setInterval(() => {
-          ctx.api.sendChatAction(tenant.chatId, "upload_photo").catch(() => {});
-        }, 4000);
-
-        try {
-          await ctx.api.sendChatAction(tenant.chatId, "upload_photo");
-          const file = await ctx.api.getFile(ctx.message.photo.pop()!.file_id);
-          const photoUrl = `https://api.telegram.org/file/bot${deps.botToken}/${file.file_path}`;
-          const dataUrl = await toDataUrl(photoUrl);
-          const buffer = await deps.llm.generateImage(prompt, dataUrl);
-
-          if (!buffer) {
-            await ctx.reply("No image was generated. Try a different prompt.", {
-              reply_to_message_id: ctx.message.message_id,
-            });
-            deps.audit.log({
-              ...ctxAudit(ctx),
-              msgType: "image_edit",
-              command: "/image",
-              inputLen: prompt.length,
-              outputLen: 0,
-              latencyMs: Date.now() - t0,
-              status: "ok",
-            });
-            return;
-          }
-
-          const sent = await ctx.replyWithPhoto(new InputFile(buffer, "image.png"), {
-            reply_to_message_id: ctx.message.message_id,
-            reply_markup: imageKeyboard(),
-          });
-          imageControls.set(imageControlKey(tenant.chatId, sent.message_id), {
-            prompt,
-            imageUrl: dataUrl,
-          });
-          storeConversation(
-            tenant,
-            "assistant",
-            { kind: "image_edited", prompt, messageId: sent.message_id },
-            `edited image with prompt: ${prompt.slice(0, 200)} (message_id ${sent.message_id})`
-          );
-          deps.audit.log({
-            ...ctxAudit(ctx),
-            msgType: "image_edit",
-            command: "/image",
-            inputLen: prompt.length,
-            outputLen: 0,
-            latencyMs: Date.now() - t0,
-            status: "ok",
-          });
-        } catch (e) {
-          const ms = Date.now() - t0;
-          log.error({ ...serializeError(e), latencyMs: ms }, "Image editing failed");
-          storeConversation(
-            tenant,
-            "assistant",
-            { kind: "image_edit_failed", prompt, error: fmtError(e) },
-            `image edit failed: ${fmtError(e)}`
-          );
-          await ctx
-            .reply("Failed to edit the image. Please try again.", {
-              reply_to_message_id: ctx.message.message_id,
-            })
-            .catch(() => {});
-          deps.audit.log({
-            ...ctxAudit(ctx),
-            msgType: "image_edit",
-            command: "/image",
-            inputLen: prompt.length,
-            outputLen: 0,
-            latencyMs: ms,
-            status: "error",
-            errorMsg: fmtError(e),
-          });
-        } finally {
-          clearInterval(actionInterval);
-        }
-      })();
+      void runImageEditCommand(ctx, tenant, prompt);
       return;
     }
 
-    // --- Vision analysis (photo sent with a question for Skye) ---
+    // --- Vision analysis (single photo sent with a question for Skye) ---
     if (!isDirectedAtBot(ctx)) return;
     if (deps.llm.supportsImages() === false) {
       await ctx.reply(
@@ -887,7 +921,6 @@ export function installTelegram(bot: Bot, deps: TelegramDeps, contributions: Con
       );
       return;
     }
-    // Collect reference images from the replied-to message (if any) for the generate_image tool.
     const replyRefs = await collectReferenceImages(ctx);
     if (replyRefs.length > 0) threadReferenceImages.set(tk, replyRefs);
     enqueue(tk, async () => {
@@ -920,6 +953,181 @@ export function installTelegram(bot: Bot, deps: TelegramDeps, contributions: Con
       }
     });
   });
+
+  async function processMediaGroup(
+    tenant: ReturnType<typeof tenantFromGrammy>,
+    ctxs: GrammyContext[]
+  ): Promise<void> {
+    const tk = threadKey(tenant);
+    const captionCtx = ctxs.find((c) => (c.message?.caption ?? "").trim().length > 0);
+    const captionRaw = captionCtx?.message?.caption?.trim() ?? "";
+    const imageMatch = captionRaw.match(IMAGE_CMD_RE);
+
+    const photoUrls = await downloadPhotos(ctxs);
+    if (photoUrls.length === 0) {
+      log.warn({ chatId: tenant.chatId }, "Media group had no downloadable photos");
+      return;
+    }
+
+    // --- /image with album → editing using ALL album photos as references ---
+    if (imageMatch) {
+      const prompt = imageMatch[1].trim();
+      if (!prompt) {
+        await (captionCtx ?? ctxs[0]).reply(
+          "Provide a description after /image, e.g. /image make it cartoon",
+          { reply_to_message_id: ctxs[0].message?.message_id }
+        );
+        return;
+      }
+      await runImageEditCommand(captionCtx ?? ctxs[0], tenant, prompt, photoUrls);
+      return;
+    }
+
+    // --- Vision analysis: feed all photos to the model at once ---
+    if (!isDirectedAtBot(captionCtx ?? ctxs[0])) return;
+    if (deps.llm.supportsImages() === false) {
+      await (captionCtx ?? ctxs[0]).reply(
+        "The current model does not support image input. Send text or switch to a vision-capable model.",
+        { reply_to_message_id: ctxs[0].message?.message_id }
+      );
+      return;
+    }
+
+    // Also collect reference images from replied-to message for the generate_image tool.
+    const replyRefs = captionCtx ? await collectReferenceImages(captionCtx) : [];
+    const allRefs = [...replyRefs, ...photoUrls];
+    if (allRefs.length > 0) threadReferenceImages.set(tk, allRefs);
+
+    enqueue(tk, async () => {
+      try {
+        const tag = senderTag(captionCtx ?? ctxs[0]);
+        const contentParts: { type: string; text?: string; image_url?: string }[] = [];
+        const textPart = `${replyContext(captionCtx ?? ctxs[0])}${replyImageContextNote(captionCtx ?? ctxs[0])}${tag}${captionRaw || `Please analyze these ${photoUrls.length} images.`}`;
+        if (textPart) contentParts.push({ type: "input_text", text: textPart });
+        else if (tag) contentParts.push({ type: "input_text", text: tag.trim() });
+        for (const url of photoUrls) {
+          contentParts.push({ type: "input_image", image_url: url });
+        }
+
+        const userItem: ResponseInputItem = {
+          type: "message",
+          role: "user",
+          content: contentParts as never,
+        };
+        await runLlmReply(
+          captionCtx ?? ctxs[0],
+          tenant,
+          userItem,
+          textPart,
+          "photo"
+        );
+        threadReferenceImages.delete(tk);
+      } catch (e) {
+        log.error({ ...serializeError(e) }, "Media group preparation failed");
+        await (captionCtx ?? ctxs[0])
+          .reply("Failed to process the images. Please try again or send text instead.", {
+            reply_to_message_id: ctxs[0].message?.message_id,
+          })
+          .catch(() => {});
+      }
+    });
+  }
+
+  async function runImageEditCommand(
+    ctx: GrammyContext,
+    tenant: ReturnType<typeof tenantFromGrammy>,
+    prompt: string,
+    explicitPhotoUrls?: string[]
+  ): Promise<void> {
+    const t0 = Date.now();
+    log.info({ chatId: tenant.chatId, userId: tenant.userId }, "Image editing");
+
+    const actionInterval = setInterval(() => {
+      ctx.api.sendChatAction(tenant.chatId, "upload_photo").catch(() => {});
+    }, 4000);
+
+    try {
+      await ctx.api.sendChatAction(tenant.chatId, "upload_photo");
+      let photoUrls: string[] | undefined = explicitPhotoUrls;
+      if (!photoUrls) {
+        const file = await ctx.api.getFile(ctx.message!.photo!.pop()!.file_id);
+        const photoUrl = `https://api.telegram.org/file/bot${deps.botToken}/${file.file_path}`;
+        photoUrls = [await toDataUrl(photoUrl)];
+      }
+      const buffer = await deps.llm.generateImage(prompt, photoUrls);
+
+      if (!buffer) {
+        await ctx.reply("No image was generated. Try a different prompt.", {
+          reply_to_message_id: ctx.message!.message_id,
+        });
+        deps.audit.log({
+          ...ctxAudit(ctx),
+          msgType: "image_edit",
+          command: "/image",
+          inputLen: prompt.length,
+          outputLen: 0,
+          latencyMs: Date.now() - t0,
+          status: "ok",
+        });
+        return;
+      }
+
+      const sent = await ctx.replyWithPhoto(new InputFile(buffer, "image.png"), {
+        reply_to_message_id: ctx.message!.message_id,
+        reply_markup: imageKeyboard(),
+      });
+      imageControls.set(imageControlKey(tenant.chatId, sent.message_id), {
+        prompt,
+        imageUrl: photoUrls[0],
+      });
+      storeConversation(
+        tenant,
+        "assistant",
+        {
+          kind: "image_edited",
+          prompt,
+          references: photoUrls.length,
+          messageId: sent.message_id,
+        },
+        `edited image with prompt: ${prompt.slice(0, 200)} (refs=${photoUrls.length}, message_id ${sent.message_id})`
+      );
+      deps.audit.log({
+        ...ctxAudit(ctx),
+        msgType: "image_edit",
+        command: "/image",
+        inputLen: prompt.length,
+        outputLen: 0,
+        latencyMs: Date.now() - t0,
+        status: "ok",
+      });
+    } catch (e) {
+      const ms = Date.now() - t0;
+      log.error({ ...serializeError(e), latencyMs: ms }, "Image editing failed");
+      storeConversation(
+        tenant,
+        "assistant",
+        { kind: "image_edit_failed", prompt, error: fmtError(e) },
+        `image edit failed: ${fmtError(e)}`
+      );
+      await ctx
+        .reply("Failed to edit the image. Please try again.", {
+          reply_to_message_id: ctx.message!.message_id,
+        })
+        .catch(() => {});
+      deps.audit.log({
+        ...ctxAudit(ctx),
+        msgType: "image_edit",
+        command: "/image",
+        inputLen: prompt.length,
+        outputLen: 0,
+        latencyMs: ms,
+        status: "error",
+        errorMsg: fmtError(e),
+      });
+    } finally {
+      clearInterval(actionInterval);
+    }
+  }
 
   // --- Voice handler ---
   bot.on("message:voice", async (ctx) => {
@@ -1149,7 +1357,7 @@ export function installTelegram(bot: Bot, deps: TelegramDeps, contributions: Con
           const telegramUrl = `https://api.telegram.org/file/bot${deps.botToken}/${file.file_path}`;
           sourceImageUrl = await toDataUrl(telegramUrl);
         }
-        const buffer = await deps.llm.generateImage(nextPrompt, sourceImageUrl);
+        const buffer = await deps.llm.generateImage(nextPrompt, sourceImageUrl ? [sourceImageUrl] : undefined);
         if (!buffer) {
           await ctx.reply("No image was generated. Try another variation.", {
             reply_to_message_id: messageId,

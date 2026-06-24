@@ -55,6 +55,7 @@ export const telegramModule: SkyeModule = {
         speech: ctx.services.get("speech"),
         audit: ctx.services.get("audit"),
         sandbox: ctx.services.has("sandbox") ? ctx.services.get("sandbox") : undefined,
+        proactive: ctx.services.has("proactive") ? ctx.services.get("proactive") : undefined,
         botToken: String(ctx.config.BOT_TOKEN),
         allowedIds: parseAllowedIds(String(ctx.config.ALLOWED_IDS ?? "")),
         webappUrl: String(ctx.config.WEBAPP_URL),

@@ -100,7 +100,6 @@ Every word should earn its place.`;
 
 export interface ChatContext {
   chatTitle: string;
-  summary: string;
   recentLog: string;
 }
 
@@ -125,9 +124,6 @@ export function buildSystemPrompt(
       day: "numeric",
     });
     content += `\n\n## Chat Context\n\nChat: "${chatContext.chatTitle}"\nDate: ${date}`;
-    if (chatContext.summary) {
-      content += `\n\nOlder conversation summary:\n${chatContext.summary}`;
-    }
     content += `\n\nRecent messages:\n${chatContext.recentLog}`;
   }
 

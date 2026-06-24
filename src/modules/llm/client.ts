@@ -158,7 +158,15 @@ class ChatCompletionsStreamAdapter {
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 function convertContent(content: any): any {
   if (typeof content === "string") return content;
-  if (!Array.isArray(content)) return content;
+  if (!Array.isArray(content)) {
+    // Object content (our metadata records) cannot be sent to chat providers
+    // — coerce to a string to avoid "invalid message content type" errors.
+    try {
+      return typeof content?.toString === "function" ? String(content) : JSON.stringify(content);
+    } catch {
+      return "";
+    }
+  }
   return content.map((part: { type: string; text?: string; image_url?: string }) => {
     if (part.type === "input_text") return { type: "text", text: part.text };
     if (part.type === "input_image" && part.image_url) {
@@ -383,8 +391,11 @@ export class LlmClient {
    * Uses the OpenRouter-style dedicated Image API (`/images`) rather than the
    * chat completions endpoint, because chat-completions `modalities` support
    * is inconsistent across providers and frequently returns 404/500.
+   *
+   * Multiple reference images are passed via `input_references` — all of them
+   * are sent to the provider for image-to-image generation.
    */
-  async generateImage(prompt: string, imageUrl?: string): Promise<Buffer | null> {
+  async generateImage(prompt: string, imageUrls?: string[]): Promise<Buffer | null> {
     const apiKey = this.settings.imageApiKey || this.settings.apiKey;
     const baseUrl = this.settings.imageBaseUrl || this.settings.baseUrl;
 
@@ -392,8 +403,11 @@ export class LlmClient {
       model: this.settings.imageModel,
       prompt,
     };
-    if (imageUrl) {
-      body.input_references = [{ type: "image_url", image_url: { url: imageUrl } }];
+    if (imageUrls && imageUrls.length > 0) {
+      body.input_references = imageUrls.map((url) => ({
+        type: "image_url",
+        image_url: { url },
+      }));
     }
 
     const res = await fetch(`${baseUrl}/images`, {

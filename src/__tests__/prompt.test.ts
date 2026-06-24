@@ -32,18 +32,15 @@ describe("buildSystemPrompt", () => {
   test("includes chat context when provided", () => {
     const prompt = buildSystemPrompt([], {
       chatTitle: "Dev Team",
-      summary: "discussed deployment",
       recentLog: "Alice: ready to ship",
     });
     expect(prompt).toContain('"Dev Team"');
-    expect(prompt).toContain("discussed deployment");
     expect(prompt).toContain("Alice: ready to ship");
   });
 
-  test("omits older summary section when summary is empty", () => {
+  test("omits older summary section when no summary field exists", () => {
     const prompt = buildSystemPrompt([], {
       chatTitle: "Dev Team",
-      summary: "",
       recentLog: "Alice: hi",
     });
     expect(prompt).not.toContain("Older conversation summary");

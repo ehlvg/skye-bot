@@ -2,7 +2,6 @@ import { test, expect, describe } from "vitest";
 import {
   formatLogEntry,
   logMessage,
-  getOlderEntries,
   getChatContext,
 } from "../modules/chatLog/service.js";
 import type { LogEntry } from "../modules/chatLog/service.js";
@@ -39,29 +38,10 @@ describe("formatLogEntry", () => {
 describe("logMessage", () => {
   const CHAT = 1001;
 
-  test("returns false before SUMMARIZE_INTERVAL (10) messages", () => {
-    for (let i = 0; i < 9; i++) {
-      expect(logMessage(CHAT, entry(`msg ${i}`))).toBe(false);
+  test("stores messages without error", () => {
+    for (let i = 0; i < 12; i++) {
+      logMessage(CHAT, entry(`msg ${i}`));
     }
-  });
-
-  test("returns true on the 10th message (summarization due)", () => {
-    expect(logMessage(CHAT, entry("msg 9"))).toBe(true);
-  });
-});
-
-describe("getOlderEntries", () => {
-  const CHAT = 1002;
-
-  test("returns empty array when no messages logged", () => {
-    expect(getOlderEntries(CHAT)).toHaveLength(0);
-  });
-
-  test("returns entries before the last 20", () => {
-    for (let i = 0; i < 25; i++) logMessage(CHAT, entry(`msg ${i}`));
-    const older = getOlderEntries(CHAT);
-    expect(older).toHaveLength(5);
-    expect(older[0].content).toBe("msg 0");
   });
 });
 

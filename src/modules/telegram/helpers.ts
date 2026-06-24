@@ -163,7 +163,7 @@ export function extractLogEntry(ctx: GrammyContext): LogEntry {
     replyTo = rParts.join(" ") || "Unknown";
   }
 
-  return { sender, timestamp, type, content, replyTo };
+  return { messageId: msg.message_id, sender, timestamp, type, content, replyTo };
 }
 
 export function escapeHtml(text: string): string {
