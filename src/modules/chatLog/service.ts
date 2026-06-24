@@ -6,6 +6,7 @@ const MAX_BUFFER = 50;
 const RECENT_COUNT = 20;
 const SUMMARIZE_INTERVAL = 10;
 const MAX_STORED_CONVERSATION_ITEMS = 60;
+const MAX_STORED_GROUP_MESSAGES = 400;
 
 export interface LogEntry {
   sender: string;
@@ -17,7 +18,7 @@ export interface LogEntry {
 
 export interface ConversationItem {
   messageId?: number;
-  role: "user" | "assistant";
+  role: "user" | "assistant" | "tool";
   content: unknown;
   text: string;
   createdAt: string;
@@ -25,7 +26,7 @@ export interface ConversationItem {
 
 type ConversationRow = {
   messageId: number | null;
-  role: "user" | "assistant";
+  role: "user" | "assistant" | "tool";
   contentJson: string;
   text: string;
   createdAt: string;
@@ -163,9 +164,73 @@ export function logMessage(chatId: number, entry: LogEntry, chatTitle?: string):
   const buf = logs.get(chatId)!;
   buf.push(entry);
   if (buf.length > MAX_BUFFER) buf.shift();
+
+  getDb()
+    .prepare(
+      `INSERT INTO group_messages (chat_id, message_id, sender, timestamp, type, content, reply_to)
+       VALUES (?, ?, ?, ?, ?, ?, ?)`
+    )
+    .run(
+      chatId,
+      null,
+      entry.sender,
+      entry.timestamp,
+      entry.type,
+      entry.content,
+      entry.replyTo ?? null
+    );
+  pruneGroupMessages(chatId);
+
   const count = (counters.get(chatId) ?? 0) + 1;
   counters.set(chatId, count);
   return count >= SUMMARIZE_INTERVAL;
+}
+
+function pruneGroupMessages(chatId: number): void {
+  getDb()
+    .prepare(
+      `DELETE FROM group_messages
+       WHERE id IN (
+         SELECT id FROM group_messages
+         WHERE chat_id = ?
+         ORDER BY id DESC
+         LIMIT -1 OFFSET ?
+       )`
+    )
+    .run(chatId, MAX_STORED_GROUP_MESSAGES);
+}
+
+/**
+ * Reload a chat's in-memory log buffer from the DB. Called at startup so
+ * Skye is aware of group activity that happened before (re)start.
+ */
+export function loadChatLog(chatId: number): void {
+  const rows = getDb()
+    .prepare<
+      [number, number],
+      {
+        sender: string;
+        timestamp: string;
+        type: string;
+        content: string;
+        reply_to: string | null;
+      }
+    >(
+      `SELECT sender, timestamp, type, content, reply_to
+       FROM group_messages
+       WHERE chat_id = ?
+       ORDER BY id DESC
+       LIMIT ?`
+    )
+    .all(chatId, MAX_BUFFER);
+  const buf = rows.reverse().map((r) => ({
+    sender: r.sender,
+    timestamp: r.timestamp,
+    type: r.type,
+    content: r.content,
+    ...(r.reply_to != null ? { replyTo: r.reply_to } : {}),
+  }));
+  logs.set(chatId, buf);
 }
 
 export function getOlderEntries(chatId: number): LogEntry[] {
@@ -244,6 +309,7 @@ export interface ChatLogService {
   clearConversation(chatId: number, threadKey: string): void;
   countConversation(chatId: number, threadKey?: string): number;
   findConversationText(chatId: number, messageId: number): string | undefined;
+  loadChatLog(chatId: number): void;
 }
 
 export const chatLogService: ChatLogService = {
@@ -255,4 +321,5 @@ export const chatLogService: ChatLogService = {
   clearConversation: clearConversationItems,
   countConversation: countConversationItems,
   findConversationText,
+  loadChatLog,
 };

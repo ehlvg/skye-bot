@@ -10,9 +10,9 @@ export const llmEnvSchema = z.object({
   // Completions. Responses API remains the default for OpenRouter / OpenAI.
   USE_CHAT_COMPLETIONS: z.coerce.boolean().default(false),
   // Image generation/editing provider — separate from chat. Defaults to empty,
-  // which falls back to the main BASE_URL/OPENAI_KEY. The image API uses an
-  // OpenRouter-style `modalities: ["image", "text"]` extension on chat
-  // completions, so the provider must support it (OpenRouter does).
+  // which falls back to the main BASE_URL/OPENAI_KEY. Uses the OpenRouter-style
+  // dedicated Image API (`/images`), so the provider must support it
+  // (OpenRouter does).
   IMAGE_BASE_URL: z.string().url().or(z.literal("")).default(""),
   IMAGE_API_KEY: z.string().default(""),
   IMAGE_MODEL: z.string().default("google/gemini-3.1-flash-image-preview"),

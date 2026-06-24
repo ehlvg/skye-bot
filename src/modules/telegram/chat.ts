@@ -6,6 +6,7 @@ import type { UserConfigService } from "../userConfig/service.js";
 import type { SandboxService } from "../sandbox/service.js";
 import type { ToolDefinition } from "../../core/module.js";
 import type { TenantContext } from "../../core/tenant.js";
+import { threadKey } from "../../core/tenant.js";
 import { buildSystemPrompt } from "../llm/prompt.js";
 import { safeJsonParse, type ToolCallRecord } from "./helpers.js";
 import { log } from "../../utils/log.js";
@@ -28,6 +29,10 @@ export interface ChatLoopDeps {
  * final text response (or we hit the iteration cap). Tool calls — both
  * built-in (memory) and MCP — are executed, fed back, and surfaced via the
  * onToolCalls callback for UI rendering.
+ *
+ * Every step (assistant function calls, tool outputs, final assistant text)
+ * is persisted to the chatLog so Skye retains full conversational context —
+ * including failed tool calls — across restarts.
  */
 export async function runChatLoop(
   deps: ChatLoopDeps,
@@ -41,6 +46,7 @@ export async function runChatLoop(
   const chatContext = deps.chatLog.context(tenant.chatId);
   const mcpTools = deps.mcp.toolsFor(tenant.userId);
   const mcpToolNames = mcpTools.map((t) => t.name);
+  const tk = threadKey(tenant);
 
   const allTools = [
     ...deps.builtinTools.map((t) => ({
@@ -112,21 +118,25 @@ export async function runChatLoop(
     }>;
 
     if (fnCalls.length === 0) {
-      if (response.output_text) return response.output_text;
-      // Fallback for providers (e.g. Ollama) that return non-output_text shapes.
-      for (const item of response.output) {
-        if (item.type === "message") {
-          const content = (item as { content?: unknown }).content;
-          if (typeof content === "string") return content;
-          if (Array.isArray(content)) {
-            const text = (content as { text?: string; content?: string }[])
-              .map((c) => c.text ?? c.content ?? "")
-              .join("");
-            if (text) return text;
-          }
-        }
+      const finalText = extractFinalText(response);
+      if (finalText) {
+        deps.chatLog.appendConversation(tenant.chatId, tk, {
+          role: "assistant",
+          content: finalText,
+          text: finalText,
+        });
       }
-      return "";
+      return finalText;
+    }
+
+    // Persist assistant function calls so tool usage survives restarts.
+    for (const fc of fnCalls) {
+      const summary = summarizeFunctionCall(fc.name, fc.arguments);
+      deps.chatLog.appendConversation(tenant.chatId, tk, {
+        role: "assistant",
+        content: fc as unknown,
+        text: summary,
+      });
     }
 
     const currentToolCalls: ToolCallRecord[] = [];
@@ -139,14 +149,30 @@ export async function runChatLoop(
       currentToolCalls.push({ name: fc.name, args, isMcp });
 
       let result: string;
-      if (isMcp) {
-        result = await deps.mcp.execute(fc.name, args);
-      } else {
-        const tool = builtinMap.get(fc.name);
-        result = tool
-          ? await Promise.resolve(tool.execute(args, tenant))
-          : `Unknown tool: ${fc.name}`;
+      let failed = false;
+      try {
+        if (isMcp) {
+          result = await deps.mcp.execute(fc.name, args);
+        } else {
+          const tool = builtinMap.get(fc.name);
+          result = tool
+            ? await Promise.resolve(tool.execute(args, tenant))
+            : `Unknown tool: ${fc.name}`;
+        }
+      } catch (e) {
+        failed = true;
+        result = `Tool "${fc.name}" failed: ${
+          e instanceof Error ? e.message : String(e)
+        }`;
+        log.warn({ err: e, tool: fc.name, chatId: tenant.chatId }, "Tool execution failed");
       }
+
+      // Persist tool output (success or failure) to the conversation log.
+      deps.chatLog.appendConversation(tenant.chatId, tk, {
+        role: "tool",
+        content: { call_id: fc.call_id, name: fc.name, output: result, failed },
+        text: `tool ${fc.name} ${failed ? "failed" : "ok"}: ${result.slice(0, 500)}`,
+      });
 
       toolOutputItems.push({
         type: "function_call_output",
@@ -165,4 +191,40 @@ export async function runChatLoop(
     iterations++;
   }
   return "";
+}
+
+function extractFinalText(response: {
+  output_text?: string;
+  output: unknown[];
+}): string {
+  if (response.output_text) return response.output_text;
+  for (const item of response.output) {
+    if (typeof item !== "object" || item === null) continue;
+    const it = item as { type?: string; content?: unknown };
+    if (it.type !== "message") continue;
+    const content = it.content;
+    if (typeof content === "string") return content;
+    if (Array.isArray(content)) {
+      const text = (content as { text?: string; content?: string }[])
+        .map((c) => c.text ?? c.content ?? "")
+        .join("");
+      if (text) return text;
+    }
+  }
+  return "";
+}
+
+function summarizeFunctionCall(name: string, argsRaw: string): string {
+  let brief = "";
+  try {
+    const a = JSON.parse(argsRaw) as Record<string, unknown>;
+    if (typeof a.prompt === "string") brief = a.prompt.slice(0, 160);
+    else if (typeof a.content === "string") brief = a.content.slice(0, 160);
+    else if (typeof a.command === "string") brief = a.command.slice(0, 160);
+    else if (typeof a.query === "string") brief = a.query.slice(0, 160);
+    else brief = argsRaw.slice(0, 160);
+  } catch {
+    brief = argsRaw.slice(0, 160);
+  }
+  return `called ${name}(${brief})`;
 }

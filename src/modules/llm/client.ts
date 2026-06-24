@@ -379,46 +379,41 @@ export class LlmClient {
    * Uses IMAGE_BASE_URL/IMAGE_API_KEY when set, otherwise falls back to the
    * main chat creds. Always uses IMAGE_MODEL. Per-user creds intentionally
    * NOT consulted — image generation is a server-level capability.
+   *
+   * Uses the OpenRouter-style dedicated Image API (`/images`) rather than the
+   * chat completions endpoint, because chat-completions `modalities` support
+   * is inconsistent across providers and frequently returns 404/500.
    */
   async generateImage(prompt: string, imageUrl?: string): Promise<Buffer | null> {
     const apiKey = this.settings.imageApiKey || this.settings.apiKey;
     const baseUrl = this.settings.imageBaseUrl || this.settings.baseUrl;
 
-    const content: unknown = imageUrl
-      ? [
-          { type: "text", text: prompt },
-          { type: "image_url", image_url: { url: imageUrl } },
-        ]
-      : prompt;
+    const body: Record<string, unknown> = {
+      model: this.settings.imageModel,
+      prompt,
+    };
+    if (imageUrl) {
+      body.input_references = [{ type: "image_url", image_url: { url: imageUrl } }];
+    }
 
-    const res = await fetch(`${baseUrl}/chat/completions`, {
+    const res = await fetch(`${baseUrl}/images`, {
       method: "POST",
       headers: {
         Authorization: `Bearer ${apiKey}`,
         "Content-Type": "application/json",
       },
-      body: JSON.stringify({
-        model: this.settings.imageModel,
-        messages: [{ role: "user", content }],
-        modalities: ["image", "text"],
-      }),
+      body: JSON.stringify(body),
     });
 
     if (!res.ok) {
-      const body = await res.text().catch(() => "");
-      throw new Error(`Image generation failed (${res.status}): ${body}`);
+      const text = await res.text().catch(() => "");
+      throw new Error(`Image generation failed (${res.status}): ${text}`);
     }
 
-    const data: {
-      choices?: { message?: { images?: { image_url: { url: string } }[] } }[];
-    } = await res.json();
-    const images = data.choices?.[0]?.message?.images;
-    if (!images?.length) return null;
+    const data: { data?: { b64_json?: string }[] } = await res.json();
+    const b64 = data.data?.[0]?.b64_json;
+    if (!b64) return null;
 
-    const dataUrl = images[0].image_url.url;
-    const base64 = dataUrl.split(",")[1];
-    if (!base64) return null;
-
-    return Buffer.from(base64, "base64");
+    return Buffer.from(b64, "base64");
   }
 }

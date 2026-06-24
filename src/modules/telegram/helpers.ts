@@ -13,8 +13,8 @@ const MIME_MAP: Record<string, string> = {
 };
 
 /** Download an image from a URL and return it as a base64 data URL. */
-export async function toDataUrl(url: string): Promise<string> {
-  const res = await fetch(url);
+export async function toDataUrl(url: string, timeoutMs = 60_000): Promise<string> {
+  const res = await fetch(url, { signal: AbortSignal.timeout(timeoutMs) });
   if (!res.ok) throw new Error(`Failed to download image: ${res.status}`);
   const buf = Buffer.from(await res.arrayBuffer());
 

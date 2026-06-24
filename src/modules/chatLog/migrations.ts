@@ -33,4 +33,25 @@ export const migrations: Migration[] = [
       `);
     },
   },
+  {
+    id: "003-group-message-log",
+    up: (db) => {
+      db.exec(`
+        CREATE TABLE IF NOT EXISTS group_messages (
+          id           INTEGER PRIMARY KEY AUTOINCREMENT,
+          chat_id      INTEGER NOT NULL,
+          message_id   INTEGER,
+          sender       TEXT    NOT NULL,
+          timestamp    TEXT    NOT NULL,
+          type         TEXT    NOT NULL,
+          content      TEXT    NOT NULL,
+          reply_to     TEXT
+        );
+        CREATE INDEX IF NOT EXISTS idx_group_messages_chat
+          ON group_messages(chat_id, id);
+        CREATE INDEX IF NOT EXISTS idx_group_messages_message
+          ON group_messages(chat_id, message_id);
+      `);
+    },
+  },
 ];

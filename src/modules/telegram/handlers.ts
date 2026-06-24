@@ -56,7 +56,8 @@ export interface TelegramDeps {
 
 const IMAGE_CMD_RE = /^\/image(?:@\S+)?\s*([\s\S]*)$/;
 const TEXT_BURST_DELAY_MS = 1200;
-const TEXT_HISTORY_LIMIT = 30;
+const TEXT_HISTORY_LIMIT = 40;
+const TRACKED_CHATS = new Set<number>();
 const SUPPORTED_TEXT_MIME_RE =
   /^(text\/|application\/(json|xml|csv|javascript|x-javascript|typescript|x-typescript|sql))/i;
 const SUPPORTED_TEXT_EXT_RE =
@@ -90,7 +91,7 @@ export function installTelegram(bot: Bot, deps: TelegramDeps, contributions: Con
   // Reference images collected per-thread, consumed by the generate_image tool.
   const threadReferenceImages = new Map<string, string[]>();
 
-  const MENTION_RE = /\b(skye|скай)\b/i;
+  const MENTION_RE = /(^|[^\p{L}\p{N}_])(skye|скай)(?=[^\p{L}\p{N}_]|$)/iu;
   const botUserId = () => bot.botInfo.id;
   const botUsername = () => bot.botInfo.username?.toLowerCase() ?? "";
 
@@ -159,7 +160,15 @@ export function installTelegram(bot: Bot, deps: TelegramDeps, contributions: Con
 
       try {
         const buffer = await deps.llm.generateImage(prompt, referenceUrl);
-        if (!buffer) return "No image was generated. Try a different prompt.";
+        if (!buffer) {
+          storeConversation(
+            tenant,
+            "tool",
+            { name: "generate_image", prompt, reference: !!referenceUrl, result: "no image" },
+            `generate_image(prompt=${prompt.slice(0, 100)}) -> no image`
+          );
+          return "No image was generated. Try a different prompt.";
+        }
 
         const sent = await bot.api.sendPhoto(
           tenant.chatId,
@@ -173,10 +182,28 @@ export function installTelegram(bot: Bot, deps: TelegramDeps, contributions: Con
           prompt,
           imageUrl: referenceUrl,
         });
+        storeConversation(
+          tenant,
+          "tool",
+          {
+            name: "generate_image",
+            prompt,
+            reference: !!referenceUrl,
+            messageId: sent.message_id,
+          },
+          `generate_image(prompt=${prompt.slice(0, 100)}) -> sent image (message_id ${sent.message_id})`
+        );
         return `Image generated and sent to the user (message_id: ${sent.message_id}).`;
       } catch (e) {
         log.error({ err: e }, "generate_image tool failed");
-        return `Failed to generate image: ${fmtError(e)}`;
+        const errMsg = fmtError(e);
+        storeConversation(
+          tenant,
+          "tool",
+          { name: "generate_image", prompt, reference: !!referenceUrl, error: errMsg },
+          `generate_image(prompt=${prompt.slice(0, 100)}) -> FAILED: ${errMsg}`
+        );
+        return `Failed to generate image: ${errMsg}`;
       }
     },
   };
@@ -209,21 +236,40 @@ export function installTelegram(bot: Bot, deps: TelegramDeps, contributions: Con
   const historyFor = (tenant: ReturnType<typeof tenantFromGrammy>): ResponseInputItem[] => {
     const tk = threadKey(tenant);
     const rows = deps.chatLog.listConversation(tenant.chatId, tk, TEXT_HISTORY_LIMIT);
-    return sanitizeHistory(
-      rows.map(
-        (row) =>
-          ({
-            type: "message",
-            role: row.role,
-            content: row.content,
-          }) as ResponseInputItem
-      )
-    );
+    const items: ResponseInputItem[] = [];
+    for (const row of rows) {
+      if (row.role === "tool") {
+        const c = row.content as { call_id?: string; output?: string };
+        if (c.call_id && typeof c.output === "string") {
+          items.push({
+            type: "function_call_output",
+            call_id: c.call_id,
+            output: c.output,
+          } as ResponseInputItem);
+        }
+        continue;
+      }
+      const c = row.content as { type?: string } | string;
+      if (
+        typeof c === "object" &&
+        c !== null &&
+        c.type === "function_call"
+      ) {
+        items.push(c as ResponseInputItem);
+        continue;
+      }
+      items.push({
+        type: "message",
+        role: row.role === "assistant" ? "assistant" : "user",
+        content: row.content,
+      } as ResponseInputItem);
+    }
+    return sanitizeHistory(items);
   };
 
   const storeConversation = (
     tenant: ReturnType<typeof tenantFromGrammy>,
-    role: "user" | "assistant",
+    role: "user" | "assistant" | "tool",
     content: unknown,
     text: string,
     messageId?: number
@@ -332,6 +378,12 @@ export function installTelegram(bot: Bot, deps: TelegramDeps, contributions: Con
             reply_markup: imageKeyboard(),
           });
           imageControls.set(imageControlKey(tenant.chatId, sent.message_id), { prompt });
+          storeConversation(
+            tenant,
+            "assistant",
+            { kind: "image_generated", prompt, messageId: sent.message_id },
+            `generated image: ${prompt.slice(0, 200)} (message_id ${sent.message_id})`
+          );
           deps.audit.log({
             ...ctxAudit(ctx),
             msgType: "image",
@@ -344,6 +396,12 @@ export function installTelegram(bot: Bot, deps: TelegramDeps, contributions: Con
         } catch (e) {
           const ms = Date.now() - t0;
           log.error({ ...serializeError(e), latencyMs: ms }, "Image generation failed");
+          storeConversation(
+            tenant,
+            "assistant",
+            { kind: "image_failed", prompt, error: fmtError(e) },
+            `image generation failed: ${fmtError(e)}`
+          );
           await ctx
             .reply("Failed to generate the image. Please try again.", {
               reply_to_message_id: ctx.message!.message_id,
@@ -466,6 +524,11 @@ export function installTelegram(bot: Bot, deps: TelegramDeps, contributions: Con
   // --- Group message logging middleware ---
   bot.on("message", async (ctx, next) => {
     if (ctx.chat?.type === "group" || ctx.chat?.type === "supergroup") {
+      const chatId = ctx.chat.id;
+      if (!TRACKED_CHATS.has(chatId)) {
+        deps.chatLog.loadChatLog(chatId);
+        TRACKED_CHATS.add(chatId);
+      }
       const entry = extractLogEntry(ctx);
       const tenant = tenantFromGrammy(ctx);
       if (deps.chatLog.log(tenant.chatId, entry, ctx.chat.title)) {
@@ -555,6 +618,17 @@ export function installTelegram(bot: Bot, deps: TelegramDeps, contributions: Con
     try {
       reactSafely(ctx, "👀");
       actionTicker.start();
+
+      // Persist the user message BEFORE calling the LLM so it survives
+      // crashes, timeouts, and failed tool calls.
+      storeConversation(
+        tenant,
+        "user",
+        (userItem as { content?: unknown }).content ?? "",
+        inputText,
+        ctx.message?.message_id
+      );
+
       const creds = resolveCredentials(access, tenant.chatId, tenant.userId);
       const inputItems: ResponseInputItem[] = [...historyFor(tenant).slice(-20), userItem];
       const tk = threadKey(tenant);
@@ -595,14 +669,6 @@ export function installTelegram(bot: Bot, deps: TelegramDeps, contributions: Con
         return;
       }
 
-      storeConversation(
-        tenant,
-        "user",
-        (userItem as { content?: unknown }).content ?? "",
-        inputText,
-        ctx.message?.message_id
-      );
-
       const shouldVoice =
         options.voiceReply ||
         (deps.chatConfig.get(tenant.chatId).voiceMode && deps.speech.isTtsAvailable());
@@ -611,10 +677,9 @@ export function installTelegram(bot: Bot, deps: TelegramDeps, contributions: Con
         const audioBuffer = await deps.speech.synthesize(text);
         if (audioBuffer) {
           await draft.delete();
-          const sent = await ctx.replyWithVoice(new InputFile(audioBuffer, "response.ogg"), {
+          await ctx.replyWithVoice(new InputFile(audioBuffer, "response.ogg"), {
             reply_to_message_id: ctx.message?.message_id,
           });
-          storeConversation(tenant, "assistant", text, text, sent.message_id);
           reactSafely(ctx, "👍");
           deps.audit.log({
             ...ctxAudit(ctx),
@@ -632,8 +697,7 @@ export function installTelegram(bot: Bot, deps: TelegramDeps, contributions: Con
       const finalText = buildFinalReply(toolCallHistory, text);
       await draft.delete();
       const checklistMessage = await maybeSendChecklist(ctx, finalText, inputText);
-      const sent = checklistMessage ?? (await sendRichReply(ctx, finalText));
-      storeConversation(tenant, "assistant", text, text, sent.message_id);
+      if (!checklistMessage) await sendRichReply(ctx, finalText);
       reactSafely(ctx, "👍");
       deps.audit.log({
         ...ctxAudit(ctx),
@@ -768,6 +832,12 @@ export function installTelegram(bot: Bot, deps: TelegramDeps, contributions: Con
             prompt,
             imageUrl: dataUrl,
           });
+          storeConversation(
+            tenant,
+            "assistant",
+            { kind: "image_edited", prompt, messageId: sent.message_id },
+            `edited image with prompt: ${prompt.slice(0, 200)} (message_id ${sent.message_id})`
+          );
           deps.audit.log({
             ...ctxAudit(ctx),
             msgType: "image_edit",
@@ -780,6 +850,12 @@ export function installTelegram(bot: Bot, deps: TelegramDeps, contributions: Con
         } catch (e) {
           const ms = Date.now() - t0;
           log.error({ ...serializeError(e), latencyMs: ms }, "Image editing failed");
+          storeConversation(
+            tenant,
+            "assistant",
+            { kind: "image_edit_failed", prompt, error: fmtError(e) },
+            `image edit failed: ${fmtError(e)}`
+          );
           await ctx
             .reply("Failed to edit the image. Please try again.", {
               reply_to_message_id: ctx.message.message_id,
@@ -1088,8 +1164,20 @@ export function installTelegram(bot: Bot, deps: TelegramDeps, contributions: Con
           prompt: nextPrompt,
           imageUrl: sourceImageUrl,
         });
+        storeConversation(
+          tenant,
+          "assistant",
+          { kind: "image_variant", prompt: nextPrompt, messageId: sent.message_id },
+          `image variant: ${nextPrompt.slice(0, 200)} (message_id ${sent.message_id})`
+        );
       } catch (e) {
         log.error({ ...serializeError(e) }, "Image control failed");
+        storeConversation(
+          tenant,
+          "assistant",
+          { kind: "image_variant_failed", error: fmtError(e) },
+          `image variant failed: ${fmtError(e)}`
+        );
         await ctx.reply("Failed to generate this image variant.", {
           reply_to_message_id: messageId,
         });
