@@ -441,6 +441,77 @@ export function installTelegram(bot: Bot, deps: TelegramDeps, contributions: Con
   const allCommands: TelegramCommand[] = [
     ...contributions.commands,
     {
+      name: "start",
+      description: "Say hi and get a few starting points",
+      public: true,
+      handler: async (ctx) => {
+        const md = [
+          "Hi — I'm **Skye**.",
+          "",
+          "Calm, minimal, here to help. A few things you can try right now:",
+          "",
+          "- _“Remember that I prefer plain text over HTML in my reports.”_ — long-term memory",
+          "- _“Run a quick Node script that prints the current weather in Lisbon.”_ — sandbox",
+          "- _“Search the web for the latest release of grammy and summarize the changelog.”_ — web search via the sandbox",
+          "- _“Draft a short, warm reply to a friend who’s asking for book recommendations.”_ — chat",
+          "",
+          "Send any of those, or just say hello. Use /help to see everything I can do.",
+        ].join("\n");
+        await sendRichReply(ctx, md);
+      },
+    },
+    {
+      name: "help",
+      description: "Show what Skye can do",
+      public: true,
+      handler: async (ctx) => {
+        const md = [
+          "Skye can do things for you — calmly, without the noise.",
+          "",
+          "## Chat",
+          "",
+          "Send a message and I answer, streaming in real time. Calm and concise by design. In groups, type “skye” or “скай” anywhere in your message, or reply to one of mine.",
+          "",
+          "## Memory",
+          "",
+          "Tell me something worth remembering — _“remember my project uses pnpm”_ — and I’ll keep it for next time. Use /forget to wipe memories for this chat.",
+          "",
+          "## Images",
+          "",
+          "Ask in plain words — _“draw a cat on the moon”_, _“make this photo look like a watercolor”_ (reply to a photo), or send a photo with a question and I’ll describe or analyze it. I’ll generate or edit when it fits.",
+          "",
+          "## Voice",
+          "",
+          "Send a voice note — I transcribe and answer. Toggle voice replies with /voice.",
+          "",
+          "## Documents & audio",
+          "",
+          "Send `.txt`, `.md`, `.json`, `.csv`, code, or logs and I’ll read them. Audio files and video notes are transcribed too.",
+          "",
+          "## Sandbox & web",
+          "",
+          "I have an isolated per-chat sandbox with internet access. Ask me to run code, fetch data from the web, install packages, or analyze files — _“search the web for X and summarize”_ works.",
+          "",
+          "## Reminders",
+          "",
+          "Ask me to remind you of something, or to follow up later. Use /reminders to see active ones.",
+          "",
+          "## MCP tools",
+          "",
+          "Connect external tools via the Model Context Protocol — databases, APIs, anything. I’ll use them when relevant.",
+          "",
+          "## Group chats",
+          "",
+          "Add me to a group. I listen for “skye” / “скай” and replies, log recent messages, summarize older ones to stay aware of context, and offer /catchup for a quick recap.",
+          "",
+          "---",
+          "",
+          "Commands: /reset · /image · /voice · /forget · /status · /catchup · /reminders · /config",
+        ].join("\n");
+        await sendRichReply(ctx, md);
+      },
+    },
+    {
       name: "reset",
       description: "Reset conversation context",
       public: true,
@@ -1208,7 +1279,7 @@ export function installTelegram(bot: Bot, deps: TelegramDeps, contributions: Con
   bot.on("message:voice", async (ctx) => {
     if (!deps.speech.isSttAvailable()) {
       await ctx.reply(
-        "Voice recognition is not configured. Please ask the bot administrator to set up Yandex Cloud SpeechKit.",
+        "Voice recognition is not configured. Please ask the bot administrator to set up a speech provider (Yandex SpeechKit or OpenRouter).",
         { reply_to_message_id: ctx.message.message_id }
       );
       return;
@@ -1312,7 +1383,7 @@ export function installTelegram(bot: Bot, deps: TelegramDeps, contributions: Con
     });
   });
 
-  // --- Audio file handler (best effort, SpeechKit currently expects OGG Opus) ---
+  // --- Audio file handler (best effort; provider may transcode via ffmpeg) ---
   bot.on("message:audio", async (ctx) => {
     const captionRaw = ctx.message.caption?.trim() || "";
     if (!isDirectedAtBot(ctx)) return;

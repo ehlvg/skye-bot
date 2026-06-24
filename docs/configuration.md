@@ -33,18 +33,31 @@ Real environment variables override YAML values — useful for platform-injected
 
 These are useful if your chat provider doesn't support image generation (e.g., a local Ollama instance) and you want to use OpenRouter or another service just for images.
 
-### Voice (SpeechKit — optional)
+### Voice (speech — optional)
 
-| Key                | Purpose                                                          |
-| ------------------ | ---------------------------------------------------------------- |
-| `voice.yc_api_key`     | Yandex Cloud API key for speech recognition and synthesis.       |
-| `voice.yc_folder_id`   | Yandex Cloud folder ID.                                          |
-| `voice.tts_voice`     | TTS voice name. Default: `jane`.                                 |
-| `voice.tts_emotion`   | TTS emotion: `neutral`, `good`, `evil`, `strict`, or `friendly`. |
-| `voice.tts_lang`      | BCP-47 language tag. Default: `ru-RU`.                           |
-| `voice.tts_speed`     | Playback speed (0.1 – 3.0). Default: `1.0`.                      |
+Skye supports two interchangeable speech providers — **Yandex SpeechKit** (default) and **OpenRouter**. Both cover speech-to-text (STT) and text-to-speech (TTS). Pick one with `voice.provider`:
 
-Voice features are **optional**. If you don't need speech input/output, leave YC variables empty.
+| Key                     | Purpose                                                                                          |
+| ----------------------- | ------------------------------------------------------------------------------------------------ |
+| `voice.provider`        | `yandex` (default) or `openrouter`.                                                              |
+| `voice.yc_api_key`      | Yandex Cloud API key for speech recognition and synthesis.                                      |
+| `voice.yc_folder_id`    | Yandex Cloud folder ID.                                                                          |
+| `voice.tts_voice`       | Yandex TTS voice name. Default: `jane`.                                                          |
+| `voice.tts_emotion`     | Yandex TTS emotion: `neutral`, `good`, `evil`, `strict`, or `friendly`.                          |
+| `voice.tts_lang`        | Yandex TTS BCP-47 language tag. Default: `ru-RU`.                                                |
+| `voice.tts_speed`       | Yandex TTS playback speed (0.1 – 3.0). Default: `1.0`.                                          |
+| `voice.openrouter.api_key`   | OpenRouter API key. Falls back to `openai_key` when empty.                                |
+| `voice.openrouter.base_url` | OpenRouter base URL. Default: `https://openrouter.ai/api/v1`.                              |
+| `voice.openrouter.stt_model`  | OpenRouter STT model. Default: `nvidia/parakeet-tdt-0.6b-v3`.                              |
+| `voice.openrouter.tts_model`  | OpenRouter TTS model. Default: `google/gemini-3.1-flash-tts-preview`.                       |
+| `voice.openrouter.tts_voice`  | OpenRouter TTS voice id (model-specific). Default: `alloy`.                                  |
+| `voice.openrouter.tts_format` | OpenRouter TTS response format: `mp3` (default) or `pcm`.                                    |
+| `voice.openrouter.stt_format` | Format to normalize input audio into before STT: `mp3` (default), `wav`, or `oggopus`        |
+| `voice.openrouter.stt_language` | ISO-639-1 language hint for STT (e.g. `ru`). Empty = auto-detect.                         |
+| `voice.openrouter.referer`  | Optional `HTTP-Referer` header for OpenRouter rankings.                                       |
+| `voice.openrouter.title`    | Optional `X-OpenRouter-Title` header.                                                          |
+
+Voice features are **optional**. Leave the relevant keys empty to disable voice. Yandex TTS returns OGG Opus directly; OpenRouter TTS returns MP3/PCM which Skye transcodes to OGG Opus via the bundled `ffmpeg-static` binary so it can be sent as a Telegram voice note.
 
 ### Logging & audit
 

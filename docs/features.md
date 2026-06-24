@@ -43,13 +43,13 @@ Send a photo with any caption or question. Skye will analyze the image and respo
 
 ### Voice input
 
-Send a voice message. Skye transcribes it using Yandex Cloud SpeechKit and responds as if you'd typed the message. This requires Yandex Cloud configuration — see [Configuration](configuration.md#voice-speechkit).
+Send a voice message. Skye transcribes it with the configured speech provider (Yandex SpeechKit or OpenRouter) and responds as if you'd typed the message. This requires voice configuration — see [Configuration](configuration.md#voice-speech-optional).
 
 ### Documents and audio
 
 Send text/code documents such as `.txt`, `.md`, `.json`, `.csv`, source files, logs, YAML, SQL, HTML, or XML. Skye reads the document content and answers using it as context.
 
-Audio files and video notes are handled best-effort through the same SpeechKit transcription path as voice messages. Voice notes are the most reliable format; other audio/video formats may need transcoding before SpeechKit can recognize them.
+Audio files and video notes are also transcribed through the configured speech provider. Skye normalizes audio formats with the bundled `ffmpeg` binary, so most audio/video formats are recognized without manual transcoding. Voice notes remain the most reliable format.
 
 ### Checklists
 
@@ -57,7 +57,7 @@ When you ask for a checklist, todo list, plan, or steps, Skye prefers Markdown t
 
 ### Voice output
 
-Toggle voice replies with `/voice`. When active, Skye synthesizes its text responses into voice notes using Yandex TTS. The voice, language, and emotion are configurable.
+Toggle voice replies with `/voice`. When active, Skye synthesizes its text responses into voice notes using the configured TTS provider. With Yandex SpeechKit the voice, language, emotion, and speed are configurable; with OpenRouter the model and voice id are configurable. Output is sent as a Telegram voice note.
 
 ## Long-term memory
 

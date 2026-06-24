@@ -39,6 +39,7 @@
     "@vercel/sandbox": "^2.2.1",
     "better-sqlite3": "^12.8.0",
     "express": "^5.1.0",
+    "ffmpeg-static": "^5.3.0",
     "grammy": "^1.39.3",
     "js-yaml": "^5.1.0",
     "openai": "^6.17.0",
