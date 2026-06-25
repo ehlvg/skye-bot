@@ -6,6 +6,7 @@ import {
   addMemory,
   clearMemories,
   deleteMemory,
+  getMemories,
   memoryService,
   type MemoryService,
 } from "./service.js";
@@ -69,6 +70,35 @@ export const memoryModule: SkyeModule = {
       tools: memoryTools,
       panelRoutes: buildRoutes(ctx),
       commands: [
+        {
+          name: "memories",
+          description: "Show saved memories for this chat",
+          handler: async (ctx, tenant) => {
+            const memories = getMemories(tenant.chatId);
+            if (memories.length === 0) {
+              await sendRichReply(ctx, "_No memories saved for this chat yet._");
+              return;
+            }
+            const rows = memories.map((m) => {
+              const local = new Date(m.createdAt).toLocaleString("en-US", {
+                dateStyle: "medium",
+                timeStyle: "short",
+              });
+              const content = m.content.replace(/\|/g, "\\|").slice(0, 80);
+              return `| \`${m.id}\` | ${local} | ${content} |`;
+            });
+            const md = [
+              `## Memories (${memories.length})`,
+              "",
+              "| ID | Created | Content |",
+              "|---|---|---|",
+              ...rows,
+              "",
+              "_Use /forget to clear all memories._",
+            ].join("\n");
+            await sendRichReply(ctx, md);
+          },
+        },
         {
           name: "forget",
           description: "Clear all saved memories for this chat",
