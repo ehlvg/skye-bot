@@ -7,7 +7,7 @@ RUN corepack enable && corepack prepare pnpm@latest --activate
 RUN apk add --no-cache python3 py3-pip build-base && \
     pip install --break-system-packages uv
 
-COPY package.json pnpm-lock.yaml pnpm-workspace.yaml ./
+COPY package.json pnpm-lock.yaml pnpm-workspace.yaml .npmrc ./
 COPY web/package.json web/
 RUN pnpm install --frozen-lockfile
 
