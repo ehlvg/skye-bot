@@ -1,4 +1,4 @@
-<div align="center"><img src="./assets/cloud_circle.png" alt="Cloud circle avatar" width="96"/></div>
+<div align="center"><img src="./assets/logo.png" alt="Cloud circle avatar" width="96"/></div>
 
 <h3 align="center">
     Skye
