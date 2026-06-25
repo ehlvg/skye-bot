@@ -51,6 +51,15 @@ interface OpenAITool {
   parameters: Record<string, unknown>;
 }
 
+export interface McpDetailedTool {
+  name: string;
+  description: string;
+  parameters: Record<string, unknown>;
+  serverName: string;
+  scope: "global" | "user";
+  toolName: string;
+}
+
 function userKey(userId: number, serverId: number): string {
   return `${userId}:${serverId}`;
 }
@@ -286,6 +295,45 @@ export class McpService {
       }
     }
     return tools;
+  }
+
+  detailedToolsFor(userId?: number): McpDetailedTool[] {
+    const result: McpDetailedTool[] = [];
+
+    for (const tool of this.globalTools) {
+      const mapping = this.globalToolMap.get(tool.name);
+      if (!mapping) continue;
+      result.push({
+        name: tool.name,
+        description: tool.description,
+        parameters: tool.parameters,
+        serverName: mapping.serverName,
+        scope: mapping.scope,
+        toolName: mapping.toolName,
+      });
+    }
+
+    if (userId != null) {
+      for (const [key, userTools] of this.userToolsMap) {
+        if (!key.startsWith(`${userId}:`)) continue;
+        const toolMap = this.userToolMaps.get(key);
+        if (!toolMap) continue;
+        for (const tool of userTools) {
+          const mapping = toolMap.get(tool.name);
+          if (!mapping) continue;
+          result.push({
+            name: tool.name,
+            description: tool.description,
+            parameters: tool.parameters,
+            serverName: mapping.serverName,
+            scope: mapping.scope,
+            toolName: mapping.toolName,
+          });
+        }
+      }
+    }
+
+    return result;
   }
 
   isMcpTool(toolName: string): boolean {

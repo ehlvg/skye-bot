@@ -360,6 +360,30 @@ export async function sendRichReply(ctx: GrammyContext, markdown: string): Promi
   }
 }
 
+export async function sendRichReplyChunked(
+  ctx: GrammyContext,
+  markdown: string,
+  maxChars = 3500
+): Promise<void> {
+  if (markdown.length <= maxChars) {
+    await sendRichReply(ctx, markdown);
+    return;
+  }
+  const separator = "\n\n---\n\n";
+  const parts = markdown.split(separator);
+  let current = "";
+  for (const part of parts) {
+    const candidate = current ? `${current}${separator}${part}` : part;
+    if (candidate.length > maxChars && current) {
+      await sendRichReply(ctx, current);
+      current = part;
+    } else {
+      current = candidate;
+    }
+  }
+  if (current) await sendRichReply(ctx, current);
+}
+
 function splitTelegramText(text: string, limit = 3900): string[] {
   if (text.length <= limit) return [text];
   const chunks: string[] = [];
