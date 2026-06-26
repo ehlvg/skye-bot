@@ -23,19 +23,8 @@ export function buildRoutes(ctx: ModuleContext): PanelRoute[] {
       handler: (req, res) => {
         const userId = (req as PanelRequest).tenant.userId!;
         const body = req.body as Partial<UserConfig>;
-        const allowed: (keyof UserConfig)[] = [
-          "apiKey",
-          "baseUrl",
-          "model",
-          "maxTokens",
-          "systemPrompt",
-        ];
         const clean: UserConfig = {};
-        for (const key of allowed) {
-          if (body[key] !== undefined) {
-            (clean as Record<string, unknown>)[key] = body[key];
-          }
-        }
+        if (body.systemPrompt !== undefined) clean.systemPrompt = body.systemPrompt;
         userConfig.set(userId, clean);
         res.json(userConfig.get(userId));
       },

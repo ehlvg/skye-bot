@@ -1,66 +1,61 @@
-import type { ChatConfigService } from "../chatConfig/service.js";
-import type { UserConfigService } from "../userConfig/service.js";
-import type { ApiCredentials } from "../llm/client.js";
+import type { BillingService } from "../billing/service.js";
+import type { AdminService } from "../admin/service.js";
 
 export interface AccessDeps {
-  chatConfig: ChatConfigService;
-  userConfig: UserConfigService;
-  allowedIds: Set<number>;
-  defaultBaseUrl: string;
-  defaultModel: string;
+  billing: BillingService;
+  admin: AdminService;
 }
 
+export type AccessDecision =
+  | { ok: true; reason: "admin" | "allowlist" | "subscription" }
+  | { ok: false; reason: "banned" | "no_subscription"; message: string };
+
 /**
- * Resolve which API credentials (if any) to use for a given chat+user pair.
- * Precedence:
- *   1. chat is allow-listed → user's personal key, else "no creds" (use globals)
- *   2. user has personal key → use it
- *   3. chat has its own key → use it
- *   4. nothing → undefined
+ * Decide whether the caller may use Skye.
+ *
+ * Order:
+ *   1. banned → denied
+ *   2. admin → free, unlimited
+ *   3. allowlist (chat or user) → free, unlimited
+ *   4. active Skye Plus subscription on the speaking user → metered
+ *   5. otherwise → prompt to subscribe
+ *
+ * Token quota is enforced separately in the chat loop (pre-check before each
+ * LLM call); the gate only answers "can the user use the bot at all".
  */
-export function resolveCredentials(
-  deps: AccessDeps,
-  chatId: number,
-  userId?: number
-): ApiCredentials | undefined {
-  const cfg = deps.chatConfig.get(chatId);
-  if (deps.allowedIds.has(chatId)) {
-    if (userId) {
-      const userCfg = deps.userConfig.get(userId);
-      if (userCfg.apiKey) {
-        return {
-          apiKey: userCfg.apiKey,
-          baseUrl: userCfg.baseUrl ?? deps.defaultBaseUrl,
-          model: userCfg.model,
-        };
-      }
-    }
-    return undefined;
+export function checkAccess(deps: AccessDeps, chatId: number, userId?: number): AccessDecision {
+  if (userId && deps.admin.isBanned(userId)) {
+    return { ok: false, reason: "banned", message: "You've been banned from using this bot." };
+  }
+  if (userId && deps.admin.isAdmin(userId)) {
+    return { ok: true, reason: "admin" };
+  }
+  if (deps.admin.isAllowed(chatId)) {
+    return { ok: true, reason: "allowlist" };
+  }
+  if (userId && deps.admin.isAllowed(userId)) {
+    return { ok: true, reason: "allowlist" };
   }
   if (userId) {
-    const userCfg = deps.userConfig.get(userId);
-    if (userCfg.apiKey) {
-      return {
-        apiKey: userCfg.apiKey,
-        baseUrl: userCfg.baseUrl ?? deps.defaultBaseUrl,
-        model: userCfg.model,
-      };
+    const acc = deps.billing.getAccount(userId);
+    if (deps.billing.hasActiveSub(acc)) {
+      return { ok: true, reason: "subscription" };
     }
+    return {
+      ok: false,
+      reason: "no_subscription",
+      message:
+        "Skye Plus is required to use this bot. Tap /plus to subscribe with Telegram Stars (1899 ⭐ / 30 days).",
+    };
   }
-  if (!cfg.apiKey) return undefined;
   return {
-    apiKey: cfg.apiKey,
-    baseUrl: cfg.baseUrl ?? deps.defaultBaseUrl,
+    ok: false,
+    reason: "no_subscription",
+    message: "This chat isn't authorized. Ask an admin to /allow it.",
   };
 }
 
+/** Boolean shorthand used by the Telegram access gate. */
 export function hasAccess(deps: AccessDeps, chatId: number, userId?: number): boolean {
-  if (deps.allowedIds.has(chatId)) return true;
-  const cfg = deps.chatConfig.get(chatId);
-  if (cfg.apiKey) return true;
-  if (userId) {
-    const userCfg = deps.userConfig.get(userId);
-    return !!userCfg.apiKey;
-  }
-  return false;
+  return checkAccess(deps, chatId, userId).ok;
 }

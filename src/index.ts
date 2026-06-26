@@ -11,7 +11,9 @@ import { getDb } from "./core/db.js";
 import { log } from "./utils/log.js";
 import type { SkyeModule } from "./core/module.js";
 
+import { adminModule } from "./modules/admin/index.js";
 import { auditModule } from "./modules/audit/index.js";
+import { billingModule } from "./modules/billing/index.js";
 import { chatConfigModule } from "./modules/chatConfig/index.js";
 import { chatLogModule } from "./modules/chatLog/index.js";
 import { llmModule } from "./modules/llm/index.js";
@@ -27,9 +29,11 @@ import { userConfigModule } from "./modules/userConfig/index.js";
 
 /**
  * Module load order matters:
- *   - llm initialized before chatLog (chatLog uses it for summarization)
- *   - userConfig initialized before mcp (mcp reads user servers from it)
- *   - audit, memory, chatConfig come before panel (their routes contribute)
+ *   - llm first (provides the model catalog consumed by billing & telegram)
+ *   - userConfig before mcp (mcp reads user servers from it)
+ *   - admin before telegram (provides access gate allow/ban list)
+ *   - billing after llm (needs the model catalog + default model id)
+ *   - audit, memory, chatConfig, billing come before panel (routes contribute)
  *   - telegram is last (consumes every other service)
  *   - panel start() runs after all modules' init() returned their routes
  */
@@ -37,6 +41,8 @@ const modules: readonly SkyeModule[] = [
   llmModule,
   userConfigModule,
   chatConfigModule,
+  adminModule,
+  billingModule,
   memoryModule,
   chatLogModule,
   speechModule,

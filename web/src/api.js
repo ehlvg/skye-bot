@@ -49,4 +49,17 @@ export const api = {
     request(`/memories/${chatId}`, { method: "DELETE" }),
 
   getStats: () => request("/stats"),
+
+  // --- Skye Plus billing ---
+  getBillingAccount: () => request("/billing/account"),
+  getModels: () => request("/billing/models"),
+  selectModel: (modelId) =>
+    request("/billing/model", { method: "PUT", body: JSON.stringify({ modelId }) }),
+  getPlans: () => request("/billing/plans"),
+  createSubscriptionInvoice: () =>
+    request("/billing/invoice/subscription", { method: "POST" }),
+  createPackInvoice: (packId) =>
+    request("/billing/invoice/pack", { method: "POST", body: JSON.stringify({ packId }) }),
+  cancelSubscription: () => request("/billing/cancel", { method: "POST" }),
+  getBillingEvents: () => request("/billing/events"),
 };

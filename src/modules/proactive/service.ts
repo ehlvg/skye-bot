@@ -1,4 +1,4 @@
-import type { LlmClient, ApiCredentials } from "../llm/client.js";
+import type { LlmClient } from "../llm/client.js";
 import type { ChatLogService, GroupMessage } from "../chatLog/service.js";
 import type { MemoryService } from "../memory/service.js";
 import { log } from "../../utils/log.js";
@@ -127,7 +127,7 @@ export class ProactiveService {
     chatId: number,
     triggerMessageId: number,
     chatTitle: string,
-    creds?: ApiCredentials
+    modelId?: string
   ): Promise<ProactiveDecision | null> {
     if (!this.settings.enabled) return null;
     if (Math.random() >= this.settings.probability) return null;
@@ -139,7 +139,7 @@ export class ProactiveService {
     const recent = this.deps.chatLog.recentGroupMessages(chatId, this.settings.contextSize);
     if (recent.length < this.settings.warmup) return null;
 
-    const decision = await this.decideReaction(chatId, chatTitle, recent, creds);
+    const decision = await this.decideReaction(chatId, chatTitle, recent, modelId);
     if (!decision || !decision.react || decision.kind === "none") return null;
 
     this.lastReactionAt.set(chatId, Date.now());
@@ -157,7 +157,7 @@ export class ProactiveService {
     chatId: number,
     chatTitle: string,
     recent: GroupMessage[],
-    creds?: ApiCredentials
+    modelId?: string
   ): Promise<ProactiveDecision | null> {
     const memories = this.deps.memory.list(chatId);
     const memoryLines = memories.length
@@ -196,7 +196,7 @@ Respond ONLY with a single JSON object, nothing else. Shape:
 If you choose not to react, return: {"react": false, "kind": "none"}`;
 
     try {
-      const res = await this.deps.llm.ask(instructions, "Decide and respond with JSON only.", creds);
+      const res = await this.deps.llm.ask(instructions, "Decide and respond with JSON only.", modelId);
       const text = res.output_text ?? "";
       const json = this.parseDecisionJson(text);
       if (!json) return null;

@@ -20,8 +20,10 @@ import type { RemindersService, Reminder } from "../reminders/service.js";
 import type { EventBus } from "../../core/events.js";
 import type { Contributions, TelegramCommand, ToolDefinition } from "../../core/module.js";
 import { tenantFromGrammy, threadKey, type TenantContext } from "../../core/tenant.js";
-import { resolveCredentials, hasAccess, type AccessDeps } from "./access.js";
+import { checkAccess, type AccessDeps } from "./access.js";
 import { runChatLoop } from "./chat.js";
+import type { BillingService } from "../billing/service.js";
+import type { AdminService } from "../admin/service.js";
 import {
   buildDraftMarkdown,
   buildFinalReply,
@@ -54,11 +56,11 @@ export interface TelegramDeps {
   proactive?: ProactiveService;
   reminders?: RemindersService;
   events?: EventBus;
+  billing: BillingService;
+  admin: AdminService;
   botToken: string;
-  allowedIds: Set<number>;
   webappUrl: string;
-  defaultBaseUrl: string;
-  defaultModel: string;
+  defaultModelId: string;
 }
 
 const IMAGE_CMD_RE = /^\/image(?:@\S+)?\s*([\s\S]*)$/;
@@ -84,11 +86,8 @@ type ImageControl = {
 
 export function installTelegram(bot: Bot, deps: TelegramDeps, contributions: Contributions): void {
   const access: AccessDeps = {
-    chatConfig: deps.chatConfig,
-    userConfig: deps.userConfig,
-    allowedIds: deps.allowedIds,
-    defaultBaseUrl: deps.defaultBaseUrl,
-    defaultModel: deps.defaultModel,
+    billing: deps.billing,
+    admin: deps.admin,
   };
 
   // --- per-thread serialized work queue + short burst buffer for Telegram typing ---
@@ -269,10 +268,9 @@ export function installTelegram(bot: Bot, deps: TelegramDeps, contributions: Con
     const triggerMessageId = ctx.message.message_id;
     const chatId = tenant.chatId;
     const chatTitle = ctx.chat?.title ?? "Group";
-    const creds = resolveCredentials(access, chatId, tenant.userId);
 
     void (async () => {
-      const decision = await proactive.maybeReact(chatId, triggerMessageId, chatTitle, creds);
+      const decision = await proactive.maybeReact(chatId, triggerMessageId, chatTitle);
       if (!decision || decision.kind === "none") return;
       const targetId = decision.targetMessageId ?? triggerMessageId;
 
@@ -610,10 +608,10 @@ export function installTelegram(bot: Bot, deps: TelegramDeps, contributions: Con
     },
     {
       name: "config",
-      description: "Configure API credentials for this chat",
+      description: "Open the Skye settings panel",
       public: true,
       handler: async (ctx) => {
-        await ctx.reply("Open the settings panel to configure your bot:", {
+        await ctx.reply("Open the settings panel to manage your subscription, model, and tools:", {
           reply_markup: new InlineKeyboard().webApp("Open Settings", deps.webappUrl),
         });
       },
@@ -624,7 +622,8 @@ export function installTelegram(bot: Bot, deps: TelegramDeps, contributions: Con
       public: true,
       handler: async (ctx, tenant) => {
         const chatCfg = deps.chatConfig.get(tenant.chatId);
-        const userCfg = tenant.userId ? deps.userConfig.get(tenant.userId) : undefined;
+        const billAcc = tenant.userId ? deps.billing.getAccount(tenant.userId) : undefined;
+        const modelEntry = deps.llm.resolveModel(billAcc?.modelId ?? deps.defaultModelId);
         const mcpTools = tenant.userId ? deps.mcp.toolsFor(tenant.userId) : [];
         const vision = deps.llm.supportsImages();
         const memoryCount = deps.memory.list(tenant.chatId).length;
@@ -642,7 +641,17 @@ export function installTelegram(bot: Bot, deps: TelegramDeps, contributions: Con
           "| | |",
           "|---|---|",
           `| **Chat** | ${tenant.chatType}${tenant.threadId ? ` · topic ${tenant.threadId}` : ""} |`,
-          `| **Model** | \`${userCfg?.model ?? deps.defaultModel}\` |`,
+          `| **Model** | \`${modelEntry.name}\` (${modelEntry.multiplier}×) |`,
+          `| **Skye Plus** | ${
+            billAcc && deps.billing.hasActiveSub(billAcc)
+              ? yes + ` until ${new Date(billAcc.subExpiresAt * 1000).toLocaleDateString()}`
+              : no
+          } |`,
+          `| **Tokens left** | ${
+            billAcc && deps.billing.hasActiveSub(billAcc)
+              ? deps.billing.effectiveRemaining(billAcc).toLocaleString("en-US")
+              : "—"
+          } |`,
           `| **Vision** | ${vision === true ? yes : vision === false ? no : warn + " unknown"} |`,
           `| **Voice input** | ${deps.speech.isSttAvailable() ? yes : no} |`,
           `| **Voice replies** | ${chatCfg.voiceMode ? yes : no} |`,
@@ -797,7 +806,14 @@ export function installTelegram(bot: Bot, deps: TelegramDeps, contributions: Con
     const chatId = ctx.chat?.id;
     if (!chatId) return next();
 
-    if (ctx.callbackQuery?.data?.startsWith("cfg:")) return next();
+    // Payment & callback flows bypass the access gate — Telegram deliveries we
+    // must always honor (pre-checkout ack, successful-payment crediting) or
+    // handle ourselves (inline keyboard callbacks).
+    if (ctx.preCheckoutQuery) return next();
+    if (ctx.callbackQuery) return next();
+    if (ctx.message && "successful_payment" in ctx.message && ctx.message.successful_payment) {
+      return next();
+    }
 
     const isGroup = ctx.chat?.type === "group" || ctx.chat?.type === "supergroup";
     const meUsername = ctx.me?.username ?? "";
@@ -813,13 +829,10 @@ export function installTelegram(bot: Bot, deps: TelegramDeps, contributions: Con
 
     if (isOurCommand && PUBLIC_COMMANDS.has(cmdMatch![1])) return next();
 
-    if (!hasAccess(access, chatId, ctx.from?.id)) {
+    const decision = checkAccess(access, chatId, ctx.from?.id);
+    if (!decision.ok) {
       const directed = isDirectedAtBot(ctx);
-      if (directed) {
-        await ctx.reply(
-          "You need to provide an API key to use this bot. Use /config to set one up."
-        );
-      }
+      if (directed) await ctx.reply(decision.message);
       return;
     }
     return next();
@@ -929,10 +942,48 @@ export function installTelegram(bot: Bot, deps: TelegramDeps, contributions: Con
         ctx.message?.message_id
       );
 
-      const creds = resolveCredentials(access, tenant.chatId, tenant.userId);
+      // Resolve the user's selected model + token quota for this turn.
+      const billAcc = tenant.userId ? deps.billing.getAccount(tenant.userId) : undefined;
+      const modelId = billAcc?.modelId ?? deps.defaultModelId;
+      const modelEntry = deps.llm.resolveModel(modelId);
       const inputItems: ResponseInputItem[] = [...historyFor(tenant).slice(-20), userItem];
       const tk = threadKey(tenant);
       const hasReferenceImages = threadReferenceImages.has(tk);
+
+      // Quota pre-check: subscribers with zero tokens can't proceed.
+      if (billAcc && deps.billing.hasActiveSub(billAcc)) {
+        if (deps.billing.effectiveRemaining(billAcc) <= 0) {
+          await draft.delete();
+          await ctx.reply(
+            "You're out of tokens for this month. Use /plus to buy a token pack, or wait for your renewal date.",
+            { reply_to_message_id: ctx.message?.message_id }
+          );
+          deps.audit.log({
+            ...ctxAudit(ctx),
+            msgType,
+            inputLen: inputText.length,
+            outputLen: 0,
+            latencyMs: Date.now() - t0,
+            status: "ok",
+          });
+          return;
+        }
+      }
+
+      const meterUsage = (usage: { promptTokens: number; completionTokens: number }) => {
+        if (!tenant.userId) return;
+        const r = deps.billing.charge(
+          tenant.userId,
+          usage.promptTokens,
+          usage.completionTokens,
+          modelEntry.multiplier
+        );
+        if (!r.ok && r.reason === "no_subscription") {
+          // shouldn't happen (gate caught it) but be defensive
+          log.warn({ userId: tenant.userId }, "usage charge skipped: no subscription");
+        }
+      };
+
       const text = cleanMd(
         await runChatLoop(
           {
@@ -945,10 +996,11 @@ export function installTelegram(bot: Bot, deps: TelegramDeps, contributions: Con
             reminders: deps.reminders,
             builtinTools,
             hasReferenceImages,
+            modelId,
+            onUsage: meterUsage,
           },
           tenant,
           inputItems,
-          creds,
           onChunk,
           onToolCalls
         )
@@ -1676,7 +1728,18 @@ export function installTelegram(bot: Bot, deps: TelegramDeps, contributions: Con
           `[reminder fired: ${reminder.id}] ${reminder.prompt.slice(0, 200)}`,
         );
 
-        const creds = resolveCredentials(access, reminder.chatId, reminder.userId);
+        const reminderAcc = reminder.userId ? deps.billing.getAccount(reminder.userId) : undefined;
+        const reminderModelId = reminderAcc?.modelId ?? deps.defaultModelId;
+        const reminderModel = deps.llm.resolveModel(reminderModelId);
+        const reminderMeter = (usage: { promptTokens: number; completionTokens: number }) => {
+          if (!reminder.userId) return;
+          deps.billing.charge(
+            reminder.userId,
+            usage.promptTokens,
+            usage.completionTokens,
+            reminderModel.multiplier
+          );
+        };
         const inputItems: ResponseInputItem[] = [
           ...historyFor(tenant as unknown as ReturnType<typeof tenantFromGrammy>).slice(-20),
           userItem,
@@ -1713,10 +1776,11 @@ export function installTelegram(bot: Bot, deps: TelegramDeps, contributions: Con
                 sandbox: deps.sandbox,
                 reminders: deps.reminders,
                 builtinTools,
+                modelId: reminderModelId,
+                onUsage: reminderMeter,
               },
               tenant,
               inputItems,
-              creds,
             ),
           );
 

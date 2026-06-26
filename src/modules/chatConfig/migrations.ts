@@ -47,4 +47,21 @@ export const migrations: Migration[] = [
       }
     },
   },
+  {
+    // Per-chat provider config (BYOK) is removed in the SaaS model.
+    id: "004-drop-provider-columns",
+    up: (db) => {
+      const cols = new Set(
+        (db.pragma("table_info(chat_configs)") as { name: string }[]).map((c) => c.name)
+      );
+      for (const col of ["api_key", "base_url"]) {
+        if (!cols.has(col)) continue;
+        try {
+          db.exec(`ALTER TABLE chat_configs DROP COLUMN ${col}`);
+        } catch {
+          // Older SQLite — leave the orphan column.
+        }
+      }
+    },
+  },
 ];

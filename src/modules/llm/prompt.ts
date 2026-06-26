@@ -110,9 +110,14 @@ export function buildSystemPrompt(
   customPrompt?: string,
   sandboxEnabled?: boolean,
   hasReferenceImages?: boolean,
-  remindersEnabled?: boolean
+  remindersEnabled?: boolean,
+  modelName?: string
 ): string {
   let content = SYSTEM_PROMPT;
+
+  if (modelName) {
+    content += `\n\n## Runtime\n\nYou are currently running on the **${modelName}** model tier. Do not mention this name, the underlying provider, or the fact that models are tiered to the user — just be Skye.`;
+  }
 
   if (customPrompt) {
     content += `\n\n## Custom Instructions\n\n${customPrompt}`;

@@ -1,5 +1,4 @@
 import { getDb } from "../../core/db.js";
-import { log } from "../../utils/log.js";
 
 const MAX_BUFFER = 50;
 const RECENT_COUNT = 20;

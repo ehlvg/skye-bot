@@ -15,7 +15,8 @@ export const llmModule: SkyeModule = {
     const client = new LlmClient({
       apiKey: String(ctx.config.OPENAI_KEY),
       baseUrl: String(ctx.config.BASE_URL),
-      model: String(ctx.config.MODEL),
+      models: ctx.config.MODELS as readonly import("./env.js").ModelEntry[],
+      defaultModelId: String(ctx.config.DEFAULT_MODEL_ID),
       maxCompletionTokens: Number(ctx.config.MAX_COMPLETION_TOKENS),
       useChatCompletions: Boolean(ctx.config.USE_CHAT_COMPLETIONS),
       imageApiKey: String(ctx.config.IMAGE_API_KEY ?? ""),

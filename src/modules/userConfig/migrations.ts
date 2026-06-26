@@ -32,4 +32,23 @@ export const migrations: Migration[] = [
       `);
     },
   },
+  {
+    // Skye is now SaaS-first: per-user provider config (BYOK) is removed.
+    // Drop the now-unused columns where the SQLite version supports it; on
+    // older SQLite (<3.35) the orphan columns are harmless and unread.
+    id: "002-drop-provider-columns",
+    up: (db) => {
+      const cols = new Set(
+        (db.pragma("table_info(user_configs)") as { name: string }[]).map((c) => c.name)
+      );
+      for (const col of ["api_key", "base_url", "model", "max_tokens"]) {
+        if (!cols.has(col)) continue;
+        try {
+          db.exec(`ALTER TABLE user_configs DROP COLUMN ${col}`);
+        } catch {
+          // Older SQLite — leave the orphan column.
+        }
+      }
+    },
+  },
 ];

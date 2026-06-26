@@ -11,7 +11,7 @@ import {
 } from "fs";
 import { dirname, join } from "path";
 import type { SkyeModule } from "../../core/module.js";
-import { telegramEnvSchema, parseAllowedIds } from "./env.js";
+import { telegramEnvSchema } from "./env.js";
 import { installTelegram } from "./handlers.js";
 import { log } from "../../utils/log.js";
 
@@ -58,11 +58,11 @@ export const telegramModule: SkyeModule = {
         proactive: ctx.services.has("proactive") ? ctx.services.get("proactive") : undefined,
         reminders: ctx.services.has("reminders") ? ctx.services.get("reminders") : undefined,
         events: ctx.events,
+        billing: ctx.services.get("billing"),
+        admin: ctx.services.get("admin"),
         botToken: String(ctx.config.BOT_TOKEN),
-        allowedIds: parseAllowedIds(String(ctx.config.ALLOWED_IDS ?? "")),
         webappUrl: String(ctx.config.WEBAPP_URL),
-        defaultBaseUrl: String(ctx.config.BASE_URL),
-        defaultModel: String(ctx.config.MODEL),
+        defaultModelId: String(ctx.config.DEFAULT_MODEL_ID ?? "sydney"),
       },
       contributions
     );

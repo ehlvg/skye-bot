@@ -8,7 +8,13 @@ function flatten(obj: Record<string, unknown>, prefix = ""): Record<string, stri
   const result: Record<string, string> = {};
   for (const [key, value] of Object.entries(obj)) {
     const flatKey = (prefix ? `${prefix}_${key}` : key).toUpperCase();
-    if (value !== null && typeof value === "object" && !Array.isArray(value)) {
+    if (value === null) {
+      result[flatKey] = "";
+    } else if (Array.isArray(value)) {
+      // Arrays are flattened to a JSON string so Zod schemas can parse them
+      // back into structured values (e.g. the model catalog, token packs).
+      result[flatKey] = JSON.stringify(value);
+    } else if (typeof value === "object") {
       Object.assign(result, flatten(value as Record<string, unknown>, flatKey));
     } else {
       result[flatKey] = String(value);

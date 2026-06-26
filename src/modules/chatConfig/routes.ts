@@ -12,10 +12,9 @@ export function buildRoutes(ctx: ModuleContext): PanelRoute[] {
       handler: (req, res) => {
         const userId = (req as PanelRequest).tenant.userId!;
         const row = getDb()
-          .prepare<[number], { chatId: number; voiceMode: number }>(
-            `SELECT DISTINCT rl.chat_id AS chatId, cg.voice_mode AS voiceMode
+          .prepare<[number], { chatId: number }>(
+            `SELECT DISTINCT rl.chat_id AS chatId
              FROM request_logs rl
-             INNER JOIN chat_configs cg ON rl.chat_id = cg.chat_id
              WHERE rl.user_id = ? LIMIT 1`
           )
           .get(userId);
@@ -24,7 +23,8 @@ export function buildRoutes(ctx: ModuleContext): PanelRoute[] {
           res.json({ voiceMode: false });
           return;
         }
-        res.json({ voiceMode: row.voiceMode === 1 });
+        const cfg = chatConfig.get(row.chatId);
+        res.json({ voiceMode: cfg.voiceMode });
       },
     },
     {
