@@ -946,7 +946,9 @@ export function installTelegram(bot: Bot, deps: TelegramDeps, contributions: Con
       const billAcc = tenant.userId ? deps.billing.getAccount(tenant.userId) : undefined;
       const modelId = billAcc?.modelId ?? deps.defaultModelId;
       const modelEntry = deps.llm.resolveModel(modelId);
-      const inputItems: ResponseInputItem[] = [...historyFor(tenant).slice(-20), userItem];
+      // The user message was already persisted to chatLog above, so historyFor
+      // already includes it. Do not append userItem again.
+      const inputItems: ResponseInputItem[] = historyFor(tenant).slice(-20);
       const tk = threadKey(tenant);
       const hasReferenceImages = threadReferenceImages.has(tk);
 
@@ -1715,12 +1717,6 @@ export function installTelegram(bot: Bot, deps: TelegramDeps, contributions: Con
 
         const reminderText = `[System: A reminder you set has just fired]\n\nReminder prompt: ${reminder.prompt}\n\n${contextBlock}\n\nAct on the reminder now. If it's a reminder to tell the user something, tell them. If it's a task, do it. Be natural and concise.`;
 
-        const userItem: ResponseInputItem = {
-          type: "message",
-          role: "user",
-          content: reminderText,
-        };
-
         storeConversation(
           tenant as unknown as ReturnType<typeof tenantFromGrammy>,
           "user",
@@ -1740,10 +1736,11 @@ export function installTelegram(bot: Bot, deps: TelegramDeps, contributions: Con
             reminderModel.multiplier
           );
         };
-        const inputItems: ResponseInputItem[] = [
-          ...historyFor(tenant as unknown as ReturnType<typeof tenantFromGrammy>).slice(-20),
-          userItem,
-        ];
+        // The reminder prompt was already persisted to chatLog above, so
+        // historyFor already includes it. Do not append userItem again.
+        const inputItems: ResponseInputItem[] = historyFor(
+          tenant as unknown as ReturnType<typeof tenantFromGrammy>
+        ).slice(-20);
 
         const actionTicker = {
           timer: undefined as NodeJS.Timeout | undefined,
