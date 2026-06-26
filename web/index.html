@@ -9,11 +9,8 @@
     <script type="module" src="/src/main.js"></script>
   </head>
   <body x-data="app" x-cloak>
-    <!-- Top header — title + bot subtitle, mirrors iOS modal sheet title -->
-    <header class="topbar" :style="`padding-top: calc(env(safe-area-inset-top) + 12px)`">
-      <h1 class="topbar-title">Skye</h1>
-      <p class="topbar-subtitle">Settings</p>
-    </header>
+    <!-- Spacer for safe-area — Telegram adds its own title decoration in fullscreen -->
+    <div class="topbar-spacer" :style="`height: calc(env(safe-area-inset-top) + 12px)`"></div>
 
     <main class="content" :style="`padding-bottom: calc(env(safe-area-inset-bottom) + 80px)`">
       <!-- Profile tab -->
@@ -32,61 +29,43 @@
           </li>
         </ul>
 
-        <!-- Provider card -->
-        <div class="caption">AI Provider</div>
+        <!-- Skye Plus summary card -->
+        <div class="caption">Skye Plus</div>
         <ul class="list">
-          <li class="row row-input">
-            <label class="row-label">API Key</label>
-            <input
-              type="password"
-              class="row-field"
-              placeholder="sk-…"
-              x-model="config.apiKey"
-              @input="markDirty"
-              autocomplete="off"
-              spellcheck="false"
-            />
-          </li>
-          <li class="row row-input">
-            <label class="row-label">Base URL</label>
-            <input
-              type="url"
-              class="row-field"
-              placeholder="https://api.openai.com/v1"
-              x-model="config.baseUrl"
-              @input="markDirty"
-              autocomplete="off"
-              spellcheck="false"
-            />
-          </li>
-          <li class="row row-input">
-            <label class="row-label">Model</label>
-            <input
-              type="text"
-              class="row-field"
-              placeholder="openai/gpt-oss-120b"
-              x-model="config.model"
-              @input="markDirty"
-              autocomplete="off"
-              spellcheck="false"
-            />
-          </li>
-          <li class="row row-input">
-            <label class="row-label">Max Tokens</label>
-            <input
-              type="number"
-              class="row-field"
-              placeholder="500"
-              min="1"
-              x-model.number="config.maxTokens"
-              @input="markDirty"
-            />
+          <li class="row" @click="setTab('plus')">
+            <div class="row-leading">
+              <span class="row-icon row-icon-tint" x-html="icons.sparkleFill"></span>
+            </div>
+            <div class="row-content">
+              <div class="row-title" x-text="hasActiveSub ? 'Skye Plus Active' : 'Not subscribed'"></div>
+              <div class="row-subtitle" x-text="hasActiveSub
+                  ? `${fmtTokens(billing.account.remaining)} tokens left · renewing ${formatDate(billing.account.subExpiresAt * 1000)}`
+                  : `${(billing.plans && billing.plans.subscriptionStars) || 1899} ⭐ / 30 days`"></div>
+            </div>
+            <div class="row-trailing">
+              <span class="row-chevron" x-html="icons.caretRight"></span>
+            </div>
           </li>
         </ul>
-        <p class="footnote">
-          Used for chat requests when this chat isn't on the allow-list. Empty fields fall back to the
-          server defaults.
-        </p>
+
+        <!-- Model card -->
+        <div class="caption">Model</div>
+        <ul class="list">
+          <li class="row row-tap" @click="setTab('plus')">
+            <div class="row-leading">
+              <span class="row-icon row-icon-tint" x-html="icons.cpuFill"></span>
+            </div>
+            <div class="row-content">
+              <div class="row-title" x-text="billingModelName(billing.account?.modelId ?? billing.defaultModelId)"></div>
+              <div class="row-subtitle">
+                <span x-text="`${(billing.models.find(x => x.id === (billing.account?.modelId ?? billing.defaultModelId)) || {}).multiplier || 1}× token cost`"></span>
+              </div>
+            </div>
+            <div class="row-trailing">
+              <span class="row-chevron" x-html="icons.caretRight"></span>
+            </div>
+          </li>
+        </ul>
 
         <!-- Custom instructions card -->
         <div class="caption">Custom Instructions</div>
@@ -205,6 +184,105 @@
         </p>
       </section>
 
+      <!-- Skye Plus tab -->
+      <section x-show="tab === 'plus'" x-transition.opacity>
+        <template x-if="billing.plans">
+          <div>
+            <!-- Premium subscription hero -->
+            <template x-if="hasActiveSub">
+              <div class="plus-hero">
+                <span class="plus-hero-icon" x-html="icons.sparkleFill"></span>
+                <div class="plus-hero-title">Skye Plus · active</div>
+                <div class="plus-hero-sub" x-text="billing.account.subStatus === 'cancelled'
+                    ? 'Cancels at renewal — no further charges.'
+                    : `Renews ${formatDate(billing.account.subExpiresAt * 1000)}`"></div>
+              </div>
+            </template>
+            <template x-if="!hasActiveSub">
+              <div class="plus-hero plus-hero-tap" @click="subscribe()">
+                <span class="plus-hero-icon" x-html="icons.sparkleFill"></span>
+                <div class="plus-hero-title">Unlock Skye Plus</div>
+                <div class="plus-hero-sub" x-text="`${billing.plans.subscriptionStars} ⭐ / 30 days · 2,000,000 tokens included`"></div>
+                <button class="button button-fill plus-hero-cta" @click.stop="subscribe()" :disabled="billing.busy">
+                  Subscribe
+                </button>
+              </div>
+            </template>
+            <template x-if="hasActiveSub && billing.account.subStatus !== 'cancelled'">
+              <button class="button button-destructive" @click="cancelSubscription()">Cancel subscription</button>
+            </template>
+
+            <!-- Quota -->
+            <template x-if="hasActiveSub">
+              <div>
+                <div class="caption">Token balance</div>
+                <ul class="list">
+                  <li class="row">
+                    <div class="row-leading">
+                      <span class="row-icon row-icon-tint" x-html="icons.timerFill"></span>
+                    </div>
+                    <div class="row-content">
+                      <div class="row-title" x-text="`${fmtTokens(billing.account.remaining)} tokens left`"></div>
+                      <div class="row-subtitle" x-text="`Base: ${fmtTokens(baseLeft)} left this month · Boost packs: ${fmtTokens(billing.account.packsTokens)}`"></div>
+                    </div>
+                  </li>
+                </ul>
+
+                <div class="caption">Token packs</div>
+                <ul class="list">
+                  <template x-for="pack in billing.plans.packs" :key="pack.id">
+                    <li class="row row-tap" @click="buyPack(pack.id)">
+                      <div class="row-leading">
+                        <span class="row-icon row-icon-tint" x-html="icons.lightningFill"></span>
+                      </div>
+                      <div class="row-content">
+                        <div class="row-title" x-text="pack.name"></div>
+                        <div class="row-subtitle" x-text="`+${fmtTokens(pack.tokens)} tokens`"></div>
+                      </div>
+                      <div class="row-trailing">
+                        <span class="row-value" x-text="`${pack.stars} ⭐`"></span>
+                      </div>
+                    </li>
+                  </template>
+                </ul>
+                <p class="footnote">Packs are spent before your base quota and expire when your subscription ends.</p>
+              </div>
+            </template>
+
+            <!-- Model picker -->
+            <div class="caption">Choose your model</div>
+            <ul class="list">
+              <template x-for="model in billing.models" :key="model.id">
+                <li
+                  class="row row-tap"
+                  @click="selectModel(model.id)"
+                  :class="(billing.account?.modelId || billing.defaultModelId) === model.id && 'is-selected'"
+                >
+                  <div class="row-leading">
+                    <span class="row-icon row-icon-tint" x-html="icons.cpuFill"></span>
+                  </div>
+                  <div class="row-content">
+                    <div class="row-title" x-text="model.name"></div>
+                    <div class="row-subtitle" x-text="`${model.multiplier}× token cost`"></div>
+                  </div>
+                  <div class="row-trailing">
+                    <span
+                      x-show="(billing.account?.modelId || billing.defaultModelId) === model.id"
+                      x-text="'✓'"
+                    ></span>
+                  </div>
+                </li>
+              </template>
+            </ul>
+            <p class="footnote">Models differ in power and token cost. You can switch any time.</p>
+          </div>
+        </template>
+
+        <template x-if="!billing.plans">
+          <div class="footnote">Loading Skye Plus…</div>
+        </template>
+      </section>
+
       <!-- Stats tab -->
       <section x-show="tab === 'stats'" x-transition.opacity>
         <div class="caption">Usage</div>
@@ -285,6 +363,14 @@
       >
         <span class="tab-icon" x-html="tab === 'memory' ? icons.brainFill : icons.brain"></span>
         <span class="tab-label">Memory</span>
+      </button>
+      <button
+        class="tab"
+        :class="tab === 'plus' && 'is-active'"
+        @click="setTab('plus')"
+      >
+        <span class="tab-icon" x-html="tab === 'plus' ? icons.sparkleFill : icons.sparkle"></span>
+        <span class="tab-label">Plus</span>
       </button>
       <button
         class="tab"

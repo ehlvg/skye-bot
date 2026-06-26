@@ -21,6 +21,11 @@ import trashRegular from "@phosphor-icons/core/assets/regular/trash.svg?raw";
 import trashBold from "@phosphor-icons/core/assets/bold/trash-bold.svg?raw";
 import plusBold from "@phosphor-icons/core/assets/bold/plus-bold.svg?raw";
 import caretRight from "@phosphor-icons/core/assets/regular/caret-right.svg?raw";
+import sparkleFill from "@phosphor-icons/core/assets/fill/sparkle-fill.svg?raw";
+import sparkleRegular from "@phosphor-icons/core/assets/regular/sparkle.svg?raw";
+import cpuFill from "@phosphor-icons/core/assets/fill/cpu-fill.svg?raw";
+import cpuRegular from "@phosphor-icons/core/assets/regular/cpu.svg?raw";
+import lightningFill from "@phosphor-icons/core/assets/fill/lightning-fill.svg?raw";
 
 export const icons = {
   userCircleFill,
@@ -41,4 +46,9 @@ export const icons = {
   trashBold,
   plusBold,
   caretRight,
+  sparkleFill,
+  sparkle: sparkleRegular,
+  cpuFill,
+  cpu: cpuRegular,
+  lightningFill,
 };

@@ -1,81 +1,29 @@
 import { test, expect, describe, beforeEach } from "vitest";
-import {
-  getChatConfig,
-  setChatApiKey,
-  setChatBaseUrl,
-  resetChatApiKey,
-  resetChatBaseUrl,
-} from "../modules/chatConfig/service.js";
+import { getChatConfig, setChatVoiceMode, chatConfigService } from "../modules/chatConfig/service.js";
+import { getDb } from "../core/db.js";
 
 const CHAT = 77;
 
-beforeEach(async () => {
-  await resetChatApiKey(CHAT);
-  await resetChatBaseUrl(CHAT);
+beforeEach(() => {
+  getDb().prepare("DELETE FROM chat_configs WHERE chat_id = ?").run(CHAT);
 });
 
 describe("getChatConfig", () => {
-  test("returns defaults for unknown chatId", () => {
+  test("returns defaults for an unknown chat", () => {
     expect(getChatConfig(9999)).toEqual({ voiceMode: false });
   });
 });
 
-describe("setChatApiKey", () => {
-  test("stores and retrieves an API key", async () => {
-    await setChatApiKey(CHAT, "sk-test-123");
-    expect(getChatConfig(CHAT).apiKey).toBe("sk-test-123");
+describe("setChatVoiceMode", () => {
+  test("stores and toggles voice mode", () => {
+    setChatVoiceMode(CHAT, true);
+    expect(getChatConfig(CHAT).voiceMode).toBe(true);
+    setChatVoiceMode(CHAT, false);
+    expect(getChatConfig(CHAT).voiceMode).toBe(false);
   });
 
-  test("overwrites an existing API key", async () => {
-    await setChatApiKey(CHAT, "sk-old");
-    await setChatApiKey(CHAT, "sk-new");
-    expect(getChatConfig(CHAT).apiKey).toBe("sk-new");
-  });
-});
-
-describe("setChatBaseUrl", () => {
-  test("stores and retrieves a base URL", async () => {
-    await setChatBaseUrl(CHAT, "https://example.com/v1");
-    expect(getChatConfig(CHAT).baseUrl).toBe("https://example.com/v1");
-  });
-});
-
-describe("resetChatApiKey", () => {
-  test("removes the API key", async () => {
-    await setChatApiKey(CHAT, "sk-to-remove");
-    await resetChatApiKey(CHAT);
-    expect(getChatConfig(CHAT).apiKey).toBeUndefined();
-  });
-
-  test("cleans up the row when both fields are null", async () => {
-    await setChatApiKey(CHAT, "sk-only");
-    await resetChatApiKey(CHAT);
-    expect(getChatConfig(CHAT)).toEqual({ voiceMode: false });
-  });
-
-  test("preserves baseUrl when only apiKey is reset", async () => {
-    await setChatApiKey(CHAT, "sk-key");
-    await setChatBaseUrl(CHAT, "https://my.api/v1");
-    await resetChatApiKey(CHAT);
-    const cfg = getChatConfig(CHAT);
-    expect(cfg.apiKey).toBeUndefined();
-    expect(cfg.baseUrl).toBe("https://my.api/v1");
-  });
-});
-
-describe("resetChatBaseUrl", () => {
-  test("removes the base URL", async () => {
-    await setChatBaseUrl(CHAT, "https://example.com/v1");
-    await resetChatBaseUrl(CHAT);
-    expect(getChatConfig(CHAT).baseUrl).toBeUndefined();
-  });
-
-  test("preserves apiKey when only baseUrl is reset", async () => {
-    await setChatApiKey(CHAT, "sk-keep");
-    await setChatBaseUrl(CHAT, "https://drop.me/v1");
-    await resetChatBaseUrl(CHAT);
-    const cfg = getChatConfig(CHAT);
-    expect(cfg.apiKey).toBe("sk-keep");
-    expect(cfg.baseUrl).toBeUndefined();
+  test("is exposed on the ChatConfigService", () => {
+    chatConfigService.setVoiceMode(CHAT, true);
+    expect(chatConfigService.get(CHAT).voiceMode).toBe(true);
   });
 });

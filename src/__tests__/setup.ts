@@ -9,7 +9,9 @@ process.env.DB_PATH = ":memory:";
 
 // Touch all module migrations. Importing the modules brings their migration
 // arrays into scope; we collect them here without invoking init().
+import { adminModule } from "../modules/admin/index.js";
 import { auditModule } from "../modules/audit/index.js";
+import { billingModule } from "../modules/billing/index.js";
 import { chatConfigModule } from "../modules/chatConfig/index.js";
 import { chatLogModule } from "../modules/chatLog/index.js";
 import { memoryModule } from "../modules/memory/index.js";
@@ -23,4 +25,6 @@ runMigrations(getDb(), [
   auditModule,
   userConfigModule,
   remindersModule,
+  adminModule,
+  billingModule,
 ]);

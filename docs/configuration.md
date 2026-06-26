@@ -13,15 +13,45 @@ Real environment variables override YAML values — useful for platform-injected
 | Key                | Purpose                                                                           |
 | ------------------ | --------------------------------------------------------------------------------- |
 | `bot_token`        | Your Telegram bot token from [@BotFather](https://t.me/botfather).                |
-| `openai_key`       | API key for the LLM. Works with OpenRouter, OpenAI, or any compatible API.        |
-| `model`            | LLM model ID. Default: `openai/gpt-oss-120b`.                                     |
+| `openai_key`       | API key for the LLM provider (the bot's own key — users no longer bring their own). |
 | `base_url`         | API base URL. Default: `https://openrouter.ai/api/v1`.                            |
 | `max_completion_tokens` | Maximum tokens per response. Default: `500`.                                      |
-| `allowed_ids`      | Comma-separated Telegram chat IDs that can use the bot without their own API key. |
+| `admin_ids`        | Comma-separated Telegram **user** IDs that administer the bot (free, unlimited access + `/allow`/`/ban` commands). |
+| `allowed_ids`      | _(Legacy)_ Comma-separated chat/user IDs. Seeded into the allowlist once on upgrade; afterwards manage access with `/allow`. |
 | `telegram_polling_lock` | Set to `"0"` to disable the single-instance polling lock. Default: `"1"`.       |
+| `owner.name`       | Bot owner/author display name. Surfaced in the system prompt so Skye weights their messages above others. |
+| `owner.tag`        | Bot owner's Telegram username (without `@`). Paired with `owner.name`. |
 | `use_chat_completions` | Set to `true` if your provider doesn't support the Responses API. Default: `false`. |
 | `log_level`        | Pino log level: `trace`, `debug`, `info`, `warn`, `error`, `fatal`. Default: `info`. |
 | `db_path`          | SQLite database path. Default: `data/skye.db`. Supports `:memory:` for ephemeral storage. |
+
+### Models (masked catalog)
+
+Users pick from masked model tiers; the real provider model IDs and token multipliers are configured by the operator and never shown to end users.
+
+| Key                | Purpose                                                                                       |
+| ------------------ | --------------------------------------------------------------------------------------------- |
+| `default_model_id` | Masked id new subscribers start on (e.g. `sydney`).                                            |
+| `models[].id`      | Internal id, must match what `/models` and the panel reference.                               |
+| `models[].name`    | Display name (e.g. `Sydney`, `Tokyo`, `Berlin`, `Toronto`).                                   |
+| `models[].model`   | Real provider model id used for the upstream call (e.g. `openai/gpt-5.5`).                     |
+| `models[].multiplier` | Token cost multiplier applied to usage (e.g. `1.0`, `1.5`, `2.5`, `4.0`).                   |
+
+### Skye Plus subscription (Telegram Stars)
+
+Public users unlock Skye with a recurring Stars subscription and top up with one-off token packs.
+
+| Key                | Purpose                                                                                       |
+| ------------------ | --------------------------------------------------------------------------------------------- |
+| `billing.currency` | Telegram Stars currency; always `XTR`.                                                        |
+| `billing.title` | Invoice/title name shown to users. Default: `Skye Plus`.                                     |
+| `billing.description` | Invoice description.                                                                         |
+| `billing.subscription_stars` | Price per period in Stars. Default: `1899`.                                          |
+| `billing.subscription_period_seconds` | Recurring period. Bot API 8.0 requires `2592000` (30 days). Default: `2592000`. |
+| `billing.base_quota_tokens` | Tokens granted each renewal. Default: `2000000`.                                         |
+| `billing.packs[]` | One-off token packs. Each has `id`, `name`, `stars`, and `tokens`.                           |
+
+Packs are spent before the base quota and **expire when the subscription lapses**; they can only be bought while subscribed.
 
 ### Image generation
 
@@ -98,40 +128,27 @@ See [MCP Tools](mcp-tools.md) for configuration details.
 
 ## Access control
 
-Skye uses a layered access system:
+Skye is now SaaS-first. Who can use the bot is decided in this order:
 
-1. **Allowlist**: Chat IDs in `allowed_ids` have unrestricted access.
-2. **Per-chat key**: Chats can have their own API key set via the Settings panel.
-3. **Per-user key**: Users can set their own API key, model, and prompt via the Settings panel.
-4. **Global key**: The `openai_key` from `config.yaml` is used as a fallback.
+1. **Admins** — IDs in `admin_ids`. Free, unlimited access; can run `/allow`, `/disallow`, `/ban`, `/unban`, `/allowed`.
+2. **Allowlist** — chats/users an admin has allowlisted with `/allow` (or seeded from the legacy `allowed_ids`). Free, unlimited access.
+3. **Banned** — explicitly blocked; takes precedence over everything else.
+4. **Skye Plus subscription** — any other user with an active 1899 ⭐ / 30-day subscription (paid with Telegram Stars). Usage is metered against their token quota.
 
-If none of these are configured for a user or chat, Skye asks them to set up an API key via `/config`.
+If none apply, Skye points the user to `/plus` to subscribe.
 
 ## Per-user settings
 
 Each user can customize the following through the Settings panel (accessible via `/config`):
 
-- **API key** — Their own OpenAI-compatible key.
-- **API base URL** — Their own API endpoint.
-- **Model** — Which LLM to use for their conversations.
-- **Max tokens** — Maximum response length.
 - **System prompt** — Custom instructions appended to Skye's base personality. This doesn't replace Skye's core character — it adds additional guidance on top.
+- **Model tier** — Which masked model (Sydney/Tokyo/Berlin/Toronto) to use. Tier choice affects token cost via the configured multiplier.
+- **Skye Plus** — Manage the subscription, view token balance, buy token packs, and cancel. Also reachable via `/plus`, `/models`, `/tokens`, `/cancel`.
 
 ## Per-chat settings
 
 Each chat can have its own:
 
-- **API key** and **base URL** — For group-level billing or model selection.
 - **Voice mode** — Toggled with `/voice`, persists per chat.
 
 Settings are stored in SQLite and survive restarts.
-
-## Credential precedence
-
-When resolving which credentials to use, Skye checks in this order:
-
-1. User's own API key (from Settings panel)
-2. Chat's own API key
-3. Global `openai_key` (from `config.yaml`)
-
-The first configured key wins. This means a user can override both the chat and global keys with their personal configuration.

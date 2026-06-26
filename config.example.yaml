@@ -2,17 +2,79 @@ bot_token: "123456789:ABCdefGhIJKlmnoPQRstuVWxyz_example"
 # Prevent two local long-polling bot processes from using the same BOT_TOKEN.
 # Set to "0" only if your deployment uses another single-instance mechanism.
 telegram_polling_lock: "1"
+
+# Bot owner / author — surfaced in the system prompt so Skye knows who created
+# her and weights their messages above other participants. Set both to empty
+# strings to omit the owner section entirely.
+owner:
+  name: "Melissa"
+  tag: "miss_sterling"
+
+# Bot administrators — Telegram user ids allowed to run /allow, /disallow,
+# /ban, /unban, /allowed and to use Skye with unlimited, free access.
+admin_ids: ""
+# Legacy manual allow-list. On the first run after upgrade these ids are
+# seeded into the admin allowlist table; after that, manage access with
+# the /allow command in chat.
 allowed_ids: ""
 
 openai_key: "sk-or-XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX"
 max_completion_tokens: 500
-model: "openai/gpt-oss-120b"
 base_url: "https://openrouter.ai/api/v1"
+
+# The masked model catalog exposed to users. Each entry has a display name
+# (shown in the Mini App and /models), a real provider model id used for
+# the upstream call, and a token-cost multiplier. The underlying model id
+# is never shown to the user — only the masked name.
+# `default_model_id` is the tier new subscribers start on.
+default_model_id: "sydney"
+models:
+  - id: sydney
+    name: Sydney
+    model: google/gemini-3.1-flash-lite
+    multiplier: 1.0
+  - id: tokyo
+    name: Tokyo
+    model: openai/gpt-oss-20b
+    multiplier: 1.5
+  - id: berlin
+    name: Berlin
+    model: anthropic/claude-3.7-sonnet
+    multiplier: 2.5
+  - id: toronto
+    name: Toronto
+    model: openai/gpt-5.5
+    multiplier: 4.0
 
 # Force Chat Completions API instead of Responses API.
 # Set to "true" if your provider doesn't support the Responses API
 # (Ollama, vLLM, most self-hosted inference servers). Defaults to "false".
 # use_chat_completions: false
+
+# --- Skye Plus subscription (Telegram Stars) ---
+# Public users unlock Skye with a 1899 ⭐ / 30-day subscription. The base
+# monthly token quota is topped up each renewal; users can buy extra token
+# packs (only while subscribed) which expire when the subscription lapses.
+billing:
+  currency: "XTR"
+  title: "Skye Plus"
+  description: "Monthly subscription — unlocks Skye and adds 2,000,000 tokens per month."
+  subscription_stars: 1899
+  subscription_period_seconds: 2592000   # 30 days — Bot API 8.0 requires this value
+  base_quota_tokens: 2000000
+  packs:
+    - id: pack_500
+      name: Quick Boost
+      stars: 499
+      tokens: 500000
+    - id: pack_1500
+      name: Big Boost
+      stars: 999
+      tokens: 1500000
+    - id: pack_5000
+      name: Mega Boost
+      stars: 2499
+      tokens: 5000000
 
 # Image generation provider (used by /image and image editing).
 # Independent from chat — fill these in if your chat provider doesn't support
@@ -23,6 +85,18 @@ image:
   base_url: ""
   api_key: ""
   model: "google/gemini-3.1-flash-image-preview"
+
+# PDF parsing — when a user sends a PDF or replies to one, Skye passes it
+# to the LLM as a file input. OpenRouter-compatible providers can parse the
+# PDF server-side via a "file-parser" plugin engine.
+# Engines: "mistral-ocr" (best for scanned docs/images, paid per page),
+#          "cloudflare-ai" (free, markdown output),
+#          "native" (model must support file input natively),
+#          "" (auto — uses the model's native support or defaults)
+# Set to "" to disable PDF parsing entirely.
+pdf_engine: ""
+# Maximum PDF file size to accept (bytes, default 25 MB)
+pdf_max_bytes: 26214400
 
 # Voice (speech) provider — choose between Yandex SpeechKit and OpenRouter.
 # Both support STT (speech-to-text) and TTS (text-to-speech).

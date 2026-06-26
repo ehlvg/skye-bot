@@ -20,8 +20,10 @@ import type { RemindersService, Reminder } from "../reminders/service.js";
 import type { EventBus } from "../../core/events.js";
 import type { Contributions, TelegramCommand, ToolDefinition } from "../../core/module.js";
 import { tenantFromGrammy, threadKey, type TenantContext } from "../../core/tenant.js";
-import { resolveCredentials, hasAccess, type AccessDeps } from "./access.js";
+import { checkAccess, type AccessDeps } from "./access.js";
 import { runChatLoop } from "./chat.js";
+import type { BillingService } from "../billing/service.js";
+import type { AdminService } from "../admin/service.js";
 import {
   buildDraftMarkdown,
   buildFinalReply,
@@ -36,6 +38,7 @@ import {
   sendRichReplyChunked,
   serializeError,
   toDataUrl,
+  toFileDataUrl,
   type ToolCallRecord,
 } from "./helpers.js";
 import { cleanMd } from "../../utils/markdown.js";
@@ -54,11 +57,12 @@ export interface TelegramDeps {
   proactive?: ProactiveService;
   reminders?: RemindersService;
   events?: EventBus;
+  billing: BillingService;
+  admin: AdminService;
   botToken: string;
-  allowedIds: Set<number>;
   webappUrl: string;
-  defaultBaseUrl: string;
-  defaultModel: string;
+  defaultModelId: string;
+  owner?: { name: string; tag: string };
 }
 
 const IMAGE_CMD_RE = /^\/image(?:@\S+)?\s*([\s\S]*)$/;
@@ -69,6 +73,14 @@ const SUPPORTED_TEXT_MIME_RE =
   /^(text\/|application\/(json|xml|csv|javascript|x-javascript|typescript|x-typescript|sql))/i;
 const SUPPORTED_TEXT_EXT_RE =
   /\.(txt|md|markdown|json|csv|ts|tsx|js|jsx|py|rb|go|rs|java|kt|swift|c|cc|cpp|h|hpp|css|html|xml|yaml|yml|toml|ini|sql|log)$/i;
+const PDF_MIME = "application/pdf";
+const PDF_EXT_RE = /\.pdf$/i;
+
+/** Content part types used internally (Responses-API style, extended). */
+type ContentPart =
+  | { type: "input_text"; text: string }
+  | { type: "input_image"; image_url: string }
+  | { type: "input_file"; file_data: string; filename: string };
 
 type QueuedTextMessage = {
   ctx: GrammyContext & { message: Message.TextMessage };
@@ -84,11 +96,8 @@ type ImageControl = {
 
 export function installTelegram(bot: Bot, deps: TelegramDeps, contributions: Contributions): void {
   const access: AccessDeps = {
-    chatConfig: deps.chatConfig,
-    userConfig: deps.userConfig,
-    allowedIds: deps.allowedIds,
-    defaultBaseUrl: deps.defaultBaseUrl,
-    defaultModel: deps.defaultModel,
+    billing: deps.billing,
+    admin: deps.admin,
   };
 
   // --- per-thread serialized work queue + short burst buffer for Telegram typing ---
@@ -156,6 +165,110 @@ export function installTelegram(bot: Bot, deps: TelegramDeps, contributions: Con
       }
     }
     return images;
+  }
+
+  /**
+   * Collect media content parts (images, PDFs, audio transcripts) from the
+   * replied-to message so the model can reason about them. This handles:
+   * - Photos → input_image parts (if vision supported)
+   * - PDF documents → input_file parts (if file parsing supported)
+   * - Audio/voice → transcribed text (if STT available)
+   * - Text documents → extracted text
+   *
+   * Returns an object with content parts (to merge into the user message) and
+   * a textual summary (to include in the reply context).
+   */
+  async function collectReplyMedia(
+    ctx: GrammyContext
+  ): Promise<{ parts: ContentPart[]; summary: string }> {
+    const reply =
+      ctx.message && "reply_to_message" in ctx.message
+        ? ctx.message.reply_to_message
+        : undefined;
+    if (!reply) return { parts: [], summary: "" };
+
+    const parts: ContentPart[] = [];
+    const summaryParts: string[] = [];
+    const supportsImages = deps.llm.supportsImages() !== false;
+    const hasPdfEngine = !!deps.llm.settings.pdfEngine;
+    const supportsFiles = supportsImages || hasPdfEngine;
+
+    // Photo in replied message
+    if (reply.photo?.length && supportsImages) {
+      try {
+        const file = await ctx.api.getFile(reply.photo[reply.photo.length - 1].file_id);
+        const url = `https://api.telegram.org/file/bot${deps.botToken}/${file.file_path}`;
+        const dataUrl = await toDataUrl(url);
+        parts.push({ type: "input_image", image_url: dataUrl });
+        const cap = "caption" in reply && reply.caption ? reply.caption : "photo";
+        summaryParts.push(`[replied photo: ${cap}]`);
+      } catch (e) {
+        log.warn({ err: e }, "Failed to download replied photo");
+      }
+    }
+
+    // Document (PDF or text) in replied message
+    if (reply.document) {
+      const doc = reply.document;
+      const filename = doc.file_name ?? "document";
+      const mime = doc.mime_type ?? "";
+      const isPdf = mime === PDF_MIME || PDF_EXT_RE.test(filename);
+
+      if (isPdf && supportsFiles) {
+        try {
+          const file = await ctx.api.getFile(doc.file_id);
+          const url = `https://api.telegram.org/file/bot${deps.botToken}/${file.file_path}`;
+          const dataUrl = await toFileDataUrl(url, PDF_MIME);
+          parts.push({ type: "input_file", file_data: dataUrl, filename });
+          summaryParts.push(`[replied PDF: ${filename}]`);
+        } catch (e) {
+          log.warn({ err: e }, "Failed to download replied PDF");
+        }
+      } else if (!isPdf && (SUPPORTED_TEXT_MIME_RE.test(mime) || SUPPORTED_TEXT_EXT_RE.test(filename))) {
+        try {
+          const { buffer } = await downloadTelegramFile(doc.file_id);
+          const text = buffer.toString("utf8").replace(/\0/g, "").slice(0, 16000);
+          if (text.trim()) {
+            parts.push({ type: "input_text", text: `[Replied document: ${filename}]\n${text}` });
+            summaryParts.push(`[replied document: ${filename}]`);
+          }
+        } catch (e) {
+          log.warn({ err: e }, "Failed to download replied document");
+        }
+      } else if (!isPdf) {
+        summaryParts.push(`[replied document: ${filename}]`);
+      }
+    }
+
+    // Voice in replied message
+    if (reply.voice && deps.speech.isSttAvailable()) {
+      try {
+        const { buffer } = await downloadTelegramFile(reply.voice.file_id);
+        const transcript = await deps.speech.recognize(buffer);
+        if (transcript) {
+          parts.push({ type: "input_text", text: `[Replied voice message transcript]\n${transcript}` });
+          summaryParts.push("[replied voice message]");
+        }
+      } catch (e) {
+        log.warn({ err: e }, "Failed to transcribe replied voice");
+      }
+    }
+
+    // Audio file in replied message
+    if (reply.audio && deps.speech.isSttAvailable()) {
+      try {
+        const { buffer } = await downloadTelegramFile(reply.audio.file_id);
+        const transcript = await deps.speech.recognize(buffer);
+        if (transcript) {
+          parts.push({ type: "input_text", text: `[Replied audio transcript]\n${transcript}` });
+          summaryParts.push(`[replied audio: ${reply.audio.title ?? reply.audio.file_name ?? "audio"}]`);
+        }
+      } catch (e) {
+        log.warn({ err: e }, "Failed to transcribe replied audio");
+      }
+    }
+
+    return { parts, summary: summaryParts.join(" ") };
   }
 
   async function downloadPhotos(ctxs: GrammyContext[]): Promise<string[]> {
@@ -269,10 +382,9 @@ export function installTelegram(bot: Bot, deps: TelegramDeps, contributions: Con
     const triggerMessageId = ctx.message.message_id;
     const chatId = tenant.chatId;
     const chatTitle = ctx.chat?.title ?? "Group";
-    const creds = resolveCredentials(access, chatId, tenant.userId);
 
     void (async () => {
-      const decision = await proactive.maybeReact(chatId, triggerMessageId, chatTitle, creds);
+      const decision = await proactive.maybeReact(chatId, triggerMessageId, chatTitle);
       if (!decision || decision.kind === "none") return;
       const targetId = decision.targetMessageId ?? triggerMessageId;
 
@@ -316,13 +428,20 @@ export function installTelegram(bot: Bot, deps: TelegramDeps, contributions: Con
   };
 
   const sanitizeHistory = (items: ResponseInputItem[]): ResponseInputItem[] => {
-    if (deps.llm.supportsImages() !== false) return items;
+    const supportsImages = deps.llm.supportsImages() !== false;
+    const hasPdfEngine = !!deps.llm.settings.pdfEngine;
+    const supportsFiles = supportsImages || hasPdfEngine;
+    if (supportsImages && supportsFiles) return items;
     return items.map((item) => {
       const m = item as { type?: string; content?: unknown };
       if (m.type !== "message" || !Array.isArray(m.content)) return item;
-      const parts = (m.content as { type: string }[]).filter((p) => p.type !== "input_image");
+      const parts = (m.content as { type: string }[]).filter((p) => {
+        if (p.type === "input_image") return supportsImages;
+        if (p.type === "input_file") return supportsFiles;
+        return true;
+      });
       if (parts.length === 0) {
-        return { ...item, content: [{ type: "input_text", text: "[image]" }] } as ResponseInputItem;
+        return { ...item, content: [{ type: "input_text", text: "[attachment]" }] } as ResponseInputItem;
       }
       return { ...item, content: parts } as ResponseInputItem;
     });
@@ -413,7 +532,8 @@ export function installTelegram(bot: Bot, deps: TelegramDeps, contributions: Con
       ("voice" in reply && reply.voice ? "[voice message]" : "") ||
       ("document" in reply && reply.document
         ? `[document: ${reply.document.file_name ?? "file"}]`
-        : "");
+        : "") ||
+      ("audio" in reply && reply.audio ? `[audio: ${reply.audio.title ?? reply.audio.file_name ?? "file"}]` : "");
     if (!text) return "";
     return `Context: the user is replying to this message:\n${text.slice(0, 2000)}\n\n`;
   };
@@ -485,9 +605,9 @@ export function installTelegram(bot: Bot, deps: TelegramDeps, contributions: Con
           "",
           "Send a voice note — I transcribe and answer. Toggle voice replies with /voice.",
           "",
-          "## Documents & audio",
+          "## Documents, PDFs & audio",
           "",
-          "Send `.txt`, `.md`, `.json`, `.csv`, code, or logs and I’ll read them. Audio files and video notes are transcribed too.",
+          "Send `.txt`, `.md`, `.json`, `.csv`, code, or logs and I'll read them. Send a PDF and I'll parse it — text, images, tables, everything. Reply to anyone's PDF, photo, or audio message and ask me about it — I'll see the content and reason about it. Audio files and video notes are transcribed too.",
           "",
           "## Sandbox & web",
           "",
@@ -610,10 +730,10 @@ export function installTelegram(bot: Bot, deps: TelegramDeps, contributions: Con
     },
     {
       name: "config",
-      description: "Configure API credentials for this chat",
+      description: "Open the Skye settings panel",
       public: true,
       handler: async (ctx) => {
-        await ctx.reply("Open the settings panel to configure your bot:", {
+        await ctx.reply("Open the settings panel to manage your subscription, model, and tools:", {
           reply_markup: new InlineKeyboard().webApp("Open Settings", deps.webappUrl),
         });
       },
@@ -624,7 +744,8 @@ export function installTelegram(bot: Bot, deps: TelegramDeps, contributions: Con
       public: true,
       handler: async (ctx, tenant) => {
         const chatCfg = deps.chatConfig.get(tenant.chatId);
-        const userCfg = tenant.userId ? deps.userConfig.get(tenant.userId) : undefined;
+        const billAcc = tenant.userId ? deps.billing.getAccount(tenant.userId) : undefined;
+        const modelEntry = deps.llm.resolveModel(billAcc?.modelId ?? deps.defaultModelId);
         const mcpTools = tenant.userId ? deps.mcp.toolsFor(tenant.userId) : [];
         const vision = deps.llm.supportsImages();
         const memoryCount = deps.memory.list(tenant.chatId).length;
@@ -642,7 +763,17 @@ export function installTelegram(bot: Bot, deps: TelegramDeps, contributions: Con
           "| | |",
           "|---|---|",
           `| **Chat** | ${tenant.chatType}${tenant.threadId ? ` · topic ${tenant.threadId}` : ""} |`,
-          `| **Model** | \`${userCfg?.model ?? deps.defaultModel}\` |`,
+          `| **Model** | \`${modelEntry.name}\` (${modelEntry.multiplier}×) |`,
+          `| **Skye Plus** | ${
+            billAcc && deps.billing.hasActiveSub(billAcc)
+              ? yes + ` until ${new Date(billAcc.subExpiresAt * 1000).toLocaleDateString()}`
+              : no
+          } |`,
+          `| **Tokens left** | ${
+            billAcc && deps.billing.hasActiveSub(billAcc)
+              ? deps.billing.effectiveRemaining(billAcc).toLocaleString("en-US")
+              : "—"
+          } |`,
           `| **Vision** | ${vision === true ? yes : vision === false ? no : warn + " unknown"} |`,
           `| **Voice input** | ${deps.speech.isSttAvailable() ? yes : no} |`,
           `| **Voice replies** | ${chatCfg.voiceMode ? yes : no} |`,
@@ -797,7 +928,14 @@ export function installTelegram(bot: Bot, deps: TelegramDeps, contributions: Con
     const chatId = ctx.chat?.id;
     if (!chatId) return next();
 
-    if (ctx.callbackQuery?.data?.startsWith("cfg:")) return next();
+    // Payment & callback flows bypass the access gate — Telegram deliveries we
+    // must always honor (pre-checkout ack, successful-payment crediting) or
+    // handle ourselves (inline keyboard callbacks).
+    if (ctx.preCheckoutQuery) return next();
+    if (ctx.callbackQuery) return next();
+    if (ctx.message && "successful_payment" in ctx.message && ctx.message.successful_payment) {
+      return next();
+    }
 
     const isGroup = ctx.chat?.type === "group" || ctx.chat?.type === "supergroup";
     const meUsername = ctx.me?.username ?? "";
@@ -813,13 +951,10 @@ export function installTelegram(bot: Bot, deps: TelegramDeps, contributions: Con
 
     if (isOurCommand && PUBLIC_COMMANDS.has(cmdMatch![1])) return next();
 
-    if (!hasAccess(access, chatId, ctx.from?.id)) {
+    const decision = checkAccess(access, chatId, ctx.from?.id);
+    if (!decision.ok) {
       const directed = isDirectedAtBot(ctx);
-      if (directed) {
-        await ctx.reply(
-          "You need to provide an API key to use this bot. Use /config to set one up."
-        );
-      }
+      if (directed) await ctx.reply(decision.message);
       return;
     }
     return next();
@@ -919,6 +1054,24 @@ export function installTelegram(bot: Bot, deps: TelegramDeps, contributions: Con
       reactSafely(ctx, "👀");
       actionTicker.start();
 
+      // Collect media content parts from the replied-to message (photos,
+      // PDFs, audio transcripts) so the model can reason about them even
+      // if they were sent by a different user in the chat.
+      const replyMedia = await collectReplyMedia(ctx);
+      if (replyMedia.parts.length > 0) {
+        const content = (userItem as { content?: unknown }).content;
+        if (typeof content === "string") {
+          // Upgrade string content to a content-parts array with the text + media
+          const parts: ContentPart[] = [];
+          if (content) parts.push({ type: "input_text", text: content });
+          parts.push(...replyMedia.parts);
+          (userItem as { content: unknown }).content = parts;
+        } else if (Array.isArray(content)) {
+          // Merge reply media parts into the existing content array
+          (content as ContentPart[]).push(...replyMedia.parts);
+        }
+      }
+
       // Persist the user message BEFORE calling the LLM so it survives
       // crashes, timeouts, and failed tool calls.
       storeConversation(
@@ -929,10 +1082,50 @@ export function installTelegram(bot: Bot, deps: TelegramDeps, contributions: Con
         ctx.message?.message_id
       );
 
-      const creds = resolveCredentials(access, tenant.chatId, tenant.userId);
-      const inputItems: ResponseInputItem[] = [...historyFor(tenant).slice(-20), userItem];
+      // Resolve the user's selected model + token quota for this turn.
+      const billAcc = tenant.userId ? deps.billing.getAccount(tenant.userId) : undefined;
+      const modelId = billAcc?.modelId ?? deps.defaultModelId;
+      const modelEntry = deps.llm.resolveModel(modelId);
+      // The user message was already persisted to chatLog above, so historyFor
+      // already includes it. Do not append userItem again.
+      const inputItems: ResponseInputItem[] = historyFor(tenant).slice(-20);
       const tk = threadKey(tenant);
       const hasReferenceImages = threadReferenceImages.has(tk);
+
+      // Quota pre-check: subscribers with zero tokens can't proceed.
+      if (billAcc && deps.billing.hasActiveSub(billAcc)) {
+        if (deps.billing.effectiveRemaining(billAcc) <= 0) {
+          await draft.delete();
+          await ctx.reply(
+            "You're out of tokens for this month. Use /plus to buy a token pack, or wait for your renewal date.",
+            { reply_to_message_id: ctx.message?.message_id }
+          );
+          deps.audit.log({
+            ...ctxAudit(ctx),
+            msgType,
+            inputLen: inputText.length,
+            outputLen: 0,
+            latencyMs: Date.now() - t0,
+            status: "ok",
+          });
+          return;
+        }
+      }
+
+      const meterUsage = (usage: { promptTokens: number; completionTokens: number }) => {
+        if (!tenant.userId) return;
+        const r = deps.billing.charge(
+          tenant.userId,
+          usage.promptTokens,
+          usage.completionTokens,
+          modelEntry.multiplier
+        );
+        if (!r.ok && r.reason === "no_subscription") {
+          // shouldn't happen (gate caught it) but be defensive
+          log.warn({ userId: tenant.userId }, "usage charge skipped: no subscription");
+        }
+      };
+
       const text = cleanMd(
         await runChatLoop(
           {
@@ -945,10 +1138,12 @@ export function installTelegram(bot: Bot, deps: TelegramDeps, contributions: Con
             reminders: deps.reminders,
             builtinTools,
             hasReferenceImages,
+            modelId,
+            onUsage: meterUsage,
+            owner: deps.owner,
           },
           tenant,
           inputItems,
-          creds,
           onChunk,
           onToolCalls
         )
@@ -1402,15 +1597,49 @@ export function installTelegram(bot: Bot, deps: TelegramDeps, contributions: Con
     const mime = doc.mime_type ?? "";
     const isTextDocument =
       SUPPORTED_TEXT_MIME_RE.test(mime) || SUPPORTED_TEXT_EXT_RE.test(filename);
+    const isPdf = mime === PDF_MIME || PDF_EXT_RE.test(filename);
     const tenant = tenantFromGrammy(ctx);
     const tk = threadKey(tenant);
 
     enqueue(tk, async () => {
       try {
         await ctx.api.sendChatAction(tenant.chatId, "upload_document");
+
+        // --- PDF: send as file content part to the LLM ---
+        if (isPdf) {
+          const supportsFiles = deps.llm.supportsImages() !== false || !!deps.llm.settings.pdfEngine;
+          if (!supportsFiles) {
+            await ctx.reply(
+              "The current model/provider does not support PDF file input. Try switching to a vision-capable model or configuring a PDF parsing engine.",
+              { reply_to_message_id: ctx.message.message_id }
+            );
+            return;
+          }
+
+          const file = await ctx.api.getFile(doc.file_id);
+          const url = `https://api.telegram.org/file/bot${deps.botToken}/${file.file_path}`;
+          const dataUrl = await toFileDataUrl(url, PDF_MIME);
+
+          const tag = senderTag(ctx);
+          const prompt = captionRaw || "Please analyze this PDF document.";
+          const contentParts: ContentPart[] = [
+            { type: "input_text", text: `${replyContext(ctx)}${tag}${prompt}` },
+            { type: "input_file", file_data: dataUrl, filename },
+          ];
+
+          const userItem: ResponseInputItem = {
+            type: "message",
+            role: "user",
+            content: contentParts as never,
+          };
+          await runLlmReply(ctx, tenant, userItem, `${prompt}\n${filename}`, "document");
+          return;
+        }
+
+        // --- Text/code documents ---
         if (!isTextDocument) {
           await ctx.reply(
-            `I can read text/code documents now, but this file looks like ${mime || "a binary file"}. Send a .txt/.md/.json/.csv/code file, or paste the relevant text.`,
+            `I can read text/code documents and PDFs, but this file looks like ${mime || "a binary file"}. Send a .txt/.md/.json/.csv/code file or a PDF.`,
             { reply_to_message_id: ctx.message.message_id }
           );
           return;
@@ -1663,12 +1892,6 @@ export function installTelegram(bot: Bot, deps: TelegramDeps, contributions: Con
 
         const reminderText = `[System: A reminder you set has just fired]\n\nReminder prompt: ${reminder.prompt}\n\n${contextBlock}\n\nAct on the reminder now. If it's a reminder to tell the user something, tell them. If it's a task, do it. Be natural and concise.`;
 
-        const userItem: ResponseInputItem = {
-          type: "message",
-          role: "user",
-          content: reminderText,
-        };
-
         storeConversation(
           tenant as unknown as ReturnType<typeof tenantFromGrammy>,
           "user",
@@ -1676,11 +1899,23 @@ export function installTelegram(bot: Bot, deps: TelegramDeps, contributions: Con
           `[reminder fired: ${reminder.id}] ${reminder.prompt.slice(0, 200)}`,
         );
 
-        const creds = resolveCredentials(access, reminder.chatId, reminder.userId);
-        const inputItems: ResponseInputItem[] = [
-          ...historyFor(tenant as unknown as ReturnType<typeof tenantFromGrammy>).slice(-20),
-          userItem,
-        ];
+        const reminderAcc = reminder.userId ? deps.billing.getAccount(reminder.userId) : undefined;
+        const reminderModelId = reminderAcc?.modelId ?? deps.defaultModelId;
+        const reminderModel = deps.llm.resolveModel(reminderModelId);
+        const reminderMeter = (usage: { promptTokens: number; completionTokens: number }) => {
+          if (!reminder.userId) return;
+          deps.billing.charge(
+            reminder.userId,
+            usage.promptTokens,
+            usage.completionTokens,
+            reminderModel.multiplier
+          );
+        };
+        // The reminder prompt was already persisted to chatLog above, so
+        // historyFor already includes it. Do not append userItem again.
+        const inputItems: ResponseInputItem[] = historyFor(
+          tenant as unknown as ReturnType<typeof tenantFromGrammy>
+        ).slice(-20);
 
         const actionTicker = {
           timer: undefined as NodeJS.Timeout | undefined,
@@ -1713,10 +1948,12 @@ export function installTelegram(bot: Bot, deps: TelegramDeps, contributions: Con
                 sandbox: deps.sandbox,
                 reminders: deps.reminders,
                 builtinTools,
+                modelId: reminderModelId,
+                onUsage: reminderMeter,
+                owner: deps.owner,
               },
               tenant,
               inputItems,
-              creds,
             ),
           );
 

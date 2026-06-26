@@ -91,11 +91,21 @@ document.addEventListener("alpine:init", () => {
     saving: false,
     dirty: false,
 
-    config: { apiKey: "", baseUrl: "", model: "", maxTokens: null, systemPrompt: "" },
+    config: { systemPrompt: "" },
     chatConfig: { voiceMode: false },
     mcpServers: [],
     memories: [],
     stats: { totalRequests: 0, requestsToday: 0, avgLatencyMs: 0, errorRate: 0 },
+
+    // --- Skye Plus billing ---
+    billing: {
+      account: null,
+      models: [],
+      defaultModelId: "",
+      plans: null,
+      events: [],
+      busy: false,
+    },
 
     // --- MCP editor sheet state ---
     editor: {
@@ -136,18 +146,25 @@ document.addEventListener("alpine:init", () => {
       });
 
       try {
-        const [cfg, chatCfg, mcps, mems, st] = await Promise.all([
+        const [cfg, chatCfg, mcps, mems, st, bill, modelsInfo, plans] = await Promise.all([
           api.getConfig(),
           api.getChatConfig(),
           api.getMcpServers(),
           api.getMemories(),
           api.getStats(),
+          api.getBillingAccount(),
+          api.getModels(),
+          api.getPlans(),
         ]);
         Object.assign(this.config, cfg);
         Object.assign(this.chatConfig, chatCfg);
         this.mcpServers = mcps;
         this.memories = mems;
         this.stats = st;
+        this.billing.account = bill;
+        this.billing.models = modelsInfo.models || [];
+        this.billing.defaultModelId = modelsInfo.defaultModelId || "";
+        this.billing.plans = plans;
       } catch (e) {
         popupAlert(`Failed to load: ${e.message}`);
       } finally {
@@ -168,11 +185,7 @@ document.addEventListener("alpine:init", () => {
       this.saving = true;
       tg?.MainButton?.showProgress?.();
       try {
-        const cleaned = {};
-        for (const [k, v] of Object.entries(this.config)) {
-          if (v !== undefined && v !== "" && v !== null) cleaned[k] = v;
-        }
-        const updated = await api.updateConfig(cleaned);
+        const updated = await api.updateConfig(this.config);
         Object.assign(this.config, updated);
         this.dirty = false;
         haptic.success();
@@ -183,6 +196,114 @@ document.addEventListener("alpine:init", () => {
         this.saving = false;
         tg?.MainButton?.hideProgress?.();
       }
+    },
+
+    // --- Skye Plus billing ---
+    billingModelName(id) {
+      const m = this.billing.models.find((x) => x.id === id);
+      return m ? m.name : "Sydney";
+    },
+
+    get hasActiveSub() {
+      return !!this.billing.account?.hasActiveSub;
+    },
+
+    get remainingPct() {
+      const a = this.billing.account;
+      if (!a || !a.hasActiveSub) return 0;
+      const baseLeft = Math.max(0, a.baseQuotaTokens - a.baseUsedTokens);
+      const total = a.baseQuotaTokens + a.packsTokens;
+      return total > 0 ? Math.round((baseLeft + a.packsTokens) / total * 100) : 0;
+    },
+
+    get baseLeft() {
+      const a = this.billing.account;
+      return a ? Math.max(0, a.baseQuotaTokens - a.baseUsedTokens) : 0;
+    },
+
+    async selectModel(id) {
+      if (this.billing.busy) return;
+      haptic.selection();
+      this.billing.busy = true;
+      try {
+        await api.selectModel(id);
+        this.billing.account = await api.getBillingAccount();
+        haptic.success();
+      } catch (e) {
+        haptic.error();
+        popupAlert(`Update failed: ${e.message}`);
+      } finally {
+        this.billing.busy = false;
+      }
+    },
+
+    async subscribe() {
+      if (this.billing.busy) return;
+      this.billing.busy = true;
+      try {
+        const { url } = await api.createSubscriptionInvoice();
+        await this.openInvoice(url);
+      } catch (e) {
+        popupAlert(`Failed to start subscription: ${e.message}`);
+        haptic.error();
+      } finally {
+        this.billing.busy = false;
+      }
+    },
+
+    async buyPack(packId) {
+      if (this.billing.busy) return;
+      this.billing.busy = true;
+      try {
+        const { url } = await api.createPackInvoice(packId);
+        await this.openInvoice(url);
+      } catch (e) {
+        popupAlert(e.message || "Failed to start purchase");
+        haptic.error();
+      } finally {
+        this.billing.busy = false;
+      }
+    },
+
+    openInvoice(url) {
+      return new Promise((resolve) => {
+        const w = window.Telegram?.WebApp;
+        if (w?.openInvoice) {
+          w.openInvoice(url, (status) => {
+            haptic.success();
+            // Reload account so the freshly-credited subscription/pack shows up.
+            api.getBillingAccount().then((a) => (this.billing.account = a)).catch(() => {});
+            this.refreshEvents();
+            resolve(status);
+          });
+        } else {
+          window.open(url, "_blank");
+          resolve("fallback");
+        }
+      });
+    },
+
+    async cancelSubscription() {
+      const ok = await popupConfirm("Cancel your Skye Plus subscription? Access continues until the renewal date, then ends.");
+      if (!ok) return;
+      try {
+        await api.cancelSubscription();
+        this.billing.account = await api.getBillingAccount();
+        haptic.success();
+      } catch (e) {
+        popupAlert(`Could not cancel: ${e.message}`);
+        haptic.error();
+      }
+    },
+
+    async refreshEvents() {
+      try {
+        this.billing.events = await api.getBillingEvents();
+      } catch {}
+    },
+
+    fmtTokens(n) {
+      return Number(n || 0).toLocaleString("en-US");
     },
 
     async toggleVoice() {

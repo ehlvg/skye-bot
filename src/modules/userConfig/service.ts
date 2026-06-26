@@ -1,34 +1,21 @@
 import { getDb } from "../../core/db.js";
 
 export interface UserConfig {
-  apiKey?: string;
-  baseUrl?: string;
-  model?: string;
-  maxTokens?: number;
   systemPrompt?: string;
 }
 
 type ConfigRow = {
-  apiKey: string | null;
-  baseUrl: string | null;
-  model: string | null;
-  maxTokens: number | null;
   systemPrompt: string | null;
 };
 
 export function getUserConfig(userId: number): UserConfig {
   const row = getDb()
     .prepare<[number], ConfigRow>(
-      `SELECT api_key AS apiKey, base_url AS baseUrl, model, max_tokens AS maxTokens, system_prompt AS systemPrompt
-       FROM user_configs WHERE user_id = ?`
+      `SELECT system_prompt AS systemPrompt FROM user_configs WHERE user_id = ?`
     )
     .get(userId);
   if (!row) return {};
   return {
-    ...(row.apiKey != null ? { apiKey: row.apiKey } : {}),
-    ...(row.baseUrl != null ? { baseUrl: row.baseUrl } : {}),
-    ...(row.model != null ? { model: row.model } : {}),
-    ...(row.maxTokens != null ? { maxTokens: row.maxTokens } : {}),
     ...(row.systemPrompt != null ? { systemPrompt: row.systemPrompt } : {}),
   };
 }
@@ -39,23 +26,12 @@ export function setUserConfig(userId: number, config: UserConfig): void {
 
   getDb()
     .prepare(
-      `INSERT INTO user_configs (user_id, api_key, base_url, model, max_tokens, system_prompt)
-       VALUES (?, ?, ?, ?, ?, ?)
+      `INSERT INTO user_configs (user_id, system_prompt)
+       VALUES (?, ?)
        ON CONFLICT(user_id) DO UPDATE SET
-         api_key = excluded.api_key,
-         base_url = excluded.base_url,
-         model = excluded.model,
-         max_tokens = excluded.max_tokens,
          system_prompt = excluded.system_prompt`
     )
-    .run(
-      userId,
-      merged.apiKey ?? null,
-      merged.baseUrl ?? null,
-      merged.model ?? null,
-      merged.maxTokens ?? null,
-      merged.systemPrompt ?? null
-    );
+    .run(userId, merged.systemPrompt ?? null);
 }
 
 export interface UserMcpServer {

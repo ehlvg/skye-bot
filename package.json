@@ -40,7 +40,7 @@
     "better-sqlite3": "^12.8.0",
     "express": "^5.1.0",
     "ffmpeg-static": "^5.3.0",
-    "grammy": "^1.39.3",
+    "grammy": "^1.44.0",
     "js-yaml": "^5.1.0",
     "openai": "^6.17.0",
     "pino": "^10.3.1",

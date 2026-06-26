@@ -4,28 +4,28 @@ import type {
   ResponseFunctionToolCall,
 } from "openai/resources/responses/responses.js";
 import type { ChatCompletionMessageParam } from "openai/resources/chat/completions.js";
+import type { ModelEntry } from "./env.js";
 import { log } from "../../utils/log.js";
-
-export interface ApiCredentials {
-  apiKey: string;
-  baseUrl: string;
-  model?: string;
-}
 
 export type { ResponseInputItem, ResponseFunctionToolCall };
 
 export interface LlmModuleSettings {
   apiKey: string;
   baseUrl: string;
-  model: string;
+  models: readonly ModelEntry[];
+  defaultModelId: string;
   maxCompletionTokens: number;
-  /** True → use Chat Completions API instead of Responses API. */
   useChatCompletions: boolean;
-  /** Empty → falls back to apiKey. */
   imageApiKey: string;
-  /** Empty → falls back to baseUrl. */
   imageBaseUrl: string;
   imageModel: string;
+  pdfEngine: string;
+  pdfMaxBytes: number;
+}
+
+export interface LlmUsage {
+  promptTokens: number;
+  completionTokens: number;
 }
 
 /** Response shape compatible with both APIs. */
@@ -38,6 +38,7 @@ export interface LlmResponse {
     arguments?: string;
     [key: string]: unknown;
   }>;
+  usage?: LlmUsage;
 }
 
 /** Minimal streaming interface used by the chat loop. */
@@ -88,6 +89,7 @@ class ChatCompletionsStreamAdapter {
 
   private async process() {
     let text = "";
+    let usage: LlmUsage | undefined;
     const tcMap = new Map<number, { id: string; name: string; arguments: string }>();
 
     try {
@@ -96,7 +98,17 @@ class ChatCompletionsStreamAdapter {
         .streamPromise) as AsyncIterable<OpenAI.Chat.Completions.ChatCompletionChunk>;
       for await (const chunk of stream) {
         const delta = chunk.choices?.[0]?.delta;
-        if (!delta) continue;
+        if (!delta) {
+          // The final chunk (with no choices) carries the aggregate usage when
+          // stream_options.include_usage is set.
+          if (chunk.usage) {
+            usage = {
+              promptTokens: chunk.usage.prompt_tokens ?? 0,
+              completionTokens: chunk.usage.completion_tokens ?? 0,
+            };
+          }
+          continue;
+        }
 
         if (delta.content) {
           text += delta.content;
@@ -132,7 +144,7 @@ class ChatCompletionsStreamAdapter {
       }
     }
 
-    this.resolveResponse({ output, output_text: text });
+    this.resolveResponse({ output, output_text: text, usage });
   }
 
   async finalResponse(): Promise<LlmResponse> {
@@ -147,6 +159,54 @@ class ChatCompletionsStreamAdapter {
     } catch {
       // ignore
     }
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Responses-API stream adapter — normalizes the OpenAI Response into our
+// LlmResponse shape and surfaces token usage.
+// ---------------------------------------------------------------------------
+
+class ResponsesStreamAdapter {
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  private listeners = new Map<string, ((data: any) => void)[]>();
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  private runner: any;
+
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  constructor(runner: any) {
+    this.runner = runner;
+    runner.on("response.output_text.delta", (data: { snapshot: string }) =>
+      this.emit("response.output_text.delta", data)
+    );
+  }
+
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  on(event: string, cb: (data: any) => void): void {
+    const cbs = this.listeners.get(event) ?? [];
+    cbs.push(cb);
+    this.listeners.set(event, cbs);
+  }
+
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  private emit(event: string, data: any) {
+    this.listeners.get(event)?.forEach((cb) => cb(data));
+  }
+
+  async finalResponse(): Promise<LlmResponse> {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const res: any = await this.runner.finalResponse();
+    const usage: LlmUsage | undefined = res?.usage
+      ? {
+          promptTokens: (res.usage.input_tokens as number) ?? 0,
+          completionTokens: (res.usage.output_tokens as number) ?? 0,
+        }
+      : undefined;
+    return {
+      output_text: (res?.output_text as string) ?? "",
+      output: (res?.output as LlmResponse["output"]) ?? [],
+      usage,
+    };
   }
 }
 
@@ -167,10 +227,16 @@ function convertContent(content: any): any {
       return "";
     }
   }
-  return content.map((part: { type: string; text?: string; image_url?: string }) => {
+  return content.map((part: { type: string; text?: string; image_url?: string; file_data?: string; filename?: string }) => {
     if (part.type === "input_text") return { type: "text", text: part.text };
     if (part.type === "input_image" && part.image_url) {
       return { type: "image_url", image_url: { url: part.image_url } };
+    }
+    if (part.type === "input_file" && part.file_data) {
+      return {
+        type: "file",
+        file: { filename: part.filename ?? "document", file_data: part.file_data },
+      };
     }
     return part;
   });
@@ -241,45 +307,78 @@ function toChatMessages(
 // ---------------------------------------------------------------------------
 
 /**
- * Stateful LLM client bound to module config. Methods accept optional
- * per-request credentials override (per-user/per-chat keys).
+ * Stateful LLM client bound to module config. The bot runs on the server's
+ * global OpenAI key; users pick a masked model tier (Sydney/Tokyo/etc.) whose
+ * real provider id and token multiplier are configured by the operator.
  */
 export class LlmClient {
+  readonly models: readonly ModelEntry[];
+  private readonly modelById: Map<string, ModelEntry>;
+  readonly defaultModelId: string;
   private globalClient: OpenAI;
-  private supportsImagesCache: boolean | null = null;
 
   constructor(public readonly settings: LlmModuleSettings) {
+    this.models = settings.models;
+    this.modelById = new Map(settings.models.map((m) => [m.id, m]));
+    this.defaultModelId = settings.defaultModelId;
     this.globalClient = new OpenAI({
       baseURL: settings.baseUrl,
       apiKey: settings.apiKey,
     });
   }
 
-  private client(creds?: ApiCredentials): OpenAI {
-    if (!creds) return this.globalClient;
-    return new OpenAI({ baseURL: creds.baseUrl, apiKey: creds.apiKey });
+  /** Resolve a masked model id to its catalog entry, falling back to default. */
+  resolveModel(modelId?: string): ModelEntry {
+    const fallback = this.settings.models[0];
+    if (!modelId) return fallback;
+    return this.modelById.get(modelId) ?? fallback;
   }
 
   /** One-shot non-streaming call. */
-  async ask(instructions: string, input: string, creds?: ApiCredentials): Promise<LlmResponse> {
+  async ask(
+    instructions: string,
+    input: string,
+    modelId?: string
+  ): Promise<LlmResponse> {
+    const entry = this.resolveModel(modelId);
     if (this.settings.useChatCompletions) {
-      const completion = await this.client(creds).chat.completions.create({
-        model: creds?.model ?? this.settings.model,
+      const completion = await this.globalClient.chat.completions.create({
+        model: entry.model,
         messages: [
           { role: "system", content: instructions },
           { role: "user", content: input },
         ],
         max_tokens: this.settings.maxCompletionTokens,
       });
-      return { output_text: completion.choices[0]?.message?.content ?? "", output: [] };
+      const usage = completion.usage
+        ? {
+            promptTokens: completion.usage.prompt_tokens ?? 0,
+            completionTokens: completion.usage.completion_tokens ?? 0,
+          }
+        : undefined;
+      return {
+        output_text: completion.choices[0]?.message?.content ?? "",
+        output: [],
+        usage,
+      };
     }
-    const res = await this.client(creds).responses.create({
-      model: creds?.model ?? this.settings.model,
+    const res = await this.globalClient.responses.create({
+      model: entry.model,
       instructions,
       input,
       max_output_tokens: this.settings.maxCompletionTokens,
     });
-    return { output_text: res.output_text, output: res.output as unknown as LlmResponse["output"] };
+    const usage = res.usage
+      ? {
+          promptTokens: res.usage.input_tokens ?? 0,
+          completionTokens: res.usage.output_tokens ?? 0,
+        }
+      : undefined;
+    return {
+      output_text: res.output_text,
+      output: res.output as unknown as LlmResponse["output"],
+      usage,
+    };
   }
 
   /** Streaming response. Caller drives events / awaits .finalResponse(). */
@@ -287,21 +386,21 @@ export class LlmClient {
     instructions: string,
     input: ResponseInputItem[],
     tools?: { name: string; description: string; parameters: Record<string, unknown> }[],
-    creds?: ApiCredentials
+    modelId?: string
   ): LlmStream {
     if (this.settings.useChatCompletions) {
-      return this.askStreamViaChat(instructions, input, tools, creds) as unknown as LlmStream;
+      return this.askStreamViaChat(instructions, input, tools, modelId) as unknown as LlmStream;
     }
-    // Responses API stream satisfies LlmStream structurally
-    return this.askStreamViaResponses(instructions, input, tools, creds) as unknown as LlmStream;
+    return this.askStreamViaResponses(instructions, input, tools, modelId) as unknown as LlmStream;
   }
 
   private askStreamViaResponses(
     instructions: string,
     input: ResponseInputItem[],
     tools?: { name: string; description: string; parameters: Record<string, unknown> }[],
-    creds?: ApiCredentials
+    modelId?: string
   ) {
+    const entry = this.resolveModel(modelId);
     const openaiTools = tools?.length
       ? tools.map((t) => ({
           type: "function" as const,
@@ -311,21 +410,25 @@ export class LlmClient {
           strict: false,
         }))
       : undefined;
-    return this.client(creds).responses.stream({
-      model: creds?.model ?? this.settings.model,
+    const plugins = this.buildPluginsParam(input);
+    const runner = this.globalClient.responses.stream({
+      model: entry.model,
       instructions,
       input,
       max_output_tokens: this.settings.maxCompletionTokens,
       ...(openaiTools ? { tools: openaiTools } : {}),
-    });
+      ...(plugins ? ({ plugins } as Record<string, unknown>) : {}),
+    } as Record<string, unknown>);
+    return new ResponsesStreamAdapter(runner);
   }
 
   private askStreamViaChat(
     instructions: string,
     input: ResponseInputItem[],
     tools?: { name: string; description: string; parameters: Record<string, unknown> }[],
-    creds?: ApiCredentials
+    modelId?: string
   ): LlmStream {
+    const entry = this.resolveModel(modelId);
     const messages = toChatMessages(input, instructions);
 
     const chatTools = tools?.length
@@ -339,13 +442,17 @@ export class LlmClient {
         }))
       : undefined;
 
-    const streamPromise = this.client(creds).chat.completions.create({
-      model: creds?.model ?? this.settings.model,
+    const pluginsParam = this.buildPluginsParam(input);
+
+    const streamPromise = this.globalClient.chat.completions.create({
+      model: entry.model,
       messages,
       max_tokens: this.settings.maxCompletionTokens,
       ...(chatTools ? { tools: chatTools } : {}),
+      ...(pluginsParam ? (pluginsParam as Record<string, unknown>) : {}),
       stream: true,
-    });
+      stream_options: { include_usage: true },
+    } as Parameters<typeof this.globalClient.chat.completions.create>[0]);
 
     return new ChatCompletionsStreamAdapter(streamPromise) as unknown as LlmStream;
   }
@@ -359,17 +466,22 @@ export class LlmClient {
         return;
       }
       const data = await res.json();
+      const ids = new Set(
+        (data.data as { id: string }[])?.map((m) => m.id) ?? []
+      );
+      // The bot's chat model is the default tier for capability purposes.
+      const entry = this.resolveModel(this.defaultModelId);
       const found = (data.data as { id: string; architecture?: { modality?: string } }[])?.find(
-        (m) => m.id === this.settings.model
+        (m) => m.id === entry.model
       );
       if (found) {
         const modality = found.architecture?.modality ?? "";
         this.supportsImagesCache = modality.toLowerCase().includes("image");
         log.info(
-          `Model "${this.settings.model}" image support: ${this.supportsImagesCache} (modality: "${modality}")`
+          `Model "${entry.model}" image support: ${this.supportsImagesCache} (modality: "${modality}")`
         );
-      } else {
-        log.warn(`Model "${this.settings.model}" not found in models list`);
+      } else if (ids.size > 0) {
+        log.warn(`Model "${entry.model}" not found in models list`);
       }
     } catch (e) {
       const msg = e instanceof Error ? e.message : String(e);
@@ -377,23 +489,37 @@ export class LlmClient {
     }
   }
 
+  private supportsImagesCache: boolean | null = null;
+
   /** Cached result of checkCapabilities — null if unknown. */
   supportsImages(): boolean | null {
     return this.supportsImagesCache;
   }
 
   /**
+   * Build the OpenRouter `plugins` parameter for file parsing, but only if
+   * the input contains file parts. Returns an object to spread or undefined.
+   */
+  private buildPluginsParam(
+    input: ResponseInputItem[]
+  ): { plugins: unknown[] } | undefined {
+    if (!this.settings.pdfEngine) return undefined;
+    const hasFile = input.some((item) => {
+      const m = item as { type?: string; content?: unknown };
+      if (m.type !== "message" || !Array.isArray(m.content)) return false;
+      return (m.content as { type: string }[]).some((p) => p.type === "input_file");
+    });
+    if (!hasFile) return undefined;
+    return {
+      plugins: [{ id: "file-parser", pdf: { engine: this.settings.pdfEngine } }],
+    };
+  }
+
+  /**
    * Generate (or edit) an image via the configured image provider.
    * Uses IMAGE_BASE_URL/IMAGE_API_KEY when set, otherwise falls back to the
-   * main chat creds. Always uses IMAGE_MODEL. Per-user creds intentionally
-   * NOT consulted — image generation is a server-level capability.
-   *
-   * Uses the OpenRouter-style dedicated Image API (`/images`) rather than the
-   * chat completions endpoint, because chat-completions `modalities` support
-   * is inconsistent across providers and frequently returns 404/500.
-   *
-   * Multiple reference images are passed via `input_references` — all of them
-   * are sent to the provider for image-to-image generation.
+   * main chat creds. Always uses IMAGE_MODEL. Image generation is a
+   * server-level capability, not metered per user model tier.
    */
   async generateImage(prompt: string, imageUrls?: string[]): Promise<Buffer | null> {
     const apiKey = this.settings.imageApiKey || this.settings.apiKey;

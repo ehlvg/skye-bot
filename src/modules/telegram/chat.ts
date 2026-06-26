@@ -1,4 +1,4 @@
-import type { ApiCredentials, LlmClient, ResponseInputItem } from "../llm/client.js";
+import type { LlmClient, ResponseInputItem } from "../llm/client.js";
 import type { McpService } from "../mcp/service.js";
 import type { MemoryService } from "../memory/service.js";
 import type { ChatLogService } from "../chatLog/service.js";
@@ -20,10 +20,14 @@ export interface ChatLoopDeps {
   userConfig: UserConfigService;
   sandbox?: SandboxService;
   reminders?: RemindersService;
-  /** Built-in (non-MCP) tools — currently just memory + image generation. */
   builtinTools: ToolDefinition[];
-  /** Whether reference images are available for the generate_image tool this turn. */
   hasReferenceImages?: boolean;
+  /** Masked model id to run this turn on (resolved from the user's billing account). */
+  modelId?: string;
+  /** Meter one LLM round-trip's token usage against the caller's quota. */
+  onUsage?: (usage: { promptTokens: number; completionTokens: number }, modelId: string) => void;
+  /** Bot owner info (name + Telegram handle) to weight in the system prompt. */
+  owner?: { name: string; tag: string };
 }
 
 /**
@@ -40,7 +44,6 @@ export async function runChatLoop(
   deps: ChatLoopDeps,
   tenant: TenantContext,
   input: ResponseInputItem[],
-  creds?: ApiCredentials,
   onChunk?: (snapshot: string) => void,
   onToolCalls?: (calls: ToolCallRecord[]) => void
 ): Promise<string> {
@@ -64,6 +67,7 @@ export async function runChatLoop(
   ];
 
   const userCfg = tenant.userId ? deps.userConfig.get(tenant.userId) : undefined;
+  const modelEntry = deps.llm.resolveModel(deps.modelId);
   const instructions = buildSystemPrompt(
     memories,
     chatContext,
@@ -71,7 +75,9 @@ export async function runChatLoop(
     userCfg?.systemPrompt,
     deps.sandbox?.isEnabled(),
     deps.hasReferenceImages,
-    !!deps.reminders
+    !!deps.reminders,
+    modelEntry.name,
+    deps.owner
   );
 
   // Log the request summary (last user item text + attachments).
@@ -104,7 +110,7 @@ export async function runChatLoop(
       instructions,
       currentInput,
       allTools.length > 0 ? allTools : undefined,
-      creds
+      modelEntry.id
     );
 
     if (onChunk) {
@@ -112,6 +118,14 @@ export async function runChatLoop(
     }
 
     const response = await stream.finalResponse();
+
+    if (response.usage && deps.onUsage) {
+      try {
+        deps.onUsage(response.usage, modelEntry.id);
+      } catch (e) {
+        log.warn({ err: e }, "onUsage metering failed");
+      }
+    }
 
     const fnCalls = response.output.filter((item) => item.type === "function_call") as Array<{
       type: "function_call";
