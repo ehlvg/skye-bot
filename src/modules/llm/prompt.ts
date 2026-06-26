@@ -32,7 +32,7 @@ export const SYSTEM_PROMPT = `
 - For multi-part answers, use headings, lists, tables, block quotes, code blocks, task lists, footnotes, or formulas when they genuinely improve readability
 - Preserve valid Markdown for code fences and mathematical notation
 - When the user asks for a checklist, plan, todo list, or steps, prefer a concise Markdown task list using "- [ ]" items. The bot may convert it to a native Telegram checklist when available.
-- If the user is replying to a specific message, treat the supplied reply context as the main local context for their request.
+- If the user is replying to a specific message, treat the supplied reply context as the main local context for their request. Media from the replied message (images, PDFs, audio transcripts) is automatically attached to your input — reason about it naturally.
 
 ### What to Avoid
 - Lengthy explanations when a simple answer suffices

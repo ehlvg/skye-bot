@@ -79,6 +79,18 @@ image:
   api_key: ""
   model: "google/gemini-3.1-flash-image-preview"
 
+# PDF parsing — when a user sends a PDF or replies to one, Skye passes it
+# to the LLM as a file input. OpenRouter-compatible providers can parse the
+# PDF server-side via a "file-parser" plugin engine.
+# Engines: "mistral-ocr" (best for scanned docs/images, paid per page),
+#          "cloudflare-ai" (free, markdown output),
+#          "native" (model must support file input natively),
+#          "" (auto — uses the model's native support or defaults)
+# Set to "" to disable PDF parsing entirely.
+pdf_engine: ""
+# Maximum PDF file size to accept (bytes, default 25 MB)
+pdf_max_bytes: 26214400
+
 # Voice (speech) provider — choose between Yandex SpeechKit and OpenRouter.
 # Both support STT (speech-to-text) and TTS (text-to-speech).
 voice:

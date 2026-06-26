@@ -19,6 +19,8 @@ export interface LlmModuleSettings {
   imageApiKey: string;
   imageBaseUrl: string;
   imageModel: string;
+  pdfEngine: string;
+  pdfMaxBytes: number;
 }
 
 export interface LlmUsage {
@@ -225,10 +227,16 @@ function convertContent(content: any): any {
       return "";
     }
   }
-  return content.map((part: { type: string; text?: string; image_url?: string }) => {
+  return content.map((part: { type: string; text?: string; image_url?: string; file_data?: string; filename?: string }) => {
     if (part.type === "input_text") return { type: "text", text: part.text };
     if (part.type === "input_image" && part.image_url) {
       return { type: "image_url", image_url: { url: part.image_url } };
+    }
+    if (part.type === "input_file" && part.file_data) {
+      return {
+        type: "file",
+        file: { filename: part.filename ?? "document", file_data: part.file_data },
+      };
     }
     return part;
   });
@@ -402,13 +410,15 @@ export class LlmClient {
           strict: false,
         }))
       : undefined;
+    const plugins = this.buildPluginsParam(input);
     const runner = this.globalClient.responses.stream({
       model: entry.model,
       instructions,
       input,
       max_output_tokens: this.settings.maxCompletionTokens,
       ...(openaiTools ? { tools: openaiTools } : {}),
-    });
+      ...(plugins ? ({ plugins } as Record<string, unknown>) : {}),
+    } as Record<string, unknown>);
     return new ResponsesStreamAdapter(runner);
   }
 
@@ -432,14 +442,17 @@ export class LlmClient {
         }))
       : undefined;
 
+    const pluginsParam = this.buildPluginsParam(input);
+
     const streamPromise = this.globalClient.chat.completions.create({
       model: entry.model,
       messages,
       max_tokens: this.settings.maxCompletionTokens,
       ...(chatTools ? { tools: chatTools } : {}),
+      ...(pluginsParam ? (pluginsParam as Record<string, unknown>) : {}),
       stream: true,
       stream_options: { include_usage: true },
-    });
+    } as Parameters<typeof this.globalClient.chat.completions.create>[0]);
 
     return new ChatCompletionsStreamAdapter(streamPromise) as unknown as LlmStream;
   }
@@ -481,6 +494,25 @@ export class LlmClient {
   /** Cached result of checkCapabilities — null if unknown. */
   supportsImages(): boolean | null {
     return this.supportsImagesCache;
+  }
+
+  /**
+   * Build the OpenRouter `plugins` parameter for file parsing, but only if
+   * the input contains file parts. Returns an object to spread or undefined.
+   */
+  private buildPluginsParam(
+    input: ResponseInputItem[]
+  ): { plugins: unknown[] } | undefined {
+    if (!this.settings.pdfEngine) return undefined;
+    const hasFile = input.some((item) => {
+      const m = item as { type?: string; content?: unknown };
+      if (m.type !== "message" || !Array.isArray(m.content)) return false;
+      return (m.content as { type: string }[]).some((p) => p.type === "input_file");
+    });
+    if (!hasFile) return undefined;
+    return {
+      plugins: [{ id: "file-parser", pdf: { engine: this.settings.pdfEngine } }],
+    };
   }
 
   /**

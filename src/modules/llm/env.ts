@@ -47,6 +47,12 @@ export const llmEnvSchema = z.object({
   IMAGE_BASE_URL: z.string().url().or(z.literal("")).default(""),
   IMAGE_API_KEY: z.string().default(""),
   IMAGE_MODEL: z.string().default("google/gemini-3.1-flash-image-preview"),
+  // PDF parsing engine for file inputs: "mistral-ocr", "cloudflare-ai", "native",
+  // or "" (auto). Used when the provider supports OpenRouter-style file-parser
+  // plugins. Ignored for providers that don't support the plugins parameter.
+  PDF_ENGINE: z.string().default(""),
+  // Maximum PDF file size to accept, in bytes (default 25 MB).
+  PDF_MAX_BYTES: z.coerce.number().positive().default(25 * 1024 * 1024),
 });
 
 export type LlmEnv = z.infer<typeof llmEnvSchema>;

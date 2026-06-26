@@ -22,6 +22,8 @@ export const llmModule: SkyeModule = {
       imageApiKey: String(ctx.config.IMAGE_API_KEY ?? ""),
       imageBaseUrl: String(ctx.config.IMAGE_BASE_URL ?? ""),
       imageModel: String(ctx.config.IMAGE_MODEL ?? ""),
+      pdfEngine: String(ctx.config.PDF_ENGINE ?? ""),
+      pdfMaxBytes: Number(ctx.config.PDF_MAX_BYTES ?? 25 * 1024 * 1024),
     });
     return { service: client };
   },

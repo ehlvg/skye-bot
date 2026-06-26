@@ -45,9 +45,13 @@ Send a photo with any caption or question. Skye will analyze the image and respo
 
 Send a voice message. Skye transcribes it with the configured speech provider (Yandex SpeechKit or OpenRouter) and responds as if you'd typed the message. This requires voice configuration — see [Configuration](configuration.md#voice-speech-optional).
 
-### Documents and audio
+### Documents, PDFs and audio
 
 Send text/code documents such as `.txt`, `.md`, `.json`, `.csv`, source files, logs, YAML, SQL, HTML, or XML. Skye reads the document content and answers using it as context.
+
+Send a PDF and Skye parses it — text, images, tables, and layout — using the configured PDF parsing engine (Mistral OCR, Cloudflare AI, or native model support). The model sees the full content including embedded images.
+
+**Reply to any message with media** — if someone sends a PDF, photo, or audio message in the chat, you can reply to it and ask Skye about it. Skye automatically collects the media from the replied message (images, PDFs, audio transcripts) and attaches them to your question, so the model can reason about the content even if it was sent by a different user.
 
 Audio files and video notes are also transcribed through the configured speech provider. Skye normalizes audio formats with the bundled `ffmpeg` binary, so most audio/video formats are recognized without manual transcoding. Voice notes remain the most reliable format.
 

@@ -10,6 +10,7 @@ const MIME_MAP: Record<string, string> = {
   png: "image/png",
   webp: "image/webp",
   gif: "image/gif",
+  pdf: "application/pdf",
 };
 
 /** Download an image from a URL and return it as a base64 data URL. */
@@ -24,6 +25,21 @@ export async function toDataUrl(url: string, timeoutMs = 60_000): Promise<string
     MIME_MAP[ext] || (headerMime.startsWith("image/") ? headerMime : null) || "image/jpeg";
 
   return `data:${mime};base64,${buf.toString("base64")}`;
+}
+
+/**
+ * Download any file from a URL and return it as a base64 data URL with the
+ * given MIME type. Used for PDFs and other binary files sent to the LLM.
+ */
+export async function toFileDataUrl(
+  url: string,
+  mimeType: string,
+  timeoutMs = 60_000
+): Promise<string> {
+  const res = await fetch(url, { signal: AbortSignal.timeout(timeoutMs) });
+  if (!res.ok) throw new Error(`Failed to download file: ${res.status}`);
+  const buf = Buffer.from(await res.arrayBuffer());
+  return `data:${mimeType};base64,${buf.toString("base64")}`;
 }
 
 /**
