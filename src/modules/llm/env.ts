@@ -65,6 +65,9 @@ export const llmEnvSchema = z.object({
   // Required only if any model in MODELS has provider: "perplexity".
   PERPLEXITY_API_KEY: z.string().optional(),
   PERPLEXITY_BASE_URL: z.string().url().default("https://api.perplexity.ai/v1"),
+  // Bot owner / author — shown in the system prompt as a higher-weight user.
+  OWNER_NAME: z.string().default(""),
+  OWNER_TAG: z.string().default(""),
 });
 
 export type LlmEnv = z.infer<typeof llmEnvSchema>;

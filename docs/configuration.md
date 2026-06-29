@@ -19,6 +19,8 @@ Real environment variables override YAML values — useful for platform-injected
 | `admin_ids`        | Comma-separated Telegram **user** IDs that administer the bot (free, unlimited access + `/allow`/`/ban` commands). |
 | `allowed_ids`      | _(Legacy)_ Comma-separated chat/user IDs. Seeded into the allowlist once on upgrade; afterwards manage access with `/allow`. |
 | `telegram_polling_lock` | Set to `"0"` to disable the single-instance polling lock. Default: `"1"`.       |
+| `owner.name`       | Bot owner/author display name. Surfaced in the system prompt so Skye weights their messages above others. |
+| `owner.tag`        | Bot owner's Telegram username (without `@`). Paired with `owner.name`. |
 | `use_chat_completions` | Set to `true` if your provider doesn't support the Responses API. Default: `false`. |
 | `log_level`        | Pino log level: `trace`, `debug`, `info`, `warn`, `error`, `fatal`. Default: `info`. |
 | `db_path`          | SQLite database path. Default: `data/skye.db`. Supports `:memory:` for ephemeral storage. |

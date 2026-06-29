@@ -3,6 +3,13 @@ bot_token: "123456789:ABCdefGhIJKlmnoPQRstuVWxyz_example"
 # Set to "0" only if your deployment uses another single-instance mechanism.
 telegram_polling_lock: "1"
 
+# Bot owner / author — surfaced in the system prompt so Skye knows who created
+# her and weights their messages above other participants. Set both to empty
+# strings to omit the owner section entirely.
+owner:
+  name: "Melissa"
+  tag: "miss_sterling"
+
 # Bot administrators — Telegram user ids allowed to run /allow, /disallow,
 # /ban, /unban, /allowed and to use Skye with unlimited, free access.
 admin_ids: ""

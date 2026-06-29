@@ -95,30 +95,10 @@ code {
 }
 
 /* ============================================================================
-   Top bar — modal-sheet style with title + bot subtitle.
+   Top spacer — reserves safe-area space; the title is added by Telegram itself.
    ============================================================================ */
-.topbar {
-  position: sticky;
-  top: 0;
-  z-index: 10;
+.topbar-spacer {
   background: var(--bg);
-  padding: 12px 16px 12px;
-  text-align: center;
-}
-
-.topbar-title {
-  margin: 0;
-  font-size: 17px;
-  font-weight: 600;
-  letter-spacing: -0.4px;
-  color: var(--text);
-}
-
-.topbar-subtitle {
-  margin: 2px 0 0;
-  font-size: 13px;
-  font-weight: 400;
-  color: var(--hint);
 }
 
 /* ============================================================================
@@ -289,6 +269,19 @@ code {
   background: rgba(120, 120, 128, 0.18);
 }
 
+.row.is-selected {
+  background: color-mix(in srgb, var(--accent) 8%, var(--card));
+}
+
+.row.is-selected .row-icon-tint {
+  color: var(--accent);
+}
+
+.row.is-selected .row-title {
+  font-weight: 600;
+  color: var(--accent);
+}
+
 .row-empty .row-title {
   color: var(--hint);
 }
@@ -386,6 +379,66 @@ code {
 }
 
 /* ============================================================================
+   Skye Plus hero card — visually distinct premium surface for subscription.
+   ============================================================================ */
+.plus-hero {
+  position: relative;
+  background: linear-gradient(135deg, var(--accent) 0%, color-mix(in srgb, var(--accent) 70%, #a855f7) 100%);
+  color: #fff;
+  border-radius: 14px;
+  padding: 20px 18px;
+  margin: 8px 0 4px;
+  overflow: hidden;
+  box-shadow: 0 6px 20px -8px color-mix(in srgb, var(--accent) 60%, transparent);
+}
+
+.plus-hero-icon {
+  width: 30px;
+  height: 30px;
+  display: inline-flex;
+  color: #fff;
+  filter: drop-shadow(0 1px 2px rgba(0, 0, 0, 0.15));
+}
+
+.plus-hero-icon svg {
+  width: 100%;
+  height: 100%;
+  display: block;
+}
+
+.plus-hero-title {
+  font-size: 20px;
+  font-weight: 700;
+  letter-spacing: -0.2px;
+  margin: 6px 0 2px;
+}
+
+.plus-hero-sub {
+  font-size: 14px;
+  font-weight: 400;
+  opacity: 0.92;
+  line-height: 1.35;
+}
+
+.plus-hero-cta {
+  margin-top: 14px;
+}
+
+.plus-hero-cta.button-fill {
+  background: #ffffff;
+  color: var(--accent);
+}
+
+.plus-hero-tap {
+  cursor: pointer;
+  transition: transform 100ms ease-out;
+}
+
+.plus-hero-tap:active {
+  transform: scale(0.985);
+}
+
+/* ============================================================================
    Buttons — full-width fill / destructive / sheet actions.
    ============================================================================ */
 .button {
@@ -443,7 +496,7 @@ code {
   right: 0;
   z-index: 20;
   display: grid;
-  grid-template-columns: repeat(4, 1fr);
+  grid-template-columns: repeat(5, 1fr);
   background: var(--tg-bottom-bg);
   border-top: 1px solid var(--separator);
   padding: 6px 0 6px;

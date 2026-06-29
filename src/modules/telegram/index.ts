@@ -63,6 +63,9 @@ export const telegramModule: SkyeModule = {
         botToken: String(ctx.config.BOT_TOKEN),
         webappUrl: String(ctx.config.WEBAPP_URL),
         defaultModelId: String(ctx.config.DEFAULT_MODEL_ID ?? "sydney"),
+        ...(String(ctx.config.OWNER_NAME ?? "") || String(ctx.config.OWNER_TAG ?? "")
+          ? { owner: { name: String(ctx.config.OWNER_NAME), tag: String(ctx.config.OWNER_TAG) } }
+          : {}),
       },
       contributions
     );

@@ -8,7 +8,6 @@ import {
   createPackInvoiceLink,
   createSubscriptionInvoiceLink,
   decodeInvoiceConfig,
-  type InvoiceApi,
 } from "./invoices.js";
 
 export function buildRoutes(ctx: ModuleContext): PanelRoute[] {
@@ -96,7 +95,7 @@ export function buildRoutes(ctx: ModuleContext): PanelRoute[] {
         try {
           const cfg = decodeInvoiceConfig(ctx.config);
           const link = await createSubscriptionInvoiceLink(
-            bot.api as unknown as InvoiceApi,
+            bot.api,
             cfg,
             userId
           );
@@ -130,7 +129,7 @@ export function buildRoutes(ctx: ModuleContext): PanelRoute[] {
         }
         try {
           const cfg = decodeInvoiceConfig(ctx.config);
-          const link = await createPackInvoiceLink(bot.api as unknown as InvoiceApi, cfg, userId, pack);
+          const link = await createPackInvoiceLink(bot.api, cfg, userId, pack);
           res.json({ url: link });
         } catch (e) {
           res.status(500).json({ error: e instanceof Error ? e.message : "Failed to create invoice" });

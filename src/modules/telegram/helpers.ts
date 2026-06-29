@@ -1,5 +1,5 @@
 import type { Context as GrammyContext } from "grammy";
-import type { Message } from "grammy/types";
+import type { InputRichMessage, Message, ReplyParameters } from "grammy/types";
 import type { LogEntry } from "../chatLog/service.js";
 import type { AuditEntry } from "../audit/service.js";
 import { log } from "../../utils/log.js";
@@ -234,33 +234,6 @@ type ChatAction =
   | "record_video_note"
   | "upload_video_note";
 
-type RichRawApi = {
-  sendRichMessage: (
-    payload: {
-      chat_id: number | string;
-      message_thread_id?: number;
-      rich_message: InputRichMessage;
-      reply_parameters?: { message_id: number };
-    },
-    signal?: AbortSignal
-  ) => Promise<Message>;
-  sendRichMessageDraft: (
-    payload: {
-      chat_id: number;
-      message_thread_id?: number;
-      draft_id: number;
-      rich_message: InputRichMessage;
-    },
-    signal?: AbortSignal
-  ) => Promise<true>;
-};
-
-interface InputRichMessage {
-  markdown?: string;
-  html?: string;
-  is_rtl?: boolean;
-  skip_entity_detection?: boolean;
-}
 
 const THINKING_CUSTOM_EMOJI_ID = "5368324170671202286";
 const DRAFT_MIN_INTERVAL_MS = 5000;
@@ -334,29 +307,28 @@ async function withTelegramRetry<T>(
   throw lastError;
 }
 
-function richRaw(ctx: GrammyContext): RichRawApi {
-  return ctx.api.raw as unknown as RichRawApi;
-}
-
 function threadId(ctx: GrammyContext): number | undefined {
   return ctx.message?.message_thread_id;
 }
 
-function replyParameters(ctx: GrammyContext): { message_id: number } | undefined {
+function replyParameters(ctx: GrammyContext): ReplyParameters | undefined {
   const id = ctx.message?.message_id;
   return id == null ? undefined : { message_id: id };
 }
 
 export async function sendRichReply(ctx: GrammyContext, markdown: string): Promise<Message> {
   try {
+    const richMessage: InputRichMessage = { markdown };
+    const other: {
+      message_thread_id?: number;
+      reply_parameters?: ReplyParameters;
+    } = {};
+    const tid = threadId(ctx);
+    if (tid != null) other.message_thread_id = tid;
+    const rp = replyParameters(ctx);
+    if (rp) other.reply_parameters = rp;
     return await withTelegramRetry(
-      () =>
-        richRaw(ctx).sendRichMessage({
-          chat_id: ctx.chat!.id,
-          message_thread_id: threadId(ctx),
-          rich_message: { markdown },
-          reply_parameters: replyParameters(ctx),
-        }),
+      () => ctx.api.sendRichMessage(ctx.chat!.id, richMessage, other),
       { context: "sendRichMessage" }
     );
   } catch (e) {
@@ -400,6 +372,38 @@ export async function sendRichReplyChunked(
   if (current) await sendRichReply(ctx, current);
 }
 
+/**
+ * Edit the message behind a callback query (or any ctx.editMessageText-capable
+ * context) using rich markdown. Falls back to plain editMessageText with
+ * `parse_mode: "Markdown"` if rich editing fails (e.g. peer doesn't support
+ * rich messages).
+ *
+ * `replyMarkup` is optional and only applied when provided (inline keyboards).
+ */
+export async function sendRichEdit(
+  ctx: GrammyContext,
+  markdown: string,
+  replyMarkup?: Parameters<GrammyContext["editMessageText"]>[1] extends infer O
+    ? O extends { reply_markup?: infer R }
+      ? R
+      : never
+    : never
+): Promise<void> {
+  const richMessage: InputRichMessage = { markdown };
+  const other: Record<string, unknown> = {};
+  if (replyMarkup != null) other.reply_markup = replyMarkup;
+  try {
+    await ctx.editMessageText(richMessage, other);
+  } catch (e) {
+    log.warn({ err: e }, "rich editMessageText failed, falling back to plain Markdown");
+    try {
+      await ctx.editMessageText(markdown, { ...other, parse_mode: "Markdown" });
+    } catch (e2) {
+      log.warn({ err: e2 }, "plain Markdown editMessageText also failed");
+    }
+  }
+}
+
 function splitTelegramText(text: string, limit = 3900): string[] {
   if (text.length <= limit) return [text];
   const chunks: string[] = [];
@@ -431,14 +435,12 @@ export function reactSafely(ctx: GrammyContext, emoji: string, isBig = false): v
 }
 
 async function sendRichDraft(ctx: GrammyContext, draftId: number, markdown: string): Promise<true> {
+  const richMessage: InputRichMessage = { markdown };
+  const other: { message_thread_id?: number } = {};
+  const tid = threadId(ctx);
+  if (tid != null) other.message_thread_id = tid;
   return withTelegramRetry(
-    () =>
-      richRaw(ctx).sendRichMessageDraft({
-        chat_id: ctx.chat!.id,
-        message_thread_id: threadId(ctx),
-        draft_id: draftId,
-        rich_message: { markdown },
-      }),
+    () => ctx.api.sendRichMessageDraft(ctx.chat!.id, draftId, richMessage, other),
     { attempts: 1, context: "sendRichMessageDraft" }
   );
 }

@@ -62,6 +62,7 @@ export interface TelegramDeps {
   botToken: string;
   webappUrl: string;
   defaultModelId: string;
+  owner?: { name: string; tag: string };
 }
 
 const IMAGE_CMD_RE = /^\/image(?:@\S+)?\s*([\s\S]*)$/;
@@ -1139,6 +1140,7 @@ export function installTelegram(bot: Bot, deps: TelegramDeps, contributions: Con
             hasReferenceImages,
             modelId,
             onUsage: meterUsage,
+            owner: deps.owner,
           },
           tenant,
           inputItems,
@@ -1948,6 +1950,7 @@ export function installTelegram(bot: Bot, deps: TelegramDeps, contributions: Con
                 builtinTools,
                 modelId: reminderModelId,
                 onUsage: reminderMeter,
+                owner: deps.owner,
               },
               tenant,
               inputItems,

@@ -84,4 +84,38 @@ describe("buildSystemPrompt", () => {
     });
     expect(prompt).toContain("Current ISO datetime");
   });
+
+  test("includes owner section when owner is provided", () => {
+    const prompt = buildSystemPrompt(
+      [],
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      { name: "Melissa", tag: "miss_sterling" }
+    );
+    expect(prompt).toContain("Melissa");
+    expect(prompt).toContain("@miss_sterling");
+    expect(prompt).toContain("Bot Owner");
+  });
+
+  test("omits owner section when owner is absent", () => {
+    const prompt = buildSystemPrompt([]);
+    expect(prompt).not.toContain("Bot Owner");
+  });
+
+  test("uses feminine identity", () => {
+    const prompt = buildSystemPrompt([]);
+    expect(prompt).toContain("Female");
+    expect(prompt).toContain("feminine");
+  });
+
+  test("includes self-awareness about subscription and reactions", () => {
+    const prompt = buildSystemPrompt([]);
+    expect(prompt).toContain("Skye Plus");
+    expect(prompt).toContain("reaction");
+  });
 });

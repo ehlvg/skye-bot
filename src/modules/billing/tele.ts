@@ -11,7 +11,7 @@ import {
   subPayload,
   type InvoiceConfig,
 } from "./invoices.js";
-import { sendRichReply } from "../telegram/helpers.js";
+import { sendRichReply, sendRichEdit } from "../telegram/helpers.js";
 import { log } from "../../utils/log.js";
 
 interface SuccessfulPaymentLike {
@@ -219,13 +219,9 @@ function buildHandlers(deps: BillingDeps): TelegramHandler[] {
 
       try {
         if (action === "menu") {
-          await ctx.editMessageText(statusText(deps, acc) + "\n\n👇", {
-            reply_markup: plusKeyboard(deps, acc),
-          });
+          await sendRichEdit(ctx, statusText(deps, acc) + "\n\n👇", plusKeyboard(deps, acc));
         } else if (action === "models") {
-          await ctx.editMessageText(modelsText(deps, acc) + "\n\n👇", {
-            reply_markup: modelsKeyboard(deps, acc),
-          });
+          await sendRichEdit(ctx, modelsText(deps, acc) + "\n\n👇", modelsKeyboard(deps, acc));
         } else if (action === "sub") {
           if (deps.billing.hasActiveSub(acc)) {
             await ctx.answerCallbackQuery("You already have a subscription.");
@@ -255,9 +251,7 @@ function buildHandlers(deps: BillingDeps): TelegramHandler[] {
             await ctx.answerCallbackQuery("Subscribe first to buy token packs.");
             return;
           }
-          await ctx.editMessageText(packsText(deps) + "\n\n👇", {
-            reply_markup: packsKeyboard(deps),
-          });
+          await sendRichEdit(ctx, packsText(deps) + "\n\n👇", packsKeyboard(deps));
           await ctx.answerCallbackQuery();
         } else if (action.startsWith("pack:")) {
           const packId = action.slice("pack:".length);
@@ -288,9 +282,11 @@ function buildHandlers(deps: BillingDeps): TelegramHandler[] {
           deps.billing.selectModel(userId, modelId);
           const refreshed = deps.billing.getAccount(userId);
           await ctx.answerCallbackQuery(`Switched to ${modelName(deps.llm, modelId).name}`);
-          await ctx.editMessageText(modelsText(deps, refreshed) + "\n\n👇", {
-            reply_markup: modelsKeyboard(deps, refreshed),
-          });
+          await sendRichEdit(
+            ctx,
+            modelsText(deps, refreshed) + "\n\n👇",
+            modelsKeyboard(deps, refreshed)
+          );
         } else if (action === "cancel") {
           if (!deps.billing.hasActiveSub(acc) || !acc.lastChargeId) {
             await ctx.answerCallbackQuery("No active subscription to cancel.");
@@ -306,9 +302,11 @@ function buildHandlers(deps: BillingDeps): TelegramHandler[] {
           deps.billing.markCancelled(userId);
           await ctx.answerCallbackQuery("Subscription cancelled");
           const refreshed = deps.billing.getAccount(userId);
-          await ctx.editMessageText(statusText(deps, refreshed) + "\n\n👇", {
-            reply_markup: plusKeyboard(deps, refreshed),
-          });
+          await sendRichEdit(
+            ctx,
+            statusText(deps, refreshed) + "\n\n👇",
+            plusKeyboard(deps, refreshed)
+          );
         }
       } catch (e) {
         log.warn({ err: e, data }, "billing callback handler failed");

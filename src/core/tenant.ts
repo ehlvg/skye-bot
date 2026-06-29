@@ -27,17 +27,28 @@ export interface TenantContext {
 /** Build a TenantContext from a grammy update context. */
 export function tenantFromGrammy(ctx: GrammyContext): TenantContext {
   const chat = ctx.chat;
-  if (!chat) {
+  const from = ctx.from;
+  if (!chat && !from) {
     throw new Error("Cannot derive tenant: ctx.chat is undefined");
+  }
+  if (!chat) {
+    return {
+      chatId: from!.id,
+      chatType: "private",
+      userId: from!.id,
+      username: from!.username,
+      firstName: from!.first_name,
+      lastName: from!.last_name,
+    };
   }
   return {
     chatId: chat.id,
     chatType: chat.type,
     threadId: ctx.message?.message_thread_id ?? undefined,
-    userId: ctx.from?.id,
-    username: ctx.from?.username,
-    firstName: ctx.from?.first_name,
-    lastName: ctx.from?.last_name,
+    userId: from?.id,
+    username: from?.username,
+    firstName: from?.first_name,
+    lastName: from?.last_name,
   };
 }
 

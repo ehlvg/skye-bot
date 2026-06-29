@@ -1,7 +1,9 @@
+import type { LabeledPrice } from "grammy/types";
 import type { TokenPack } from "./env.js";
 
 type ReadOnlyRecord = Readonly<Record<string, unknown>>;
 
+/** Minimal subset of grammy's Api needed to create invoice links. */
 export interface InvoiceApi {
   createInvoiceLink: (
     title: string,
@@ -9,7 +11,7 @@ export interface InvoiceApi {
     payload: string,
     provider_token: string,
     currency: string,
-    prices: { label: string; amount: number }[],
+    prices: LabeledPrice[],
     other?: Record<string, unknown>
   ) => Promise<string>;
 }
