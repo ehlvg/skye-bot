@@ -111,8 +111,12 @@ export function buildSystemPrompt(
   sandboxEnabled?: boolean,
   hasReferenceImages?: boolean,
   remindersEnabled?: boolean,
-  modelName?: string
+  modelName?: string,
+  builtinTools?: string[]
 ): string {
+  const hasWebSearch = builtinTools?.includes("web_search");
+  const hasBuiltinSandbox = builtinTools?.includes("sandbox");
+
   let content = SYSTEM_PROMPT;
 
   if (modelName) {
@@ -156,7 +160,23 @@ You have access to long-term memory tools. Use save_memory to remember important
     content += `Available MCP tools: ${mcpToolNames.join(", ")}.`;
   }
 
-  if (sandboxEnabled) {
+  if (hasWebSearch) {
+    content += `
+
+## Web Search
+
+You have built-in web search. Use it automatically whenever the user asks about current events, recent developments, facts you're unsure of, or anything that benefits from up-to-date information. You don't need to ask permission — search proactively when it would improve your answer.
+
+Cite sources inline using Markdown footnotes (e.g. [^1], [^2]) and include a footnotes section at the end of your response with the source URLs. The footnotes render natively in Telegram.`;
+  }
+
+  if (hasBuiltinSandbox) {
+    content += `
+
+## Code Sandbox
+
+You have access to a built-in sandbox for executing code (Python and more). Use it when the user asks you to run code, perform calculations, analyze data, or verify logic. The sandbox runs in an isolated container — you decide when to use it based on the task.`;
+  } else if (sandboxEnabled) {
     content += `
 
 ## Vercel Sandbox

@@ -24,6 +24,10 @@ export const llmModule: SkyeModule = {
       imageModel: String(ctx.config.IMAGE_MODEL ?? ""),
       pdfEngine: String(ctx.config.PDF_ENGINE ?? ""),
       pdfMaxBytes: Number(ctx.config.PDF_MAX_BYTES ?? 25 * 1024 * 1024),
+      perplexityApiKey: ctx.config.PERPLEXITY_API_KEY
+        ? String(ctx.config.PERPLEXITY_API_KEY)
+        : undefined,
+      perplexityBaseUrl: String(ctx.config.PERPLEXITY_BASE_URL),
     });
     return { service: client };
   },

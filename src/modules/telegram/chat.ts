@@ -1,4 +1,4 @@
-import type { LlmClient, ResponseInputItem } from "../llm/client.js";
+import type { LlmClient, ResponseInputItem, PerplexitySource } from "../llm/client.js";
 import type { McpService } from "../mcp/service.js";
 import type { MemoryService } from "../memory/service.js";
 import type { ChatLogService } from "../chatLog/service.js";
@@ -51,8 +51,18 @@ export async function runChatLoop(
   const mcpToolNames = mcpTools.map((t) => t.name);
   const tk = threadKey(tenant);
 
-  const allTools = [
-    ...deps.builtinTools.map((t) => ({
+  const userCfg = tenant.userId ? deps.userConfig.get(tenant.userId) : undefined;
+  const modelEntry = deps.llm.resolveModel(deps.modelId);
+  const builtinTools = modelEntry.builtinTools;
+  const hasBuiltinSandbox = builtinTools?.includes("sandbox") ?? false;
+
+  // Filter out Vercel sandbox client-side tools when the model has a
+  // built-in Perplexity sandbox — no need to offer both.
+  const effectiveBuiltinTools = hasBuiltinSandbox
+    ? deps.builtinTools.filter((t) => !t.name.startsWith("sandbox_"))
+    : deps.builtinTools;
+  const effectiveTools = [
+    ...effectiveBuiltinTools.map((t) => ({
       name: t.name,
       description: t.description,
       parameters: t.parameters,
@@ -64,8 +74,6 @@ export async function runChatLoop(
     })),
   ];
 
-  const userCfg = tenant.userId ? deps.userConfig.get(tenant.userId) : undefined;
-  const modelEntry = deps.llm.resolveModel(deps.modelId);
   const instructions = buildSystemPrompt(
     memories,
     chatContext,
@@ -74,7 +82,8 @@ export async function runChatLoop(
     deps.sandbox?.isEnabled(),
     deps.hasReferenceImages,
     !!deps.reminders,
-    modelEntry.name
+    modelEntry.name,
+    builtinTools
   );
 
   // Log the request summary (last user item text + attachments).
@@ -95,7 +104,7 @@ export async function runChatLoop(
     requestSummary = (lastItem as { content: string }).content.slice(0, 200);
   }
   log.info(
-    { chatId: tenant.chatId, requestSummary, requestAttachments, toolCount: allTools.length },
+    { chatId: tenant.chatId, requestSummary, requestAttachments, toolCount: effectiveTools.length },
     "LLM request"
   );
 
@@ -106,7 +115,7 @@ export async function runChatLoop(
     const stream = deps.llm.askStream(
       instructions,
       currentInput,
-      allTools.length > 0 ? allTools : undefined,
+      effectiveTools.length > 0 ? effectiveTools : undefined,
       modelEntry.id
     );
 
@@ -133,14 +142,15 @@ export async function runChatLoop(
 
     if (fnCalls.length === 0) {
       const finalText = extractFinalText(response);
-      if (finalText) {
+      const textWithCitations = appendCitations(finalText, response.sources);
+      if (textWithCitations) {
         deps.chatLog.appendConversation(tenant.chatId, tk, {
           role: "assistant",
-          content: finalText,
-          text: finalText,
+          content: textWithCitations,
+          text: textWithCitations,
         });
       }
-      return finalText;
+      return textWithCitations;
     }
 
     // Persist assistant function calls so tool usage survives restarts.
@@ -241,4 +251,17 @@ function summarizeFunctionCall(name: string, argsRaw: string): string {
     brief = argsRaw.slice(0, 160);
   }
   return `called ${name}(${brief})`;
+}
+
+/** Append Markdown footnote citations from Perplexity search results. */
+function appendCitations(text: string, sources?: PerplexitySource[]): string {
+  if (!sources || sources.length === 0) return text;
+  if (!text) return text;
+  const footnotes = sources
+    .map((s) => {
+      const label = s.title ? `[${s.title}]` : "[Source]";
+      return `[^${s.id}]: ${label}(${s.url ?? ""})`;
+    })
+    .join("\n");
+  return `${text}\n\n${footnotes}`;
 }

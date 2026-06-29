@@ -1,10 +1,18 @@
 import { z } from "zod";
 
+export const builtinToolSchema = z.enum(["web_search", "fetch_url", "sandbox"]);
+
 export const modelSchema = z.object({
   id: z.string().min(1),
   name: z.string().min(1),
   model: z.string().min(1),
   multiplier: z.coerce.number().positive().default(1),
+  /** Provider routing: "openrouter" (default) or "perplexity". */
+  provider: z.enum(["openrouter", "perplexity"]).optional(),
+  /** Perplexity built-in (server-side) tools to enable for this model. */
+  builtinTools: z.array(builtinToolSchema).optional(),
+  /** Perplexity preset name (e.g. "pro-search"). */
+  preset: z.string().optional(),
 });
 export type ModelEntry = z.infer<typeof modelSchema>;
 
@@ -53,6 +61,10 @@ export const llmEnvSchema = z.object({
   PDF_ENGINE: z.string().default(""),
   // Maximum PDF file size to accept, in bytes (default 25 MB).
   PDF_MAX_BYTES: z.coerce.number().positive().default(25 * 1024 * 1024),
+  // --- Perplexity Agent API ---
+  // Required only if any model in MODELS has provider: "perplexity".
+  PERPLEXITY_API_KEY: z.string().optional(),
+  PERPLEXITY_BASE_URL: z.string().url().default("https://api.perplexity.ai/v1"),
 });
 
 export type LlmEnv = z.infer<typeof llmEnvSchema>;

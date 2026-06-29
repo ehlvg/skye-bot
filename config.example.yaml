@@ -15,11 +15,33 @@ openai_key: "sk-or-XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX"
 max_completion_tokens: 500
 base_url: "https://openrouter.ai/api/v1"
 
+# Perplexity Agent API — required only if any model in the catalog above
+# has provider: "perplexity". Get a key at https://console.perplexity.ai
+# Skye uses the Responses API (OpenAI-compatible) to talk to Perplexity,
+# enabling server-side web search and sandbox tools without MCP.
+perplexity_api_key: ""
+perplexity_base_url: "https://api.perplexity.ai/v1"
+
 # The masked model catalog exposed to users. Each entry has a display name
 # (shown in the Mini App and /models), a real provider model id used for
 # the upstream call, and a token-cost multiplier. The underlying model id
 # is never shown to the user — only the masked name.
 # `default_model_id` is the tier new subscribers start on.
+#
+# Optional fields per model:
+#   provider:    "openrouter" (default) or "perplexity".
+#                When "perplexity", the request is routed to the Perplexity
+#                Agent API (requires perplexity_api_key below). Perplexity
+#                models use the Responses API exclusively and can enable
+#                server-side tools (web_search, sandbox) that run on
+#                Perplexity's infrastructure — no MCP or client-side sandbox
+#                needed for those capabilities.
+#   builtin_tools: list of Perplexity built-in tools to enable.
+#                "web_search"  — let the model search the web and cite sources.
+#                "fetch_url"   — let the model fetch a specific URL's content.
+#                "sandbox"     — let the model run code in an isolated container.
+#   preset:      Perplexity preset name (e.g. "pro-search") for optimized
+#                search behavior. See Perplexity docs for available presets.
 default_model_id: "sydney"
 models:
   - id: sydney
@@ -38,6 +60,17 @@ models:
     name: Toronto
     model: openai/gpt-5.5
     multiplier: 4.0
+  # Example: a Perplexity-powered tier with built-in web search + sandbox.
+  # Requires perplexity_api_key below.
+  # - id: perplexity-pro
+  #   name: Pro Search
+  #   model: openai/gpt-5.5
+  #   multiplier: 5.0
+  #   provider: perplexity
+  #   builtin_tools:
+  #     - web_search
+  #     - sandbox
+  #   preset: pro-search
 
 # Force Chat Completions API instead of Responses API.
 # Set to "true" if your provider doesn't support the Responses API

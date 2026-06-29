@@ -21,11 +21,20 @@ export interface LlmModuleSettings {
   imageModel: string;
   pdfEngine: string;
   pdfMaxBytes: number;
+  perplexityApiKey?: string;
+  perplexityBaseUrl: string;
 }
 
 export interface LlmUsage {
   promptTokens: number;
   completionTokens: number;
+}
+
+/** A web search source extracted from Perplexity's search_results output. */
+export interface PerplexitySource {
+  id: number;
+  title?: string;
+  url?: string;
 }
 
 /** Response shape compatible with both APIs. */
@@ -39,6 +48,8 @@ export interface LlmResponse {
     [key: string]: unknown;
   }>;
   usage?: LlmUsage;
+  /** Web search sources (Perplexity), used for footnote rendering. */
+  sources?: PerplexitySource[];
 }
 
 /** Minimal streaming interface used by the chat loop. */
@@ -172,10 +183,15 @@ class ResponsesStreamAdapter {
   private listeners = new Map<string, ((data: any) => void)[]>();
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   private runner: any;
+  private sourceExtractor?: (output: LlmResponse["output"]) => PerplexitySource[];
 
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  constructor(runner: any) {
+  constructor(
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    runner: any,
+    sourceExtractor?: (output: LlmResponse["output"]) => PerplexitySource[]
+  ) {
     this.runner = runner;
+    this.sourceExtractor = sourceExtractor;
     runner.on("response.output_text.delta", (data: { snapshot: string }) =>
       this.emit("response.output_text.delta", data)
     );
@@ -202,10 +218,12 @@ class ResponsesStreamAdapter {
           completionTokens: (res.usage.output_tokens as number) ?? 0,
         }
       : undefined;
+    const output = (res?.output as LlmResponse["output"]) ?? [];
     return {
       output_text: (res?.output_text as string) ?? "",
-      output: (res?.output as LlmResponse["output"]) ?? [],
+      output,
       usage,
+      sources: this.sourceExtractor ? this.sourceExtractor(output) : undefined,
     };
   }
 }
@@ -315,13 +333,14 @@ export class LlmClient {
   readonly models: readonly ModelEntry[];
   private readonly modelById: Map<string, ModelEntry>;
   readonly defaultModelId: string;
-  private globalClient: OpenAI;
+  private defaultClient: OpenAI;
+  private perplexityClient: OpenAI | null = null;
 
   constructor(public readonly settings: LlmModuleSettings) {
     this.models = settings.models;
     this.modelById = new Map(settings.models.map((m) => [m.id, m]));
     this.defaultModelId = settings.defaultModelId;
-    this.globalClient = new OpenAI({
+    this.defaultClient = new OpenAI({
       baseURL: settings.baseUrl,
       apiKey: settings.apiKey,
     });
@@ -334,6 +353,39 @@ export class LlmClient {
     return this.modelById.get(modelId) ?? fallback;
   }
 
+  /** Get the OpenAI SDK client for a model's provider. */
+  private clientFor(entry: ModelEntry): OpenAI {
+    if (entry.provider === "perplexity") {
+      if (!this.perplexityClient) {
+        if (!this.settings.perplexityApiKey) {
+          throw new Error(
+            "A model with provider: \"perplexity\" is configured but PERPLEXITY_API_KEY is not set."
+          );
+        }
+        this.perplexityClient = new OpenAI({
+          baseURL: this.settings.perplexityBaseUrl,
+          apiKey: this.settings.perplexityApiKey,
+        });
+      }
+      return this.perplexityClient;
+    }
+    return this.defaultClient;
+  }
+
+  /** Extract web search sources from Perplexity search_results output items. */
+  private extractSources(output: LlmResponse["output"]): PerplexitySource[] {
+    const sources: PerplexitySource[] = [];
+    for (const item of output) {
+      if (item.type !== "search_results") continue;
+      const results = (item as { results?: Array<{ id?: number; title?: string; url?: string }> }).results;
+      if (!Array.isArray(results)) continue;
+      for (const r of results) {
+        if (r.url) sources.push({ id: r.id ?? sources.length + 1, title: r.title, url: r.url });
+      }
+    }
+    return sources;
+  }
+
   /** One-shot non-streaming call. */
   async ask(
     instructions: string,
@@ -341,8 +393,9 @@ export class LlmClient {
     modelId?: string
   ): Promise<LlmResponse> {
     const entry = this.resolveModel(modelId);
-    if (this.settings.useChatCompletions) {
-      const completion = await this.globalClient.chat.completions.create({
+    const client = this.clientFor(entry);
+    if (this.settings.useChatCompletions && entry.provider !== "perplexity") {
+      const completion = await client.chat.completions.create({
         model: entry.model,
         messages: [
           { role: "system", content: instructions },
@@ -362,22 +415,27 @@ export class LlmClient {
         usage,
       };
     }
-    const res = await this.globalClient.responses.create({
+    const builtinTools = entry.builtinTools?.map((t) => ({ type: t })) ?? [];
+    const res = await client.responses.create({
       model: entry.model,
       instructions,
       input,
       max_output_tokens: this.settings.maxCompletionTokens,
-    });
+      ...(builtinTools.length > 0 ? { tools: builtinTools } : {}),
+      ...(entry.preset ? { preset: entry.preset } : {}),
+    } as Record<string, unknown>);
     const usage = res.usage
       ? {
           promptTokens: res.usage.input_tokens ?? 0,
           completionTokens: res.usage.output_tokens ?? 0,
         }
       : undefined;
+    const output = res.output as unknown as LlmResponse["output"];
     return {
       output_text: res.output_text,
-      output: res.output as unknown as LlmResponse["output"],
+      output,
       usage,
+      sources: this.extractSources(output),
     };
   }
 
@@ -388,7 +446,10 @@ export class LlmClient {
     tools?: { name: string; description: string; parameters: Record<string, unknown> }[],
     modelId?: string
   ): LlmStream {
-    if (this.settings.useChatCompletions) {
+    const entry = this.resolveModel(modelId);
+    // Perplexity only supports the Responses API — never route to chat
+    // completions even when USE_CHAT_COMPLETIONS is globally true.
+    if (this.settings.useChatCompletions && entry.provider !== "perplexity") {
       return this.askStreamViaChat(instructions, input, tools, modelId) as unknown as LlmStream;
     }
     return this.askStreamViaResponses(instructions, input, tools, modelId) as unknown as LlmStream;
@@ -401,6 +462,7 @@ export class LlmClient {
     modelId?: string
   ) {
     const entry = this.resolveModel(modelId);
+    const client = this.clientFor(entry);
     const openaiTools = tools?.length
       ? tools.map((t) => ({
           type: "function" as const,
@@ -410,16 +472,19 @@ export class LlmClient {
           strict: false,
         }))
       : undefined;
+    const builtinTools = entry.builtinTools?.map((t) => ({ type: t })) ?? [];
+    const allTools = [...builtinTools, ...(openaiTools ?? [])];
     const plugins = this.buildPluginsParam(input);
-    const runner = this.globalClient.responses.stream({
+    const runner = client.responses.stream({
       model: entry.model,
       instructions,
       input,
       max_output_tokens: this.settings.maxCompletionTokens,
-      ...(openaiTools ? { tools: openaiTools } : {}),
+      ...(allTools.length > 0 ? { tools: allTools } : {}),
+      ...(entry.preset ? { preset: entry.preset } : {}),
       ...(plugins ? ({ plugins } as Record<string, unknown>) : {}),
     } as Record<string, unknown>);
-    return new ResponsesStreamAdapter(runner);
+    return new ResponsesStreamAdapter(runner, (output) => this.extractSources(output));
   }
 
   private askStreamViaChat(
@@ -429,6 +494,7 @@ export class LlmClient {
     modelId?: string
   ): LlmStream {
     const entry = this.resolveModel(modelId);
+    const client = this.clientFor(entry);
     const messages = toChatMessages(input, instructions);
 
     const chatTools = tools?.length
@@ -444,7 +510,7 @@ export class LlmClient {
 
     const pluginsParam = this.buildPluginsParam(input);
 
-    const streamPromise = this.globalClient.chat.completions.create({
+    const streamPromise = client.chat.completions.create({
       model: entry.model,
       messages,
       max_tokens: this.settings.maxCompletionTokens,
@@ -452,15 +518,20 @@ export class LlmClient {
       ...(pluginsParam ? (pluginsParam as Record<string, unknown>) : {}),
       stream: true,
       stream_options: { include_usage: true },
-    } as Parameters<typeof this.globalClient.chat.completions.create>[0]);
+    } as Parameters<typeof client.chat.completions.create>[0]);
 
     return new ChatCompletionsStreamAdapter(streamPromise) as unknown as LlmStream;
   }
 
-  /** Probe OpenRouter /models once to learn image capability. */
+  /** Probe the provider's /models once to learn image capability. */
   async checkCapabilities(): Promise<void> {
     try {
-      const res = await fetch(`${this.settings.baseUrl}/models`);
+      const entry = this.resolveModel(this.defaultModelId);
+      const baseUrl =
+        entry.provider === "perplexity"
+          ? this.settings.perplexityBaseUrl
+          : this.settings.baseUrl;
+      const res = await fetch(`${baseUrl}/models`);
       if (!res.ok) {
         log.warn(`Models endpoint returned ${res.status}, skipping capability check`);
         return;
@@ -469,8 +540,6 @@ export class LlmClient {
       const ids = new Set(
         (data.data as { id: string }[])?.map((m) => m.id) ?? []
       );
-      // The bot's chat model is the default tier for capability purposes.
-      const entry = this.resolveModel(this.defaultModelId);
       const found = (data.data as { id: string; architecture?: { modality?: string } }[])?.find(
         (m) => m.id === entry.model
       );
