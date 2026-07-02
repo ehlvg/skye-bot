@@ -1,7 +1,7 @@
 {
   "name": "skye-bot",
   "version": "1.0.0",
-  "description": "",
+  "description": "The most human, feature-complete Telegram AI bot — built with TypeScript, OpenAI and MCP.",
   "type": "module",
   "scripts": {
     "dev": "tsx watch src/index.ts",
@@ -16,9 +16,20 @@
     "test": "vitest run",
     "test:watch": "vitest"
   },
-  "keywords": [],
-  "author": "",
-  "license": "ISC",
+  "keywords": [
+    "telegram",
+    "telegram-bot",
+    "ai",
+    "assistant",
+    "openai",
+    "mcp",
+    "model-context-protocol",
+    "typescript",
+    "chatbot",
+    "bot"
+  ],
+  "author": "Erich Helvig (https://github.com/ehlvg)",
+  "license": "AGPL-3.0-only",
   "devDependencies": {
     "@eslint/js": "^9.39.2",
     "@types/better-sqlite3": "^7.6.13",
@@ -46,5 +57,13 @@
     "pino": "^10.3.1",
     "pino-pretty": "^10.3.1",
     "zod": "^4.3.6"
+  },
+  "homepage": "https://github.com/ehlvg/skye-bot",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/ehlvg/skye-bot.git"
+  },
+  "bugs": {
+    "url": "https://github.com/ehlvg/skye-bot/issues"
   }
 }
