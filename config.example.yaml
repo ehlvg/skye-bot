@@ -93,7 +93,7 @@ billing:
   title: "Skye Plus"
   description: "Monthly subscription — unlocks Skye and adds 2,000,000 tokens per month."
   subscription_stars: 1899
-  subscription_period_seconds: 2592000   # 30 days — Bot API 8.0 requires this value
+  subscription_period_seconds: 2592000 # 30 days — Bot API 8.0 requires this value
   base_quota_tokens: 2000000
   packs:
     - id: pack_500
@@ -222,3 +222,15 @@ sandbox:
   vercel_access_token: ""
   vercel_project_id: ""
   vercel_team_id: ""
+
+# Channel — let Skye manage a Telegram channel (post updates, tips, changelog).
+# The bot must be added as an administrator to the channel with permission to
+# post and edit messages. Skye captures every new/edited channel post into
+# its database and exposes LLM tools to post, edit, and delete.
+# chat_id accepts either a public @username or a numeric channel id
+# (e.g. -1001234567890). When admin_only is true, only users in admin_ids
+# can trigger channel tools.
+channel:
+  enabled: false
+  chat_id: ""
+  admin_only: true

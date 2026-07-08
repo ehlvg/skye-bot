@@ -124,7 +124,8 @@ export function buildSystemPrompt(
   remindersEnabled?: boolean,
   modelName?: string,
   builtinTools?: string[],
-  owner?: { name: string; tag: string }
+  owner?: { name: string; tag: string },
+  channelEnabled?: boolean
 ): string {
   const hasWebSearch = builtinTools?.includes("web_search");
   const hasBuiltinSandbox = builtinTools?.includes("sandbox");
@@ -241,6 +242,22 @@ When a reminder fires, you will receive a system message with the reminder's pro
 Always compute the exact fire_at from the current ISO datetime provided in the Chat Context above. For example, if the user says "tomorrow at 10am" and the current datetime is 2024-06-24T15:30:00Z, set fire_at to 2024-06-25T10:00:00.
 
 Keep reminder prompts actionable and self-contained — when it fires, you should be able to act on it without needing to remember what triggered it.`;
+  }
+
+  if (channelEnabled) {
+    content += `
+
+## Channel Management
+
+You can manage a Telegram channel (post updates, tips, and changelog entries). Use the channel tools when the user asks you to publish, post, edit, or delete something in the channel.
+
+Available channel tools:
+- post_to_channel — publish a new message (Telegram rich Markdown supported)
+- edit_channel_post — change an existing post by its message id
+- delete_channel_post — remove a post by its message id
+- list_channel_posts — show recently captured posts to look up a message id
+
+Only post when the user explicitly asks. Keep channel posts concise, well-formatted, and on-topic for the channel.`;
   }
 
   content += `

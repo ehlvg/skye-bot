@@ -5,6 +5,7 @@ import type { ChatLogService } from "../chatLog/service.js";
 import type { UserConfigService } from "../userConfig/service.js";
 import type { SandboxService } from "../sandbox/service.js";
 import type { RemindersService } from "../reminders/service.js";
+import type { ChannelService } from "../channel/service.js";
 import type { ToolDefinition } from "../../core/module.js";
 import type { TenantContext } from "../../core/tenant.js";
 import { threadKey } from "../../core/tenant.js";
@@ -20,6 +21,7 @@ export interface ChatLoopDeps {
   userConfig: UserConfigService;
   sandbox?: SandboxService;
   reminders?: RemindersService;
+  channel?: ChannelService;
   builtinTools: ToolDefinition[];
   hasReferenceImages?: boolean;
   /** Masked model id to run this turn on (resolved from the user's billing account). */
@@ -86,7 +88,8 @@ export async function runChatLoop(
     !!deps.reminders,
     modelEntry.name,
     builtinTools,
-    deps.owner
+    deps.owner,
+    !!deps.channel
   );
 
   // Log the request summary (last user item text + attachments).
@@ -188,9 +191,7 @@ export async function runChatLoop(
         }
       } catch (e) {
         failed = true;
-        result = `Tool "${fc.name}" failed: ${
-          e instanceof Error ? e.message : String(e)
-        }`;
+        result = `Tool "${fc.name}" failed: ${e instanceof Error ? e.message : String(e)}`;
         log.warn({ err: e, tool: fc.name, chatId: tenant.chatId }, "Tool execution failed");
       }
 
@@ -220,10 +221,7 @@ export async function runChatLoop(
   return "";
 }
 
-function extractFinalText(response: {
-  output_text?: string;
-  output: unknown[];
-}): string {
+function extractFinalText(response: { output_text?: string; output: unknown[] }): string {
   if (response.output_text) return response.output_text;
   for (const item of response.output) {
     if (typeof item !== "object" || item === null) continue;

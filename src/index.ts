@@ -14,6 +14,7 @@ import type { SkyeModule } from "./core/module.js";
 import { adminModule } from "./modules/admin/index.js";
 import { auditModule } from "./modules/audit/index.js";
 import { billingModule } from "./modules/billing/index.js";
+import { channelModule } from "./modules/channel/index.js";
 import { chatConfigModule } from "./modules/chatConfig/index.js";
 import { chatLogModule } from "./modules/chatLog/index.js";
 import { llmModule } from "./modules/llm/index.js";
@@ -51,6 +52,7 @@ const modules: readonly SkyeModule[] = [
   sandboxModule,
   proactiveModule,
   remindersModule,
+  channelModule,
   panelModule,
   telegramModule,
 ];

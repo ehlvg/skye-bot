@@ -67,7 +67,15 @@ describe("buildSystemPrompt", () => {
   });
 
   test("includes reminders section when enabled", () => {
-    const prompt = buildSystemPrompt([], undefined, undefined, undefined, undefined, undefined, true);
+    const prompt = buildSystemPrompt(
+      [],
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      true
+    );
     expect(prompt).toContain("## Reminders");
     expect(prompt).toContain("set_reminder");
   });
@@ -95,11 +103,35 @@ describe("buildSystemPrompt", () => {
       undefined,
       undefined,
       undefined,
+      undefined,
       { name: "Melissa", tag: "miss_sterling" }
     );
     expect(prompt).toContain("Melissa");
     expect(prompt).toContain("@miss_sterling");
     expect(prompt).toContain("Bot Owner");
+  });
+
+  test("includes channel section when enabled", () => {
+    const prompt = buildSystemPrompt(
+      [],
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      true
+    );
+    expect(prompt).toContain("## Channel Management");
+    expect(prompt).toContain("post_to_channel");
+  });
+
+  test("omits channel section when not enabled", () => {
+    const prompt = buildSystemPrompt([]);
+    expect(prompt).not.toContain("## Channel Management");
   });
 
   test("omits owner section when owner is absent", () => {

@@ -17,6 +17,7 @@ import type { AuditService } from "../audit/service.js";
 import type { SandboxService } from "../sandbox/service.js";
 import type { ProactiveService } from "../proactive/service.js";
 import type { RemindersService, Reminder } from "../reminders/service.js";
+import type { ChannelService } from "../channel/service.js";
 import type { EventBus } from "../../core/events.js";
 import type { Contributions, TelegramCommand, ToolDefinition } from "../../core/module.js";
 import { tenantFromGrammy, threadKey, type TenantContext } from "../../core/tenant.js";
@@ -56,6 +57,7 @@ export interface TelegramDeps {
   sandbox?: SandboxService;
   proactive?: ProactiveService;
   reminders?: RemindersService;
+  channel?: ChannelService;
   events?: EventBus;
   billing: BillingService;
   admin: AdminService;
@@ -133,9 +135,8 @@ export function installTelegram(bot: Bot, deps: TelegramDeps, contributions: Con
   }
 
   function isReplyToBot(ctx: GrammyContext): boolean {
-    const reply = ctx.message && "reply_to_message" in ctx.message
-      ? ctx.message.reply_to_message
-      : undefined;
+    const reply =
+      ctx.message && "reply_to_message" in ctx.message ? ctx.message.reply_to_message : undefined;
     return reply?.from?.id === botUserId();
   }
 
@@ -147,9 +148,7 @@ export function installTelegram(bot: Bot, deps: TelegramDeps, contributions: Con
 
   async function collectReferenceImages(ctx: GrammyContext): Promise<string[]> {
     const reply =
-      ctx.message && "reply_to_message" in ctx.message
-        ? ctx.message.reply_to_message
-        : undefined;
+      ctx.message && "reply_to_message" in ctx.message ? ctx.message.reply_to_message : undefined;
     const images: string[] = [];
     const targets: { photo?: Message["photo"] }[] = [];
     if (reply?.photo?.length) targets.push(reply);
@@ -182,9 +181,7 @@ export function installTelegram(bot: Bot, deps: TelegramDeps, contributions: Con
     ctx: GrammyContext
   ): Promise<{ parts: ContentPart[]; summary: string }> {
     const reply =
-      ctx.message && "reply_to_message" in ctx.message
-        ? ctx.message.reply_to_message
-        : undefined;
+      ctx.message && "reply_to_message" in ctx.message ? ctx.message.reply_to_message : undefined;
     if (!reply) return { parts: [], summary: "" };
 
     const parts: ContentPart[] = [];
@@ -224,7 +221,10 @@ export function installTelegram(bot: Bot, deps: TelegramDeps, contributions: Con
         } catch (e) {
           log.warn({ err: e }, "Failed to download replied PDF");
         }
-      } else if (!isPdf && (SUPPORTED_TEXT_MIME_RE.test(mime) || SUPPORTED_TEXT_EXT_RE.test(filename))) {
+      } else if (
+        !isPdf &&
+        (SUPPORTED_TEXT_MIME_RE.test(mime) || SUPPORTED_TEXT_EXT_RE.test(filename))
+      ) {
         try {
           const { buffer } = await downloadTelegramFile(doc.file_id);
           const text = buffer.toString("utf8").replace(/\0/g, "").slice(0, 16000);
@@ -246,7 +246,10 @@ export function installTelegram(bot: Bot, deps: TelegramDeps, contributions: Con
         const { buffer } = await downloadTelegramFile(reply.voice.file_id);
         const transcript = await deps.speech.recognize(buffer);
         if (transcript) {
-          parts.push({ type: "input_text", text: `[Replied voice message transcript]\n${transcript}` });
+          parts.push({
+            type: "input_text",
+            text: `[Replied voice message transcript]\n${transcript}`,
+          });
           summaryParts.push("[replied voice message]");
         }
       } catch (e) {
@@ -261,7 +264,9 @@ export function installTelegram(bot: Bot, deps: TelegramDeps, contributions: Con
         const transcript = await deps.speech.recognize(buffer);
         if (transcript) {
           parts.push({ type: "input_text", text: `[Replied audio transcript]\n${transcript}` });
-          summaryParts.push(`[replied audio: ${reply.audio.title ?? reply.audio.file_name ?? "audio"}]`);
+          summaryParts.push(
+            `[replied audio: ${reply.audio.title ?? reply.audio.file_name ?? "audio"}]`
+          );
         }
       } catch (e) {
         log.warn({ err: e }, "Failed to transcribe replied audio");
@@ -322,14 +327,10 @@ export function installTelegram(bot: Bot, deps: TelegramDeps, contributions: Con
           return "No image was generated. Try a different prompt.";
         }
 
-        const sent = await bot.api.sendPhoto(
-          tenant.chatId,
-          new InputFile(buffer, "image.png"),
-          {
-            ...(tenant.threadId != null ? { message_thread_id: tenant.threadId } : {}),
-            reply_markup: imageKeyboard(),
-          }
-        );
+        const sent = await bot.api.sendPhoto(tenant.chatId, new InputFile(buffer, "image.png"), {
+          ...(tenant.threadId != null ? { message_thread_id: tenant.threadId } : {}),
+          reply_markup: imageKeyboard(),
+        });
         imageControls.set(imageControlKey(tenant.chatId, sent.message_id), {
           prompt,
           imageUrl: references[0],
@@ -403,9 +404,7 @@ export function installTelegram(bot: Bot, deps: TelegramDeps, contributions: Con
         } else if (decision.kind === "text" && decision.text) {
           const sent = await bot.api.sendMessage(chatId, decision.text, {
             reply_parameters: { message_id: targetId },
-            ...(tenant.threadId != null
-              ? { message_thread_id: tenant.threadId }
-              : {}),
+            ...(tenant.threadId != null ? { message_thread_id: tenant.threadId } : {}),
           });
           storeConversation(
             tenant,
@@ -414,7 +413,13 @@ export function installTelegram(bot: Bot, deps: TelegramDeps, contributions: Con
             `[proactive reply to msg ${targetId}] ${decision.text}`
           );
           log.info(
-            { chatId, targetId, text: decision.text, reason: decision.reason, messageId: sent.message_id },
+            {
+              chatId,
+              targetId,
+              text: decision.text,
+              reason: decision.reason,
+              messageId: sent.message_id,
+            },
             "Proactive text reaction"
           );
         }
@@ -441,7 +446,10 @@ export function installTelegram(bot: Bot, deps: TelegramDeps, contributions: Con
         return true;
       });
       if (parts.length === 0) {
-        return { ...item, content: [{ type: "input_text", text: "[attachment]" }] } as ResponseInputItem;
+        return {
+          ...item,
+          content: [{ type: "input_text", text: "[attachment]" }],
+        } as ResponseInputItem;
       }
       return { ...item, content: parts } as ResponseInputItem;
     });
@@ -464,12 +472,7 @@ export function installTelegram(bot: Bot, deps: TelegramDeps, contributions: Con
         continue;
       }
       const c = row.content as { type?: string } | string | unknown[];
-      if (
-        typeof c === "object" &&
-        c !== null &&
-        !Array.isArray(c) &&
-        c.type === "function_call"
-      ) {
+      if (typeof c === "object" && c !== null && !Array.isArray(c) && c.type === "function_call") {
         items.push(c as ResponseInputItem);
         continue;
       }
@@ -478,8 +481,7 @@ export function installTelegram(bot: Bot, deps: TelegramDeps, contributions: Con
       // - array content (Responses API parts) → use as-is (sanitizeHistory will strip images)
       // - object content (our metadata records like image edits, proactive replies)
       //   → fall back to row.text so the provider gets a plain string, not a map
-      const content =
-        typeof c === "string" || Array.isArray(c) ? c : row.text;
+      const content = typeof c === "string" || Array.isArray(c) ? c : row.text;
       items.push({
         type: "message",
         role: row.role === "assistant" ? "assistant" : "user",
@@ -533,7 +535,9 @@ export function installTelegram(bot: Bot, deps: TelegramDeps, contributions: Con
       ("document" in reply && reply.document
         ? `[document: ${reply.document.file_name ?? "file"}]`
         : "") ||
-      ("audio" in reply && reply.audio ? `[audio: ${reply.audio.title ?? reply.audio.file_name ?? "file"}]` : "");
+      ("audio" in reply && reply.audio
+        ? `[audio: ${reply.audio.title ?? reply.audio.file_name ?? "file"}]`
+        : "");
     if (!text) return "";
     return `Context: the user is replying to this message:\n${text.slice(0, 2000)}\n\n`;
   };
@@ -639,7 +643,10 @@ export function installTelegram(bot: Bot, deps: TelegramDeps, contributions: Con
       handler: async (ctx, tenant) => {
         const tk = threadKey(tenant);
         deps.chatLog.clearConversation(tenant.chatId, tk);
-        await sendRichReply(ctx, "🧹 **Context reset.**\n\n_Memories are still saved — use /forget to clear them._");
+        await sendRichReply(
+          ctx,
+          "🧹 **Context reset.**\n\n_Memories are still saved — use /forget to clear them._"
+        );
       },
     },
     {
@@ -821,9 +828,7 @@ export function installTelegram(bot: Bot, deps: TelegramDeps, contributions: Con
             tools: McpDetailedTool[];
           }[] = [];
           for (const tool of mcpTools) {
-            let group = servers.find(
-              (s) => s.name === tool.serverName && s.scope === tool.scope
-            );
+            let group = servers.find((s) => s.name === tool.serverName && s.scope === tool.scope);
             if (!group) {
               group = { name: tool.serverName, scope: tool.scope, tools: [] };
               servers.push(group);
@@ -832,8 +837,7 @@ export function installTelegram(bot: Bot, deps: TelegramDeps, contributions: Con
           }
           for (const server of servers) {
             server.tools.forEach((tool, j) => {
-              const heading =
-                j === 0 ? `### MCP · ${server.name} (${server.scope})\n\n` : "";
+              const heading = j === 0 ? `### MCP · ${server.name} (${server.scope})\n\n` : "";
               blocks.push(
                 `${heading}${formatToolBlock(
                   tool.name,
@@ -936,6 +940,9 @@ export function installTelegram(bot: Bot, deps: TelegramDeps, contributions: Con
     if (ctx.message && "successful_payment" in ctx.message && ctx.message.successful_payment) {
       return next();
     }
+    // Channel posts have no human author and are only captured (no reply),
+    // so the access gate doesn't apply. Contributed handlers store them.
+    if (ctx.channelPost || ctx.editedChannelPost) return next();
 
     const isGroup = ctx.chat?.type === "group" || ctx.chat?.type === "supergroup";
     const meUsername = ctx.me?.username ?? "";
@@ -1136,6 +1143,7 @@ export function installTelegram(bot: Bot, deps: TelegramDeps, contributions: Con
             userConfig: deps.userConfig,
             sandbox: deps.sandbox,
             reminders: deps.reminders,
+            channel: deps.channel,
             builtinTools,
             hasReferenceImages,
             modelId,
@@ -1279,8 +1287,7 @@ export function installTelegram(bot: Bot, deps: TelegramDeps, contributions: Con
     const imageMatch = captionRaw.match(IMAGE_CMD_RE);
     const tenant = tenantFromGrammy(ctx);
     const tk = threadKey(tenant);
-    const mediaGroupId =
-      (ctx.message as Message & { media_group_id?: string }).media_group_id;
+    const mediaGroupId = (ctx.message as Message & { media_group_id?: string }).media_group_id;
 
     // --- Album / media-group: buffer all photos, process once after grace ---
     if (mediaGroupId) {
@@ -1417,13 +1424,7 @@ export function installTelegram(bot: Bot, deps: TelegramDeps, contributions: Con
           role: "user",
           content: contentParts as never,
         };
-        await runLlmReply(
-          captionCtx ?? ctxs[0],
-          tenant,
-          userItem,
-          textPart,
-          "photo"
-        );
+        await runLlmReply(captionCtx ?? ctxs[0], tenant, userItem, textPart, "photo");
         threadReferenceImages.delete(tk);
       } catch (e) {
         log.error({ ...serializeError(e) }, "Media group preparation failed");
@@ -1607,7 +1608,8 @@ export function installTelegram(bot: Bot, deps: TelegramDeps, contributions: Con
 
         // --- PDF: send as file content part to the LLM ---
         if (isPdf) {
-          const supportsFiles = deps.llm.supportsImages() !== false || !!deps.llm.settings.pdfEngine;
+          const supportsFiles =
+            deps.llm.supportsImages() !== false || !!deps.llm.settings.pdfEngine;
           if (!supportsFiles) {
             await ctx.reply(
               "The current model/provider does not support PDF file input. Try switching to a vision-capable model or configuring a PDF parsing engine.",
@@ -1794,7 +1796,10 @@ export function installTelegram(bot: Bot, deps: TelegramDeps, contributions: Con
           const telegramUrl = `https://api.telegram.org/file/bot${deps.botToken}/${file.file_path}`;
           sourceImageUrl = await toDataUrl(telegramUrl);
         }
-        const buffer = await deps.llm.generateImage(nextPrompt, sourceImageUrl ? [sourceImageUrl] : undefined);
+        const buffer = await deps.llm.generateImage(
+          nextPrompt,
+          sourceImageUrl ? [sourceImageUrl] : undefined
+        );
         if (!buffer) {
           await ctx.reply("No image was generated. Try another variation.", {
             reply_to_message_id: messageId,
@@ -1878,11 +1883,15 @@ export function installTelegram(bot: Bot, deps: TelegramDeps, contributions: Con
         if (periodMessages.length > 0) {
           const msgLines = periodMessages.map(formatGroupMessage).join("\n");
           const periodLabel =
-            reminder.repeat === "hourly" ? "last hour"
-            : reminder.repeat === "daily" ? "last 24 hours"
-            : reminder.repeat === "weekly" ? "last week"
-            : reminder.repeat === "monthly" ? "last month"
-            : "last 24 hours";
+            reminder.repeat === "hourly"
+              ? "last hour"
+              : reminder.repeat === "daily"
+                ? "last 24 hours"
+                : reminder.repeat === "weekly"
+                  ? "last week"
+                  : reminder.repeat === "monthly"
+                    ? "last month"
+                    : "last 24 hours";
           contextBlock = `Messages in this chat during the ${periodLabel} (${periodMessages.length} messages):\n${msgLines}`;
         } else if (recentContext) {
           contextBlock = `No messages in the relevant period. Recent activity:\n${recentContext.recentLog}`;
@@ -1896,7 +1905,7 @@ export function installTelegram(bot: Bot, deps: TelegramDeps, contributions: Con
           tenant as unknown as ReturnType<typeof tenantFromGrammy>,
           "user",
           reminderText,
-          `[reminder fired: ${reminder.id}] ${reminder.prompt.slice(0, 200)}`,
+          `[reminder fired: ${reminder.id}] ${reminder.prompt.slice(0, 200)}`
         );
 
         const reminderAcc = reminder.userId ? deps.billing.getAccount(reminder.userId) : undefined;
@@ -1920,13 +1929,9 @@ export function installTelegram(bot: Bot, deps: TelegramDeps, contributions: Con
         const actionTicker = {
           timer: undefined as NodeJS.Timeout | undefined,
           start: () => {
-            void bot.api
-              .sendChatAction(reminder.chatId, "typing")
-              .catch(() => {});
+            void bot.api.sendChatAction(reminder.chatId, "typing").catch(() => {});
             actionTicker.timer = setInterval(() => {
-              void bot.api
-                .sendChatAction(reminder.chatId, "typing")
-                .catch(() => {});
+              void bot.api.sendChatAction(reminder.chatId, "typing").catch(() => {});
             }, 4000);
           },
           stop: () => {
@@ -1947,14 +1952,15 @@ export function installTelegram(bot: Bot, deps: TelegramDeps, contributions: Con
                 userConfig: deps.userConfig,
                 sandbox: deps.sandbox,
                 reminders: deps.reminders,
+                channel: deps.channel,
                 builtinTools,
                 modelId: reminderModelId,
                 onUsage: reminderMeter,
                 owner: deps.owner,
               },
               tenant,
-              inputItems,
-            ),
+              inputItems
+            )
           );
 
           if (!text) {
@@ -1964,23 +1970,21 @@ export function installTelegram(bot: Bot, deps: TelegramDeps, contributions: Con
 
           await bot.api.sendMessage(reminder.chatId, text, {
             parse_mode: "Markdown",
-            ...(reminder.threadId != null
-              ? { message_thread_id: reminder.threadId }
-              : {}),
+            ...(reminder.threadId != null ? { message_thread_id: reminder.threadId } : {}),
           });
 
           storeConversation(
             tenant as unknown as ReturnType<typeof tenantFromGrammy>,
             "assistant",
             { kind: "reminder_reply", reminderId: reminder.id },
-            `[reminder reply] ${text.slice(0, 200)}`,
+            `[reminder reply] ${text.slice(0, 200)}`
           );
 
           log.info({ id: reminder.id, chatId: reminder.chatId }, "Reminder processed");
         } catch (e) {
           log.error(
             { ...serializeError(e), reminderId: reminder.id },
-            "Reminder processing failed",
+            "Reminder processing failed"
           );
         } finally {
           actionTicker.stop();
