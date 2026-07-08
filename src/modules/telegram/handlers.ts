@@ -737,8 +737,12 @@ export function installTelegram(bot: Bot, deps: TelegramDeps, contributions: Con
       description: "Open the Skye settings panel",
       public: true,
       handler: async (ctx) => {
+        const kb = new InlineKeyboard();
+        if (ctx.chat?.type === "private") {
+          kb.webApp("Open Settings", deps.webappUrl);
+        }
         await ctx.reply("Open the settings panel to manage your subscription, model, and tools:", {
-          reply_markup: new InlineKeyboard().webApp("Open Settings", deps.webappUrl),
+          reply_markup: kb,
         });
       },
     },

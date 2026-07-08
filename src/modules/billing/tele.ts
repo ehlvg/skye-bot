@@ -9,6 +9,10 @@ import { decodePayload, packPayload, subPayload, type InvoiceConfig } from "./in
 import { sendRichReply, sendRichEdit } from "../telegram/helpers.js";
 import { log } from "../../utils/log.js";
 
+function isPrivateChat(ctx: GrammyContext): boolean {
+  return ctx.chat?.type === "private";
+}
+
 interface SuccessfulPaymentLike {
   telegram_payment_charge_id: string;
   total_amount: number;
@@ -46,7 +50,8 @@ export interface BillingDeps {
 /** Build the user-facing /plus menu inline keyboard. */
 function plusKeyboard(
   deps: BillingDeps,
-  acc: ReturnType<BillingService["getAccount"]>
+  acc: ReturnType<BillingService["getAccount"]>,
+  includeWebApp: boolean
 ): InlineKeyboard {
   const kb = new InlineKeyboard();
   const active = deps.billing.hasActiveSub(acc);
@@ -65,7 +70,9 @@ function plusKeyboard(
     kb.text("Subscription details", "bill:menu");
     kb.row();
   }
-  kb.webApp("Open in Mini App", deps.webappUrl);
+  if (includeWebApp) {
+    kb.webApp("Open in Mini App", deps.webappUrl);
+  }
   return kb;
 }
 
@@ -159,7 +166,7 @@ function buildCommands(deps: BillingDeps): TelegramCommand[] {
         const acc = deps.billing.getAccount(tenant.userId!);
         await sendRichReply(ctx, statusText(deps, acc));
         await ctx.reply("👇", {
-          reply_markup: plusKeyboard(deps, acc),
+          reply_markup: plusKeyboard(deps, acc, isPrivateChat(ctx)),
           reply_to_message_id: undefined,
         });
       },
@@ -181,12 +188,14 @@ function buildCommands(deps: BillingDeps): TelegramCommand[] {
       handler: async (ctx, tenant) => {
         const acc = deps.billing.getAccount(tenant.userId!);
         await sendRichReply(ctx, statusText(deps, acc));
-        const kb = deps.billing.hasActiveSub(acc)
-          ? new InlineKeyboard()
-              .text("Buy token packs", "bill:packs")
-              .row()
-              .webApp("Open in Mini App", deps.webappUrl)
-          : plusKeyboard(deps, acc);
+        const active = deps.billing.hasActiveSub(acc);
+        const kb = active
+          ? (() => {
+              const k = new InlineKeyboard().text("Buy token packs", "bill:packs").row();
+              if (isPrivateChat(ctx)) k.webApp("Open in Mini App", deps.webappUrl);
+              return k;
+            })()
+          : plusKeyboard(deps, acc, isPrivateChat(ctx));
         await ctx.reply("👇", { reply_markup: kb });
       },
     },
@@ -234,7 +243,11 @@ function buildHandlers(deps: BillingDeps): TelegramHandler[] {
 
       try {
         if (action === "menu") {
-          await sendRichEdit(ctx, statusText(deps, acc) + "\n\n👇", plusKeyboard(deps, acc));
+          await sendRichEdit(
+            ctx,
+            statusText(deps, acc) + "\n\n👇",
+            plusKeyboard(deps, acc, isPrivateChat(ctx))
+          );
         } else if (action === "models") {
           await sendRichEdit(ctx, modelsText(deps, acc) + "\n\n👇", modelsKeyboard(deps, acc));
         } else if (action === "sub") {
@@ -320,7 +333,7 @@ function buildHandlers(deps: BillingDeps): TelegramHandler[] {
           await sendRichEdit(
             ctx,
             statusText(deps, refreshed) + "\n\n👇",
-            plusKeyboard(deps, refreshed)
+            plusKeyboard(deps, refreshed, isPrivateChat(ctx))
           );
         }
       } catch (e) {
