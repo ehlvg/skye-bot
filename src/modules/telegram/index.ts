@@ -31,9 +31,10 @@ export const telegramModule: SkyeModule = {
     const token = String(ctx.config.BOT_TOKEN);
     const bot = new Bot(token);
     botRef = bot;
-    // Expose the bot in the registry so other modules (e.g. panel for menu
-    // buttons) can access it during start().
-    return { service: bot };
+    // Register under the declared SkyeServices key so `ctx.services.get("telegramBot")`
+    // resolves in other modules (billing routes, channel tools, panel, etc.).
+    // Returning { service } would instead key it as "telegram" (the module name).
+    ctx.services.set("telegramBot", bot);
   },
   async start(ctx, contributions, extra) {
     const bot = botRef!;
