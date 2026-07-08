@@ -168,7 +168,7 @@ voice:
     tts_voice: "Aoede"
     # TTS response format: mp3 | pcm. Gemini TTS only supports "pcm".
     tts_format: "pcm"
-    tts_format: "mp3"
+    # tts_format: "mp3"
     # Input format to normalize audio into before STT: mp3 | wav | oggopus
     stt_format: "mp3"
     # ISO-639-1 language hint for STT; "" = auto-detect (e.g. "ru", "en")

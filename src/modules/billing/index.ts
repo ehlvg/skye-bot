@@ -36,7 +36,7 @@ export const billingModule: SkyeModule = {
       llm,
       cfg: decodeInvoiceConfig(ctx.config),
       packs: cfg.BILLING_TOKEN_PACKS as TokenPack[],
-      webappUrl: String(ctx.config.WEBAPP_URL ?? ""),
+      webappUrl: String(ctx.config.PANEL_WEBAPP_URL ?? ""),
     };
     const { commands, handlers } = buildBilling(deps);
 

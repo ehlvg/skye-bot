@@ -15,4 +15,4 @@ services:
       - ./data:/app/data
     ports:
       # Expose the Telegram Mini App / settings panel served by the bot.
-      - "${WEBAPP_PORT:-3001}:${WEBAPP_PORT:-3001}"
+      - "${PANEL_WEBAPP_PORT:-3001}:${PANEL_WEBAPP_PORT:-3001}"

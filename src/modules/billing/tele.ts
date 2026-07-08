@@ -5,12 +5,7 @@ import type { BillingService } from "./service.js";
 import type { ModelEntry } from "../llm/env.js";
 import type { LlmClient } from "../llm/client.js";
 import type { TokenPack } from "./env.js";
-import {
-  decodePayload,
-  packPayload,
-  subPayload,
-  type InvoiceConfig,
-} from "./invoices.js";
+import { decodePayload, packPayload, subPayload, type InvoiceConfig } from "./invoices.js";
 import { sendRichReply, sendRichEdit } from "../telegram/helpers.js";
 import { log } from "../../utils/log.js";
 
@@ -49,7 +44,10 @@ export interface BillingDeps {
 }
 
 /** Build the user-facing /plus menu inline keyboard. */
-function plusKeyboard(deps: BillingDeps, acc: ReturnType<BillingService["getAccount"]>): InlineKeyboard {
+function plusKeyboard(
+  deps: BillingDeps,
+  acc: ReturnType<BillingService["getAccount"]>
+): InlineKeyboard {
   const kb = new InlineKeyboard();
   const active = deps.billing.hasActiveSub(acc);
   if (!active) {
@@ -81,17 +79,20 @@ function statusText(deps: BillingDeps, acc: ReturnType<BillingService["getAccoun
   if (active) {
     lines.push(`**Subscription:** Active`);
     lines.push(`**Next renewal:** ${fmtDate(acc.subExpiresAt)}`);
-    if (acc.subStatus === "cancelled") lines.push("_No further charges — your subscription is set to cancel at the next renewal._");
+    if (acc.subStatus === "cancelled")
+      lines.push("_No further charges — your subscription is set to cancel at the next renewal._");
   } else {
     lines.push(`**Subscription:** Not active`);
-    lines.push(`Subscribe for **${deps.cfg.subscriptionStars} ⭐** / 30 days to unlock Skye.`);
+    lines.push(`Subscribe for **${deps.cfg.subscriptionStars} ⭐** a month to unlock Skye.`);
   }
   lines.push("");
   lines.push(`**Model:** ${model.name} (${model.multiplier}× token cost)`);
   if (active) {
     lines.push("");
     lines.push(`**Tokens remaining:** ${fmtTokens(remaining)}`);
-    lines.push(`- Base quota this month: ${fmtTokens(Math.max(0, baseQuota - baseUsed))} of ${fmtTokens(baseQuota)} left`);
+    lines.push(
+      `- Base quota this month: ${fmtTokens(Math.max(0, baseQuota - baseUsed))} of ${fmtTokens(baseQuota)} left`
+    );
     lines.push(`- Boost packs: ${fmtTokens(acc.packsTokens)}`);
     lines.push(`- Lifetime used: ${fmtTokens(acc.totalUsedTokens)}`);
   }
@@ -100,20 +101,25 @@ function statusText(deps: BillingDeps, acc: ReturnType<BillingService["getAccoun
 
 function modelsText(deps: BillingDeps, acc: ReturnType<BillingService["getAccount"]>): string {
   const current = modelName(deps.llm, acc.modelId);
-  const lines = deps.llm.models.map(
-    (m) =>
-      `${m.id === current.id ? "✅ " : ""}**${m.name}** — ${m.multiplier}× tokens` +
-      (m.id === current.id ? " _(current)_" : "")
-  );
-  return ["## Choose your model", "", "Models differ in power and token cost:", "", ...lines].join(
-    "\n"
-  );
+  return [
+    "## Choose your model",
+    "",
+    `Current: **${current.name}** (${current.multiplier}× token cost).`,
+    "",
+    "Models differ in power and token cost. Pick one below.",
+  ].join("\n");
 }
 
-function modelsKeyboard(deps: BillingDeps, acc: ReturnType<BillingService["getAccount"]>): InlineKeyboard {
+function modelsKeyboard(
+  deps: BillingDeps,
+  acc: ReturnType<BillingService["getAccount"]>
+): InlineKeyboard {
   const kb = new InlineKeyboard();
   for (const m of deps.llm.models) {
-    kb.text(`${m.id === acc.modelId ? "✅ " : ""}${m.name} (${m.multiplier}×)`, `bill:model:${m.id}`);
+    kb.text(
+      `${m.id === acc.modelId ? "✅ " : ""}${m.name} (${m.multiplier}×)`,
+      `bill:model:${m.id}`
+    );
     kb.row();
   }
   kb.text("Back", "bill:menu");
@@ -152,7 +158,10 @@ function buildCommands(deps: BillingDeps): TelegramCommand[] {
       handler: async (ctx, tenant) => {
         const acc = deps.billing.getAccount(tenant.userId!);
         await sendRichReply(ctx, statusText(deps, acc));
-        await ctx.reply("👇", { reply_markup: plusKeyboard(deps, acc), reply_to_message_id: undefined });
+        await ctx.reply("👇", {
+          reply_markup: plusKeyboard(deps, acc),
+          reply_to_message_id: undefined,
+        });
       },
     },
     {
@@ -173,7 +182,10 @@ function buildCommands(deps: BillingDeps): TelegramCommand[] {
         const acc = deps.billing.getAccount(tenant.userId!);
         await sendRichReply(ctx, statusText(deps, acc));
         const kb = deps.billing.hasActiveSub(acc)
-          ? new InlineKeyboard().text("Buy token packs", "bill:packs").row().webApp("Open in Mini App", deps.webappUrl)
+          ? new InlineKeyboard()
+              .text("Buy token packs", "bill:packs")
+              .row()
+              .webApp("Open in Mini App", deps.webappUrl)
           : plusKeyboard(deps, acc);
         await ctx.reply("👇", { reply_markup: kb });
       },
@@ -188,7 +200,10 @@ function buildCommands(deps: BillingDeps): TelegramCommand[] {
           await sendRichReply(ctx, "You don't have an active subscription to cancel.");
           return;
         }
-        await sendRichReply(ctx, "Cancel your Skye Plus subscription?\n\nYour access stays until the renewal date, then ends. No further charges.");
+        await sendRichReply(
+          ctx,
+          "Cancel your Skye Plus subscription?\n\nYour access stays until the renewal date, then ends. No further charges."
+        );
         await ctx.reply("👇", {
           reply_markup: new InlineKeyboard()
             .text("Yes, cancel", "bill:cancel")
@@ -240,12 +255,12 @@ function buildHandlers(deps: BillingDeps): TelegramHandler[] {
             [{ label: `${deps.cfg.title} (30 days)`, amount: deps.cfg.subscriptionStars }],
             { subscription_period: deps.cfg.subscriptionPeriodSeconds }
           );
-          await ctx.reply(`Subscribe to ${deps.cfg.title} for ${deps.cfg.subscriptionStars} ⭐ / 30 days:`, {
-            reply_markup: new InlineKeyboard().url(
-              `Pay ${deps.cfg.subscriptionStars} ⭐`,
-              url
-            ),
-          });
+          await ctx.reply(
+            `Subscribe to ${deps.cfg.title} for ${deps.cfg.subscriptionStars} ⭐ / 30 days:`,
+            {
+              reply_markup: new InlineKeyboard().url(`Pay ${deps.cfg.subscriptionStars} ⭐`, url),
+            }
+          );
         } else if (action === "packs") {
           if (!deps.billing.hasActiveSub(acc)) {
             await ctx.answerCallbackQuery("Subscribe first to buy token packs.");

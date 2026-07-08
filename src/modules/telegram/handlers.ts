@@ -571,16 +571,11 @@ export function installTelegram(bot: Bot, deps: TelegramDeps, contributions: Con
       public: true,
       handler: async (ctx) => {
         const md = [
-          "Hi — I'm **Skye**.",
+          "Hi, I'm Skye.",
           "",
-          "Calm, minimal, here to help. A few things you can try right now:",
+          "Send whatever's on your mind.",
           "",
-          "- _“Remember that I prefer plain text over HTML in my reports.”_ — long-term memory",
-          "- _“Run a quick Node script that prints the current weather in Lisbon.”_ — sandbox",
-          "- _“Search the web for the latest release of grammy and summarize the changelog.”_ — web search via the sandbox",
-          "- _“Draft a short, warm reply to a friend who’s asking for book recommendations.”_ — chat",
-          "",
-          "Send any of those, or just say hello. Use /help to see everything I can do.",
+          "I'll help you work through it clearly.",
         ].join("\n");
         await sendRichReply(ctx, md);
       },

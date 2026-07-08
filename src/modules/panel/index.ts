@@ -22,7 +22,7 @@ export const panelModule: SkyeModule = {
   envSchema: panelEnvSchema,
   async start(ctx, contributions, extra) {
     const botToken = String(ctx.config.BOT_TOKEN);
-    const webappPort = Number(ctx.config.WEBAPP_PORT);
+    const webappPort = Number(ctx.config.PANEL_WEBAPP_PORT);
 
     const app: Express = extra.app ?? express();
     app.use(express.json());

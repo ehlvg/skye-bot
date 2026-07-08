@@ -63,7 +63,7 @@ export const telegramModule: SkyeModule = {
         billing: ctx.services.get("billing"),
         admin: ctx.services.get("admin"),
         botToken: String(ctx.config.BOT_TOKEN),
-        webappUrl: String(ctx.config.WEBAPP_URL),
+        webappUrl: String(ctx.config.PANEL_WEBAPP_URL),
         defaultModelId: String(ctx.config.DEFAULT_MODEL_ID ?? "sydney"),
         ...(String(ctx.config.OWNER_NAME ?? "") || String(ctx.config.OWNER_TAG ?? "")
           ? { owner: { name: String(ctx.config.OWNER_NAME), tag: String(ctx.config.OWNER_TAG) } }
@@ -77,7 +77,7 @@ export const telegramModule: SkyeModule = {
         menu_button: {
           type: "web_app",
           text: "Settings",
-          web_app: { url: String(ctx.config.WEBAPP_URL) },
+          web_app: { url: String(ctx.config.PANEL_WEBAPP_URL) },
         },
       })
       .catch((e) => log.warn({ err: e }, "Failed to set menu button"));

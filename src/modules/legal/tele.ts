@@ -9,7 +9,11 @@ export interface LegalDeps {
   legal: LegalService;
   cfg: Pick<
     LegalEnv,
-    "LEGAL_TERMS_URL" | "LEGAL_PRIVACY_URL" | "LEGAL_SUPPORT_USERNAME" | "LEGAL_DEVELOPER_NAME" | "LEGAL_DEVELOPER_EMAIL"
+    | "LEGAL_TERMS_URL"
+    | "LEGAL_PRIVACY_URL"
+    | "LEGAL_SUPPORT_USERNAME"
+    | "LEGAL_DEVELOPER_NAME"
+    | "LEGAL_DEVELOPER_EMAIL"
   >;
 }
 
@@ -22,7 +26,7 @@ export function buildLegalCommands(deps: LegalDeps): TelegramCommand[] {
       description: "Terms of Service",
       public: true,
       handler: async (ctx) => {
-        await ctx.reply("📄 **Terms of Service**", {
+        await ctx.reply("📄 Terms of Service", {
           reply_markup: new InlineKeyboard().url("Open Terms", cfg.LEGAL_TERMS_URL),
         });
       },
@@ -32,7 +36,7 @@ export function buildLegalCommands(deps: LegalDeps): TelegramCommand[] {
       description: "Privacy Policy",
       public: true,
       handler: async (ctx) => {
-        await ctx.reply("🔐 **Privacy Policy**", {
+        await ctx.reply("🔐 Privacy Policy", {
           reply_markup: new InlineKeyboard().url("Open Privacy Policy", cfg.LEGAL_PRIVACY_URL),
         });
       },
@@ -50,7 +54,7 @@ export function buildLegalCommands(deps: LegalDeps): TelegramCommand[] {
           `- Telegram: ${cfg.LEGAL_SUPPORT_USERNAME}`,
           `- Email: ${cfg.LEGAL_DEVELOPER_EMAIL}`,
           "",
-          "Include your Telegram user id (use /id or check the Settings panel) so we can find your account faster.",
+          "Include your Telegram user id so we can find your account faster.",
         ].join("\n");
         await sendRichReply(ctx, md);
       },
@@ -162,7 +166,9 @@ export function buildLegalHandlers(deps: LegalDeps): TelegramHandler[] {
         }
       } catch {
         await ctx.answerCallbackQuery("Something went wrong.");
-        await ctx.editMessageText("Couldn't complete data deletion. Please contact support via /paysupport.");
+        await ctx.editMessageText(
+          "Couldn't complete data deletion. Please contact support via /paysupport."
+        );
         return;
       }
 
