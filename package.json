@@ -3,6 +3,7 @@
   "version": "1.0.0",
   "description": "The most human, feature-complete Telegram AI bot — built with TypeScript, OpenAI and MCP.",
   "type": "module",
+  "packageManager": "pnpm@11.9.0",
   "scripts": {
     "dev": "tsx watch src/index.ts",
     "dev:pretty": "tsx watch src/index.ts 2>&1 | pino-pretty --colorize --translateTime",
