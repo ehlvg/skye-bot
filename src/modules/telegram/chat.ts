@@ -23,10 +23,12 @@ export interface ChatLoopDeps {
   reminders?: RemindersService;
   channel?: ChannelService;
   builtinTools: ToolDefinition[];
+  allowMcpTools?: boolean;
   hasReferenceImages?: boolean;
   /** Masked model id to run this turn on (resolved from the user's billing account). */
   modelId?: string;
   /** Meter one LLM round-trip's token usage against the caller's quota. */
+  beforeRound?: (modelId: string) => void;
   onUsage?: (usage: { promptTokens: number; completionTokens: number }, modelId: string) => void;
   /** Bot owner info (name + Telegram handle) to weight in the system prompt. */
   owner?: { name: string; tag: string };
@@ -51,7 +53,7 @@ export async function runChatLoop(
 ): Promise<string> {
   const memories = deps.memory.list(tenant.chatId);
   const chatContext = deps.chatLog.context(tenant.chatId);
-  const mcpTools = deps.mcp.toolsFor(tenant.userId);
+  const mcpTools = deps.allowMcpTools === false ? [] : deps.mcp.toolsFor(tenant.userId);
   const mcpToolNames = mcpTools.map((t) => t.name);
   const tk = threadKey(tenant);
 
@@ -118,6 +120,7 @@ export async function runChatLoop(
   let iterations = 0;
 
   while (iterations <= 5) {
+    deps.beforeRound?.(modelEntry.id);
     const stream = deps.llm.askStream(
       instructions,
       currentInput,
@@ -131,13 +134,7 @@ export async function runChatLoop(
 
     const response = await stream.finalResponse();
 
-    if (response.usage && deps.onUsage) {
-      try {
-        deps.onUsage(response.usage, modelEntry.id);
-      } catch (e) {
-        log.warn({ err: e }, "onUsage metering failed");
-      }
-    }
+    if (response.usage && deps.onUsage) deps.onUsage(response.usage, modelEntry.id);
 
     const fnCalls = response.output.filter((item) => item.type === "function_call") as Array<{
       type: "function_call";

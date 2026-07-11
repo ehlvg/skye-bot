@@ -94,14 +94,22 @@ export function buildRoutes(ctx: ModuleContext): PanelRoute[] {
         }
         try {
           const cfg = decodeInvoiceConfig(ctx.config);
-          const link = await createSubscriptionInvoiceLink(
-            bot.api,
-            cfg,
-            userId
-          );
+          const invoice = billing.issueInvoice({
+            userId,
+            kind: "subscription",
+            productId: null,
+            title: cfg.title,
+            currency: cfg.currency,
+            amount: cfg.subscriptionStars,
+            tokens: null,
+            subscriptionPeriod: cfg.subscriptionPeriodSeconds,
+          });
+          const link = await createSubscriptionInvoiceLink(bot.api, cfg, invoice);
           res.json({ url: link });
         } catch (e) {
-          res.status(500).json({ error: e instanceof Error ? e.message : "Failed to create invoice" });
+          res
+            .status(500)
+            .json({ error: e instanceof Error ? e.message : "Failed to create invoice" });
         }
       },
     },
@@ -129,10 +137,22 @@ export function buildRoutes(ctx: ModuleContext): PanelRoute[] {
         }
         try {
           const cfg = decodeInvoiceConfig(ctx.config);
-          const link = await createPackInvoiceLink(bot.api, cfg, userId, pack);
+          const invoice = billing.issueInvoice({
+            userId,
+            kind: "pack",
+            productId: pack.id,
+            title: pack.name,
+            currency: cfg.currency,
+            amount: pack.stars,
+            tokens: pack.tokens,
+            subscriptionPeriod: null,
+          });
+          const link = await createPackInvoiceLink(bot.api, cfg, invoice, pack);
           res.json({ url: link });
         } catch (e) {
-          res.status(500).json({ error: e instanceof Error ? e.message : "Failed to create invoice" });
+          res
+            .status(500)
+            .json({ error: e instanceof Error ? e.message : "Failed to create invoice" });
         }
       },
     },

@@ -5,6 +5,7 @@ import { readFileSync, existsSync } from "fs";
 import { join } from "path";
 import { log } from "../../utils/log.js";
 import type { UserConfigService } from "../userConfig/service.js";
+import { z } from "zod";
 
 interface McpInput {
   id: string;
@@ -20,6 +21,25 @@ interface McpServerConfig {
   cwd?: string;
   url?: string;
   headers?: Record<string, string>;
+}
+
+const userMcpConfigSchema = z
+  .object({
+    type: z.literal("http"),
+    url: z
+      .string()
+      .url()
+      .refine((value) => new URL(value).protocol === "https:", {
+        message: "User MCP URLs must use HTTPS",
+      }),
+    headers: z.record(z.string(), z.string()).optional(),
+  })
+  .strict();
+
+export type UserMcpServerConfig = z.infer<typeof userMcpConfigSchema>;
+
+export function parseUserMcpConfig(config: unknown): UserMcpServerConfig {
+  return userMcpConfigSchema.parse(config);
 }
 
 interface McpConfig {
@@ -64,9 +84,14 @@ function userKey(userId: number, serverId: number): string {
   return `${userId}:${serverId}`;
 }
 
-function resolveVars(value: string, extraVars?: Record<string, string>): string {
+function resolveVars(
+  value: string,
+  extraVars?: Record<string, string>,
+  allowProcessEnv = true
+): string {
   return value.replace(/\$\{(\w+)\}|\$\{input:([^}]+)\}/g, (_, envName, inputId) => {
     if (extraVars && inputId && extraVars[inputId]) return extraVars[inputId];
+    if (!allowProcessEnv) return inputId ? `\${input:${inputId}}` : `\${${envName}}`;
     if (envName) return process.env[envName] ?? "";
     return process.env[inputId] ?? "";
   });
@@ -74,22 +99,29 @@ function resolveVars(value: string, extraVars?: Record<string, string>): string 
 
 function resolveConfig(
   config: McpServerConfig,
-  extraVars?: Record<string, string>
+  extraVars?: Record<string, string>,
+  allowProcessEnv = true
 ): McpServerConfig {
   return {
     type: config.type,
-    command: config.command ? resolveVars(config.command, extraVars) : undefined,
-    args: config.args?.map((a) => resolveVars(a, extraVars)),
-    cwd: config.cwd ? resolveVars(config.cwd, extraVars) : undefined,
+    command: config.command ? resolveVars(config.command, extraVars, allowProcessEnv) : undefined,
+    args: config.args?.map((a) => resolveVars(a, extraVars, allowProcessEnv)),
+    cwd: config.cwd ? resolveVars(config.cwd, extraVars, allowProcessEnv) : undefined,
     env: config.env
       ? Object.fromEntries(
-          Object.entries(config.env).map(([k, v]) => [k, resolveVars(v, extraVars)])
+          Object.entries(config.env).map(([k, v]) => [
+            k,
+            resolveVars(v, extraVars, allowProcessEnv),
+          ])
         )
       : undefined,
-    url: config.url ? resolveVars(config.url, extraVars) : undefined,
+    url: config.url ? resolveVars(config.url, extraVars, allowProcessEnv) : undefined,
     headers: config.headers
       ? Object.fromEntries(
-          Object.entries(config.headers).map(([k, v]) => [k, resolveVars(v, extraVars)])
+          Object.entries(config.headers).map(([k, v]) => [
+            k,
+            resolveVars(v, extraVars, allowProcessEnv),
+          ])
         )
       : undefined,
   };
@@ -167,7 +199,8 @@ export class McpService {
     serverId?: number
   ): Promise<{ client: Client; tools: OpenAITool[] } | null> {
     try {
-      const cfg = resolveConfig(rawCfg, extraVars);
+      if (scope === "user") parseUserMcpConfig(rawCfg);
+      const cfg = resolveConfig(rawCfg, extraVars, scope === "global");
       const client = new Client({ name: `skye-${name}`, version: "1.0.0" }, { capabilities: {} });
 
       const transportType = cfg.type ?? (cfg.url ? "http" : "stdio");
@@ -273,9 +306,17 @@ export class McpService {
       log.info(`Connecting to ${userServers.length} user MCP server(s)...`);
       for (const server of userServers) {
         const inputs = this.userConfig.getMcpInputs(server.id);
+        const parsed = userMcpConfigSchema.safeParse(server.config);
+        if (!parsed.success) {
+          log.warn(
+            { server: server.name, userId: server.userId },
+            "Skipping unsafe user MCP config"
+          );
+          continue;
+        }
         await this.connectServer(
           server.name,
-          server.config as McpServerConfig,
+          parsed.data,
           "user",
           inputs,
           server.userId,
@@ -378,7 +419,9 @@ export class McpService {
     config: Record<string, unknown>,
     inputs: Record<string, string>
   ): Promise<void> {
-    await this.connectServer(name, config as McpServerConfig, "user", inputs, userId, serverId);
+    const parsed = parseUserMcpConfig(config);
+    const connected = await this.connectServer(name, parsed, "user", inputs, userId, serverId);
+    if (!connected) throw new Error("Failed to connect user MCP server");
   }
 
   async disconnectUserServer(userId: number, serverId: number): Promise<void> {

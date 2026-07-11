@@ -1,5 +1,6 @@
 import type { LabeledPrice } from "grammy/types";
 import type { TokenPack } from "./env.js";
+import type { IssuedInvoice } from "./service.js";
 
 type ReadOnlyRecord = Readonly<Record<string, unknown>>;
 
@@ -26,6 +27,17 @@ export interface InvoiceConfig {
 
 export const SUB_PAYLOAD_PREFIX = "skye:sub:";
 export const PACK_PAYLOAD_PREFIX = "skye:pack:";
+export const INVOICE_PAYLOAD_PREFIX = "skye:invoice:";
+
+export function invoicePayload(id: string): string {
+  return `${INVOICE_PAYLOAD_PREFIX}${id}`;
+}
+
+export function decodeInvoicePayload(payload: string): string | null {
+  return payload.startsWith(INVOICE_PAYLOAD_PREFIX)
+    ? payload.slice(INVOICE_PAYLOAD_PREFIX.length) || null
+    : null;
+}
 
 export function subPayload(userId: number): string {
   return `${SUB_PAYLOAD_PREFIX}${userId}`;
@@ -38,32 +50,32 @@ export function packPayload(userId: number, packId: string): string {
 export async function createSubscriptionInvoiceLink(
   api: InvoiceApi,
   cfg: InvoiceConfig,
-  userId: number
+  invoice: IssuedInvoice
 ): Promise<string> {
   return api.createInvoiceLink(
     cfg.title,
     cfg.description,
-    subPayload(userId),
+    invoicePayload(invoice.id),
     "", // Telegram Stars payments use an empty provider_token
-    cfg.currency,
-    [{ label: `${cfg.title} (30 days)`, amount: cfg.subscriptionStars }],
-    { subscription_period: cfg.subscriptionPeriodSeconds }
+    invoice.currency,
+    [{ label: `${cfg.title} (30 days)`, amount: invoice.amount }],
+    { subscription_period: invoice.subscriptionPeriod ?? cfg.subscriptionPeriodSeconds }
   );
 }
 
 export async function createPackInvoiceLink(
   api: InvoiceApi,
   cfg: InvoiceConfig,
-  userId: number,
+  invoice: IssuedInvoice,
   pack: TokenPack
 ): Promise<string> {
   return api.createInvoiceLink(
     cfg.title,
     `${pack.name} — adds ${pack.tokens.toLocaleString("en-US")} tokens. Only usable with an active ${cfg.title} subscription.`,
-    packPayload(userId, pack.id),
+    invoicePayload(invoice.id),
     "",
-    cfg.currency,
-    [{ label: pack.name, amount: pack.stars }]
+    invoice.currency,
+    [{ label: invoice.title, amount: invoice.amount }]
   );
 }
 
@@ -97,8 +109,6 @@ export function decodeInvoiceConfig(config: ReadOnlyRecord): InvoiceConfig {
     title: String(config.BILLING_TITLE ?? "Skye Plus"),
     description: String(config.BILLING_DESCRIPTION ?? ""),
     subscriptionStars: Number(config.BILLING_SUBSCRIPTION_STARS ?? 1899),
-    subscriptionPeriodSeconds: Number(
-      config.BILLING_SUBSCRIPTION_PERIOD_SECONDS ?? 2_592_000
-    ),
+    subscriptionPeriodSeconds: Number(config.BILLING_SUBSCRIPTION_PERIOD_SECONDS ?? 2_592_000),
   };
 }

@@ -2,6 +2,7 @@ import type { ToolDefinition } from "../../core/module.js";
 import type { RemindersService, RepeatInterval } from "./service.js";
 
 const REPEAT_VALUES = ["none", "hourly", "daily", "weekly", "monthly"] as const;
+const MAX_ACTIVE_REMINDERS_PER_USER = 25;
 
 function parseDateTime(raw: string): Date | null {
   const trimmed = raw.trim();
@@ -11,9 +12,7 @@ function parseDateTime(raw: string): Date | null {
   return d;
 }
 
-function formatReminderList(
-  reminders: ReturnType<RemindersService["list"]>
-): string {
+function formatReminderList(reminders: ReturnType<RemindersService["list"]>): string {
   if (reminders.length === 0) return "No reminders found.";
   const lines = reminders.map((r, i) => {
     const local = new Date(r.fireAt).toLocaleString("en-US", {
@@ -63,9 +62,16 @@ export function reminderTools(service: RemindersService): ToolDefinition[] {
 
         if (!prompt) return "Error: prompt is required.";
         const fireAt = parseDateTime(fireAtRaw);
-        if (!fireAt) return `Error: could not parse fire_at "${fireAtRaw}". Use ISO 8601 format like "2024-12-25T10:00:00".`;
+        if (!fireAt)
+          return `Error: could not parse fire_at "${fireAtRaw}". Use ISO 8601 format like "2024-12-25T10:00:00".`;
         if (fireAt <= new Date()) {
           return `Error: fire_at must be in the future. Current time is ${new Date().toISOString()}.`;
+        }
+        if (
+          tenant.userId != null &&
+          service.countActiveByUser(tenant.userId) >= MAX_ACTIVE_REMINDERS_PER_USER
+        ) {
+          return `Error: you can have at most ${MAX_ACTIVE_REMINDERS_PER_USER} active reminders.`;
         }
 
         const reminder = service.create(tenant.chatId, prompt, fireAt, {
@@ -111,8 +117,7 @@ export function reminderTools(service: RemindersService): ToolDefinition[] {
           },
           fire_at: {
             type: "string",
-            description:
-              "New fire time as ISO 8601 datetime string. Optional.",
+            description: "New fire time as ISO 8601 datetime string. Optional.",
           },
           repeat: {
             type: "string",

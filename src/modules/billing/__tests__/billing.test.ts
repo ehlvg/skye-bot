@@ -12,7 +12,9 @@ function newService(): BillingService {
 const USER = 4242;
 
 beforeEach(() => {
-  getDb().exec("DELETE FROM billing_accounts; DELETE FROM billing_events;");
+  getDb().exec(
+    "DELETE FROM billing_payments; DELETE FROM billing_invoices; DELETE FROM billing_accounts; DELETE FROM billing_events;"
+  );
 });
 
 describe("BillingService.ensureAccount", () => {
@@ -126,6 +128,68 @@ describe("BillingService.charge", () => {
     const acc = s.getAccount(USER);
     expect(acc.packsTokens).toBe(0);
     expect(acc.baseUsedTokens).toBe(300);
+  });
+
+  test("rejects a charge larger than the remaining quota", () => {
+    const s = newService();
+    s.recordSubscriptionPayment(USER, {
+      telegram_payment_charge_id: "c",
+      total_amount: 1899,
+      subscription_expiration_date: Math.floor(Date.now() / 1000) + period,
+      invoice_payload: "legacy",
+    });
+    const result = s.charge(USER, baseQuota + 1, 0, 1);
+    expect(result).toMatchObject({ ok: false, reason: "no_quota", remaining: baseQuota });
+    expect(s.getAccount(USER).baseUsedTokens).toBe(0);
+  });
+});
+
+describe("BillingService immutable invoices", () => {
+  test("fulfills snapshotted pack terms once", () => {
+    const s = newService();
+    const invoice = s.issueInvoice({
+      userId: USER,
+      kind: "pack",
+      productId: "small",
+      title: "Small",
+      currency: "XTR",
+      amount: 100,
+      tokens: 500,
+      subscriptionPeriod: null,
+    });
+    const first = s.fulfillInvoice({
+      userId: USER,
+      invoiceId: invoice.id,
+      currency: "XTR",
+      amount: 100,
+      chargeId: "pay-1",
+    });
+    const duplicate = s.fulfillInvoice({
+      userId: USER,
+      invoiceId: invoice.id,
+      currency: "XTR",
+      amount: 100,
+      chargeId: "pay-1",
+    });
+    expect(first?.tokens).toBe(500);
+    expect(duplicate?.id).toBe(invoice.id);
+    expect(s.getAccount(USER).packsTokens).toBe(500);
+  });
+
+  test("rejects stale invoice amount and user mismatches", () => {
+    const s = newService();
+    const invoice = s.issueInvoice({
+      userId: USER,
+      kind: "pack",
+      productId: "small",
+      title: "Small",
+      currency: "XTR",
+      amount: 100,
+      tokens: 500,
+      subscriptionPeriod: null,
+    });
+    expect(s.validateInvoice(USER, invoice.id, "XTR", 99)).toBeNull();
+    expect(s.validateInvoice(USER + 1, invoice.id, "XTR", 100)).toBeNull();
   });
 });
 

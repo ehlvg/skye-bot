@@ -219,10 +219,17 @@ export function deactivateReminder(id: string): void {
   getDb().prepare("UPDATE reminders SET active = 0 WHERE id = ?").run(id);
 }
 
+export function countActiveRemindersByUser(userId: number): number {
+  const row = getDb()
+    .prepare<[number], { count: number }>(
+      "SELECT COUNT(*) AS count FROM reminders WHERE user_id = ? AND active = 1"
+    )
+    .get(userId);
+  return row?.count ?? 0;
+}
+
 export function rescheduleReminder(id: string, newFireAt: Date): void {
-  getDb()
-    .prepare("UPDATE reminders SET fire_at = ? WHERE id = ?")
-    .run(newFireAt.toISOString(), id);
+  getDb().prepare("UPDATE reminders SET fire_at = ? WHERE id = ?").run(newFireAt.toISOString(), id);
 }
 
 export interface RemindersService {
@@ -244,6 +251,7 @@ export interface RemindersService {
   advanceRepeating(reminder: Reminder): Date | null;
   deactivate(id: string): void;
   reschedule(id: string, newFireAt: Date): void;
+  countActiveByUser(userId: number): number;
 }
 
 export const remindersService: RemindersService = {
@@ -256,4 +264,5 @@ export const remindersService: RemindersService = {
   advanceRepeating: advanceRepeatingReminder,
   deactivate: deactivateReminder,
   reschedule: rescheduleReminder,
+  countActiveByUser: countActiveRemindersByUser,
 };
