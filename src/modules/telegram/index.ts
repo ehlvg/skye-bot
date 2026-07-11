@@ -63,6 +63,7 @@ export const telegramModule: SkyeModule = {
         billing: ctx.services.get("billing"),
         admin: ctx.services.get("admin"),
         botToken: String(ctx.config.BOT_TOKEN),
+        maxAttachmentBytes: Number(ctx.config.TELEGRAM_MAX_ATTACHMENT_BYTES),
         webappUrl: String(ctx.config.PANEL_WEBAPP_URL),
         defaultModelId: String(ctx.config.DEFAULT_MODEL_ID ?? "sydney"),
         ...(String(ctx.config.OWNER_NAME ?? "") || String(ctx.config.OWNER_TAG ?? "")

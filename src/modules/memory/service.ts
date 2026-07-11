@@ -1,4 +1,5 @@
 import { getDb } from "../../core/db.js";
+import { randomUUID } from "node:crypto";
 
 export interface MemoryEntry {
   id: string;
@@ -7,7 +8,7 @@ export interface MemoryEntry {
 }
 
 function generateId(): string {
-  return "mem_" + Math.random().toString(36).slice(2, 10);
+  return `mem_${randomUUID()}`;
 }
 
 export function getMemories(chatId: number): MemoryEntry[] {

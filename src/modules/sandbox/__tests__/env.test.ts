@@ -10,6 +10,14 @@ describe("sandbox env schema", () => {
     expect(parsed.SANDBOX_VCPUS).toBe(2);
     expect(parsed.SANDBOX_PERSISTENT).toBe(false);
     expect(parsed.SANDBOX_COMMAND_TIMEOUT_MS).toBe(60000);
+    expect(parsed.SANDBOX_NETWORK_POLICY).toBe("deny-all");
+    expect(parsed.SANDBOX_MAX_OUTPUT_CHARS).toBe(64000);
+    expect(parsed.SANDBOX_MAX_FILE_BYTES).toBe(1000000);
+  });
+
+  it("rejects unsafe network policies and oversized limits", () => {
+    expect(() => sandboxEnvSchema.parse({ SANDBOX_NETWORK_POLICY: "custom" })).toThrow();
+    expect(() => sandboxEnvSchema.parse({ SANDBOX_MAX_FILE_BYTES: 100_000_000 })).toThrow();
   });
 
   it("parses boolean flags from strings", () => {

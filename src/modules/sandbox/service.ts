@@ -1,6 +1,7 @@
 import { Sandbox } from "@vercel/sandbox";
 import type { CommandFinished } from "@vercel/sandbox";
 import { log } from "../../utils/log.js";
+import { resolve, relative, isAbsolute, sep } from "node:path";
 
 export interface SandboxServiceConfig {
   enabled: boolean;
@@ -12,6 +13,42 @@ export interface SandboxServiceConfig {
   vcpus: number;
   persistent: boolean;
   commandTimeoutMs: number;
+  networkPolicy: "deny-all" | "allow-all";
+  maxOutputChars: number;
+  maxFileBytes: number;
+  maxArgs: number;
+  maxArgChars: number;
+}
+
+const SANDBOX_ROOT = "/vercel/sandbox";
+
+export function sandboxPath(input: string): string {
+  const value = String(input || ".");
+  const candidate = isAbsolute(value) ? value : `${SANDBOX_ROOT}/${value}`;
+  const normalized = resolve(candidate);
+  const rel = relative(SANDBOX_ROOT, normalized);
+  if (rel === ".." || rel.startsWith(`..${sep}`) || isAbsolute(rel)) {
+    throw new Error("Sandbox path must stay inside /vercel/sandbox");
+  }
+  return normalized;
+}
+
+export function validateSandboxCommand(
+  command: string,
+  args: string[],
+  maxArgs: number,
+  maxArgChars: number
+): void {
+  if (!/^[A-Za-z0-9_./-]+$/.test(command) || command === "." || command === "..") {
+    throw new Error("Sandbox command must be an executable name or path, without shell syntax");
+  }
+  if (args.length > maxArgs) throw new Error(`Too many command arguments (maximum ${maxArgs})`);
+  if (args.some((arg) => arg.length > maxArgChars))
+    throw new Error(`Command argument exceeds ${maxArgChars} characters`);
+}
+
+function limitText(value: string, limit: number): string {
+  return value.length <= limit ? value : `${value.slice(0, limit)}\n... [truncated]`;
 }
 
 interface ActiveSandbox {
@@ -22,7 +59,7 @@ interface ActiveSandbox {
 
 /**
  * Manages one Vercel Sandbox per Telegram chat. Each sandbox is isolated,
- * has internet access by default, and can run arbitrary commands, read/write
+ * has no network access by default, and can run commands, read/write
  * files, and expose ports.
  *
  * Sandboxes are named `skye-chat-<chatId>` so they can be resumed by name.
@@ -81,7 +118,7 @@ export class SandboxService {
       timeout: this.config.timeoutMs,
       persistent: this.config.persistent,
       resources: { vcpus: this.config.vcpus },
-      networkPolicy: "allow-all",
+      networkPolicy: this.config.networkPolicy,
       tags: { chat: String(chatId), source: "skye-bot" },
       ...(creds ? creds : {}),
     });
@@ -104,8 +141,13 @@ export class SandboxService {
     args: string[] = [],
     opts: { timeoutMs?: number; cwd?: string; env?: Record<string, string> } = {}
   ): Promise<{ exitCode: number; stdout: string; stderr: string }> {
+    validateSandboxCommand(command, args, this.config.maxArgs, this.config.maxArgChars);
     const sandbox = await this.getOrCreate(chatId);
-    const timeoutMs = opts.timeoutMs ?? this.config.commandTimeoutMs;
+    const timeoutMs = Math.min(
+      opts.timeoutMs ?? this.config.commandTimeoutMs,
+      this.config.commandTimeoutMs
+    );
+    if (!Number.isFinite(timeoutMs) || timeoutMs <= 0) throw new Error("Invalid sandbox timeout");
 
     log.debug({ chatId, command, args, timeoutMs }, "Sandbox run command");
 
@@ -122,8 +164,8 @@ export class SandboxService {
 
     return {
       exitCode: result.exitCode ?? -1,
-      stdout,
-      stderr,
+      stdout: limitText(stdout, this.config.maxOutputChars),
+      stderr: limitText(stderr, this.config.maxOutputChars),
     };
   }
 
@@ -132,8 +174,11 @@ export class SandboxService {
    * unless absolute.
    */
   async writeFile(chatId: number, path: string, content: string): Promise<void> {
+    if (Buffer.byteLength(content, "utf8") > this.config.maxFileBytes) {
+      throw new Error(`Sandbox file exceeds ${this.config.maxFileBytes} bytes`);
+    }
     const sandbox = await this.getOrCreate(chatId);
-    await sandbox.fs.writeFile(path, content);
+    await sandbox.fs.writeFile(sandboxPath(path), content);
   }
 
   /**
@@ -142,7 +187,11 @@ export class SandboxService {
   async readFile(chatId: number, path: string): Promise<string | null> {
     const sandbox = await this.getOrCreate(chatId);
     try {
-      return await sandbox.fs.readFile(path, "utf8");
+      const content = await sandbox.fs.readFile(sandboxPath(path), "utf8");
+      if (Buffer.byteLength(content, "utf8") > this.config.maxFileBytes) {
+        throw new Error(`Sandbox file exceeds ${this.config.maxFileBytes} bytes`);
+      }
+      return content;
     } catch (e) {
       const code = (e as { code?: string }).code;
       if (code === "ENOENT" || code === "ENOTDIR") return null;
@@ -156,7 +205,7 @@ export class SandboxService {
   async listFiles(chatId: number, path = "/vercel/sandbox"): Promise<string[]> {
     const sandbox = await this.getOrCreate(chatId);
     try {
-      return await sandbox.fs.readdir(path);
+      return await sandbox.fs.readdir(sandboxPath(path));
     } catch (e) {
       const code = (e as { code?: string }).code;
       if (code === "ENOENT" || code === "ENOTDIR") return [];

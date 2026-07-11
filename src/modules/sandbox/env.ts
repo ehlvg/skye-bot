@@ -26,6 +26,16 @@ export const sandboxEnvSchema = z.object({
     .default(String(60 * 1000))
     .transform((v) => Number(v))
     .pipe(z.number().positive()),
+  SANDBOX_NETWORK_POLICY: z.enum(["deny-all", "allow-all"]).default("deny-all"),
+  SANDBOX_MAX_OUTPUT_CHARS: z.coerce.number().int().positive().max(1_000_000).default(64_000),
+  SANDBOX_MAX_FILE_BYTES: z.coerce
+    .number()
+    .int()
+    .positive()
+    .max(50 * 1024 * 1024)
+    .default(1_000_000),
+  SANDBOX_MAX_ARGS: z.coerce.number().int().positive().max(256).default(64),
+  SANDBOX_MAX_ARG_CHARS: z.coerce.number().int().positive().max(100_000).default(4_096),
 });
 
 export type SandboxEnv = z.infer<typeof sandboxEnvSchema>;

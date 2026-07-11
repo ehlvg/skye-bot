@@ -37,6 +37,11 @@ export const sandboxModule: SkyeModule = {
       vcpus: Number(ctx.config.SANDBOX_VCPUS),
       persistent: Boolean(ctx.config.SANDBOX_PERSISTENT),
       commandTimeoutMs: Number(ctx.config.SANDBOX_COMMAND_TIMEOUT_MS),
+      networkPolicy: ctx.config.SANDBOX_NETWORK_POLICY as "deny-all" | "allow-all",
+      maxOutputChars: Number(ctx.config.SANDBOX_MAX_OUTPUT_CHARS),
+      maxFileBytes: Number(ctx.config.SANDBOX_MAX_FILE_BYTES),
+      maxArgs: Number(ctx.config.SANDBOX_MAX_ARGS),
+      maxArgChars: Number(ctx.config.SANDBOX_MAX_ARG_CHARS),
     });
 
     serviceRef = service;

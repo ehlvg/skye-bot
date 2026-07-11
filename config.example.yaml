@@ -2,6 +2,7 @@ bot_token: "123456789:ABCdefGhIJKlmnoPQRstuVWxyz_example"
 # Prevent two local long-polling bot processes from using the same BOT_TOKEN.
 # Set to "0" only if your deployment uses another single-instance mechanism.
 telegram_polling_lock: "1"
+telegram_max_attachment_bytes: 26214400 # reject Telegram files larger than 25 MiB
 
 # Bot owner / author — surfaced in the system prompt so Skye knows who created
 # her and weights their messages above other participants. Set both to empty
@@ -208,7 +209,7 @@ panel:
 # Database path. Supports ":memory:" for ephemeral storage.
 # db_path: "data/skye.db"
 
-# Vercel Sandbox — isolated per-chat compute with internet access.
+# Vercel Sandbox — isolated per-chat compute. Network is disabled by default.
 # Get a token at https://vercel.com/account/tokens and your project/team IDs
 # from the Vercel dashboard. If the bot runs on Vercel you can omit these and
 # rely on VERCEL_OIDC_TOKEN instead (set by the Vercel runtime as an env var).
@@ -219,6 +220,11 @@ sandbox:
   vcpus: 2
   persistent: false
   command_timeout_ms: 60000
+  network_policy: "deny-all" # use "allow-all" only when internet access is required
+  max_output_chars: 64000
+  max_file_bytes: 1000000
+  max_args: 64
+  max_arg_chars: 4096
   vercel_access_token: ""
   vercel_project_id: ""
   vercel_team_id: ""

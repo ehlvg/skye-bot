@@ -62,6 +62,7 @@ export interface TelegramDeps {
   billing: BillingService;
   admin: AdminService;
   botToken: string;
+  maxAttachmentBytes: number;
   webappUrl: string;
   defaultModelId: string;
   owner?: { name: string; tag: string };
@@ -163,7 +164,7 @@ export function installTelegram(bot: Bot, deps: TelegramDeps, contributions: Con
       try {
         const file = await ctx.api.getFile(t.photo[t.photo.length - 1].file_id);
         const url = `https://api.telegram.org/file/bot${deps.botToken}/${file.file_path}`;
-        images.push(await toDataUrl(url));
+        images.push(await toDataUrl(url, 60_000, deps.maxAttachmentBytes));
       } catch (e) {
         log.warn({ err: e }, "Failed to download reference image");
       }
@@ -200,7 +201,7 @@ export function installTelegram(bot: Bot, deps: TelegramDeps, contributions: Con
       try {
         const file = await ctx.api.getFile(reply.photo[reply.photo.length - 1].file_id);
         const url = `https://api.telegram.org/file/bot${deps.botToken}/${file.file_path}`;
-        const dataUrl = await toDataUrl(url);
+        const dataUrl = await toDataUrl(url, 60_000, deps.maxAttachmentBytes);
         parts.push({ type: "input_image", image_url: dataUrl });
         const cap = "caption" in reply && reply.caption ? reply.caption : "photo";
         summaryParts.push(`[replied photo: ${cap}]`);
@@ -220,7 +221,7 @@ export function installTelegram(bot: Bot, deps: TelegramDeps, contributions: Con
         try {
           const file = await ctx.api.getFile(doc.file_id);
           const url = `https://api.telegram.org/file/bot${deps.botToken}/${file.file_path}`;
-          const dataUrl = await toFileDataUrl(url, PDF_MIME);
+          const dataUrl = await toFileDataUrl(url, PDF_MIME, 60_000, deps.maxAttachmentBytes);
           parts.push({ type: "input_file", file_data: dataUrl, filename });
           summaryParts.push(`[replied PDF: ${filename}]`);
         } catch (e) {
@@ -288,7 +289,7 @@ export function installTelegram(bot: Bot, deps: TelegramDeps, contributions: Con
       try {
         const file = await c.api.getFile(c.message.photo[c.message.photo.length - 1].file_id);
         const url = `https://api.telegram.org/file/bot${deps.botToken}/${file.file_path}`;
-        out.push(await toDataUrl(url));
+        out.push(await toDataUrl(url, 60_000, deps.maxAttachmentBytes));
       } catch (e) {
         log.warn({ err: e }, "Failed to download album photo");
       }
@@ -581,8 +582,22 @@ export function installTelegram(bot: Bot, deps: TelegramDeps, contributions: Con
     const telegramUrl = `https://api.telegram.org/file/bot${deps.botToken}/${file.file_path}`;
     const res = await fetch(telegramUrl);
     if (!res.ok) throw new Error(`Failed to download Telegram file: ${res.status}`);
+    const declared = Number(res.headers.get("content-length") ?? 0);
+    if (declared > deps.maxAttachmentBytes) {
+      throw new Error(`Telegram attachment exceeds ${deps.maxAttachmentBytes} bytes`);
+    }
+    const chunks: Buffer[] = [];
+    let total = 0;
+    if (!res.body) throw new Error("Telegram file response has no body");
+    for await (const chunk of res.body as AsyncIterable<Uint8Array>) {
+      total += chunk.byteLength;
+      if (total > deps.maxAttachmentBytes) {
+        throw new Error(`Telegram attachment exceeds ${deps.maxAttachmentBytes} bytes`);
+      }
+      chunks.push(Buffer.from(chunk));
+    }
     return {
-      buffer: Buffer.from(await res.arrayBuffer()),
+      buffer: Buffer.concat(chunks, total),
       path: file.file_path ?? "",
     };
   };
@@ -1377,7 +1392,7 @@ export function installTelegram(bot: Bot, deps: TelegramDeps, contributions: Con
       try {
         const file = await ctx.api.getFile(ctx.message.photo.pop()!.file_id);
         const telegramUrl = `https://api.telegram.org/file/bot${deps.botToken}/${file.file_path}`;
-        const dataUrl = await toDataUrl(telegramUrl);
+        const dataUrl = await toDataUrl(telegramUrl, 60_000, deps.maxAttachmentBytes);
 
         const tag = senderTag(ctx);
         const contentParts: { type: string; text?: string; image_url?: string }[] = [];
@@ -1496,7 +1511,7 @@ export function installTelegram(bot: Bot, deps: TelegramDeps, contributions: Con
       if (!photoUrls) {
         const file = await ctx.api.getFile(ctx.message!.photo!.pop()!.file_id);
         const photoUrl = `https://api.telegram.org/file/bot${deps.botToken}/${file.file_path}`;
-        photoUrls = [await toDataUrl(photoUrl)];
+        photoUrls = [await toDataUrl(photoUrl, 60_000, deps.maxAttachmentBytes)];
       }
       const buffer = await deps.llm.generateImage(prompt, photoUrls);
 
@@ -1662,7 +1677,7 @@ export function installTelegram(bot: Bot, deps: TelegramDeps, contributions: Con
 
           const file = await ctx.api.getFile(doc.file_id);
           const url = `https://api.telegram.org/file/bot${deps.botToken}/${file.file_path}`;
-          const dataUrl = await toFileDataUrl(url, PDF_MIME);
+          const dataUrl = await toFileDataUrl(url, PDF_MIME, 60_000, deps.maxAttachmentBytes);
 
           const tag = senderTag(ctx);
           const prompt = captionRaw || "Please analyze this PDF document.";
@@ -1859,7 +1874,7 @@ export function installTelegram(bot: Bot, deps: TelegramDeps, contributions: Con
         if (!sourceImageUrl && photo?.length) {
           const file = await ctx.api.getFile(photo[photo.length - 1].file_id);
           const telegramUrl = `https://api.telegram.org/file/bot${deps.botToken}/${file.file_path}`;
-          sourceImageUrl = await toDataUrl(telegramUrl);
+          sourceImageUrl = await toDataUrl(telegramUrl, 60_000, deps.maxAttachmentBytes);
         }
         const buffer = await deps.llm.generateImage(
           nextPrompt,

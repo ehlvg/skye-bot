@@ -10,56 +10,57 @@ Real environment variables override YAML values — useful for platform-injected
 
 ### Core
 
-| Key                | Purpose                                                                           |
-| ------------------ | --------------------------------------------------------------------------------- |
-| `bot_token`        | Your Telegram bot token from [@BotFather](https://t.me/botfather).                |
-| `openai_key`       | API key for the LLM provider (the bot's own key — users no longer bring their own). |
-| `base_url`         | API base URL. Default: `https://openrouter.ai/api/v1`.                            |
-| `max_completion_tokens` | Maximum tokens per response. Default: `500`.                                      |
-| `admin_ids`        | Comma-separated Telegram **user** IDs that administer the bot (free, unlimited access + `/allow`/`/ban` commands). |
-| `allowed_ids`      | _(Legacy)_ Comma-separated chat/user IDs. Seeded into the allowlist once on upgrade; afterwards manage access with `/allow`. |
-| `telegram_polling_lock` | Set to `"0"` to disable the single-instance polling lock. Default: `"1"`.       |
-| `owner.name`       | Bot owner/author display name. Surfaced in the system prompt so Skye weights their messages above others. |
-| `owner.tag`        | Bot owner's Telegram username (without `@`). Paired with `owner.name`. |
-| `use_chat_completions` | Set to `true` if your provider doesn't support the Responses API. Default: `false`. |
-| `log_level`        | Pino log level: `trace`, `debug`, `info`, `warn`, `error`, `fatal`. Default: `info`. |
-| `db_path`          | SQLite database path. Default: `data/skye.db`. Supports `:memory:` for ephemeral storage. |
+| Key                             | Purpose                                                                                                                      |
+| ------------------------------- | ---------------------------------------------------------------------------------------------------------------------------- |
+| `bot_token`                     | Your Telegram bot token from [@BotFather](https://t.me/botfather).                                                           |
+| `openai_key`                    | API key for the LLM provider (the bot's own key — users no longer bring their own).                                          |
+| `base_url`                      | API base URL. Default: `https://openrouter.ai/api/v1`.                                                                       |
+| `max_completion_tokens`         | Maximum tokens per response. Default: `500`.                                                                                 |
+| `admin_ids`                     | Comma-separated Telegram **user** IDs that administer the bot (free, unlimited access + `/allow`/`/ban` commands).           |
+| `allowed_ids`                   | _(Legacy)_ Comma-separated chat/user IDs. Seeded into the allowlist once on upgrade; afterwards manage access with `/allow`. |
+| `telegram_polling_lock`         | Set to `"0"` to disable the single-instance polling lock. Default: `"1"`.                                                    |
+| `telegram.max_attachment_bytes` | Maximum Telegram file/image download size. Default: `26214400` (25 MiB).                                                     |
+| `owner.name`                    | Bot owner/author display name. Surfaced in the system prompt so Skye weights their messages above others.                    |
+| `owner.tag`                     | Bot owner's Telegram username (without `@`). Paired with `owner.name`.                                                       |
+| `use_chat_completions`          | Set to `true` if your provider doesn't support the Responses API. Default: `false`.                                          |
+| `log_level`                     | Pino log level: `trace`, `debug`, `info`, `warn`, `error`, `fatal`. Default: `info`.                                         |
+| `db_path`                       | SQLite database path. Default: `data/skye.db`. Supports `:memory:` for ephemeral storage.                                    |
 
 ### Models (masked catalog)
 
 Users pick from masked model tiers; the real provider model IDs and token multipliers are configured by the operator and never shown to end users.
 
-| Key                | Purpose                                                                                       |
-| ------------------ | --------------------------------------------------------------------------------------------- |
-| `default_model_id` | Masked id new subscribers start on (e.g. `sydney`).                                            |
-| `models[].id`      | Internal id, must match what `/models` and the panel reference.                               |
-| `models[].name`    | Display name (e.g. `Sydney`, `Tokyo`, `Berlin`, `Toronto`).                                   |
-| `models[].model`   | Real provider model id used for the upstream call (e.g. `openai/gpt-5.5`).                     |
-| `models[].multiplier` | Token cost multiplier applied to usage (e.g. `1.0`, `1.5`, `2.5`, `4.0`).                   |
+| Key                   | Purpose                                                                    |
+| --------------------- | -------------------------------------------------------------------------- |
+| `default_model_id`    | Masked id new subscribers start on (e.g. `sydney`).                        |
+| `models[].id`         | Internal id, must match what `/models` and the panel reference.            |
+| `models[].name`       | Display name (e.g. `Sydney`, `Tokyo`, `Berlin`, `Toronto`).                |
+| `models[].model`      | Real provider model id used for the upstream call (e.g. `openai/gpt-5.5`). |
+| `models[].multiplier` | Token cost multiplier applied to usage (e.g. `1.0`, `1.5`, `2.5`, `4.0`).  |
 
 ### Skye Plus subscription (Telegram Stars)
 
 Public users unlock Skye with a recurring Stars subscription and top up with one-off token packs.
 
-| Key                | Purpose                                                                                       |
-| ------------------ | --------------------------------------------------------------------------------------------- |
-| `billing.currency` | Telegram Stars currency; always `XTR`.                                                        |
-| `billing.title` | Invoice/title name shown to users. Default: `Skye Plus`.                                     |
-| `billing.description` | Invoice description.                                                                         |
-| `billing.subscription_stars` | Price per period in Stars. Default: `1899`.                                          |
+| Key                                   | Purpose                                                                         |
+| ------------------------------------- | ------------------------------------------------------------------------------- |
+| `billing.currency`                    | Telegram Stars currency; always `XTR`.                                          |
+| `billing.title`                       | Invoice/title name shown to users. Default: `Skye Plus`.                        |
+| `billing.description`                 | Invoice description.                                                            |
+| `billing.subscription_stars`          | Price per period in Stars. Default: `1899`.                                     |
 | `billing.subscription_period_seconds` | Recurring period. Bot API 8.0 requires `2592000` (30 days). Default: `2592000`. |
-| `billing.base_quota_tokens` | Tokens granted each renewal. Default: `2000000`.                                         |
-| `billing.packs[]` | One-off token packs. Each has `id`, `name`, `stars`, and `tokens`.                           |
+| `billing.base_quota_tokens`           | Tokens granted each renewal. Default: `2000000`.                                |
+| `billing.packs[]`                     | One-off token packs. Each has `id`, `name`, `stars`, and `tokens`.              |
 
 Packs are spent before the base quota and **expire when the subscription lapses**; they can only be bought while subscribed.
 
 ### Image generation
 
-| Key                | Purpose                                                                               |
-| ------------------ | ------------------------------------------------------------------------------------- |
-| `image.base_url`   | Separate API base URL for image generation. Falls back to `base_url` if empty.        |
-| `image.api_key`    | Separate API key for image generation. Falls back to `openai_key` if empty.          |
-| `image.model`      | Model for image generation/editing. Default: `google/gemini-3.1-flash-image-preview`. |
+| Key              | Purpose                                                                               |
+| ---------------- | ------------------------------------------------------------------------------------- |
+| `image.base_url` | Separate API base URL for image generation. Falls back to `base_url` if empty.        |
+| `image.api_key`  | Separate API key for image generation. Falls back to `openai_key` if empty.           |
+| `image.model`    | Model for image generation/editing. Default: `google/gemini-3.1-flash-image-preview`. |
 
 These are useful if your chat provider doesn't support image generation (e.g., a local Ollama instance) and you want to use OpenRouter or another service just for images.
 
@@ -67,48 +68,48 @@ These are useful if your chat provider doesn't support image generation (e.g., a
 
 Skye supports two interchangeable speech providers — **Yandex SpeechKit** (default) and **OpenRouter**. Both cover speech-to-text (STT) and text-to-speech (TTS). Pick one with `voice.provider`:
 
-| Key                     | Purpose                                                                                          |
-| ----------------------- | ------------------------------------------------------------------------------------------------ |
-| `voice.provider`        | `yandex` (default) or `openrouter`.                                                              |
-| `voice.yc_api_key`      | Yandex Cloud API key for speech recognition and synthesis.                                      |
-| `voice.yc_folder_id`    | Yandex Cloud folder ID.                                                                          |
-| `voice.tts_voice`       | Yandex TTS voice name. Default: `jane`.                                                          |
-| `voice.tts_emotion`     | Yandex TTS emotion: `neutral`, `good`, `evil`, `strict`, or `friendly`.                          |
-| `voice.tts_lang`        | Yandex TTS BCP-47 language tag. Default: `ru-RU`.                                                |
-| `voice.tts_speed`       | Yandex TTS playback speed (0.1 – 3.0). Default: `1.0`.                                          |
-| `voice.openrouter.api_key`   | OpenRouter API key. Falls back to `openai_key` when empty.                                |
-| `voice.openrouter.base_url` | OpenRouter base URL. Default: `https://openrouter.ai/api/v1`.                              |
-| `voice.openrouter.stt_model`  | OpenRouter STT model. Default: `nvidia/parakeet-tdt-0.6b-v3`.                              |
-| `voice.openrouter.tts_model`  | OpenRouter TTS model. Default: `google/gemini-3.1-flash-tts-preview`.                       |
-| `voice.openrouter.tts_voice`  | OpenRouter TTS voice id (model-specific). Default: `alloy`.                                  |
-| `voice.openrouter.tts_format` | OpenRouter TTS response format: `mp3` (default) or `pcm`.                                    |
-| `voice.openrouter.stt_format` | Format to normalize input audio into before STT: `mp3` (default), `wav`, or `oggopus`        |
-| `voice.openrouter.stt_language` | ISO-639-1 language hint for STT (e.g. `ru`). Empty = auto-detect.                         |
-| `voice.openrouter.referer`  | Optional `HTTP-Referer` header for OpenRouter rankings.                                       |
-| `voice.openrouter.title`    | Optional `X-OpenRouter-Title` header.                                                          |
+| Key                             | Purpose                                                                               |
+| ------------------------------- | ------------------------------------------------------------------------------------- |
+| `voice.provider`                | `yandex` (default) or `openrouter`.                                                   |
+| `voice.yc_api_key`              | Yandex Cloud API key for speech recognition and synthesis.                            |
+| `voice.yc_folder_id`            | Yandex Cloud folder ID.                                                               |
+| `voice.tts_voice`               | Yandex TTS voice name. Default: `jane`.                                               |
+| `voice.tts_emotion`             | Yandex TTS emotion: `neutral`, `good`, `evil`, `strict`, or `friendly`.               |
+| `voice.tts_lang`                | Yandex TTS BCP-47 language tag. Default: `ru-RU`.                                     |
+| `voice.tts_speed`               | Yandex TTS playback speed (0.1 – 3.0). Default: `1.0`.                                |
+| `voice.openrouter.api_key`      | OpenRouter API key. Falls back to `openai_key` when empty.                            |
+| `voice.openrouter.base_url`     | OpenRouter base URL. Default: `https://openrouter.ai/api/v1`.                         |
+| `voice.openrouter.stt_model`    | OpenRouter STT model. Default: `nvidia/parakeet-tdt-0.6b-v3`.                         |
+| `voice.openrouter.tts_model`    | OpenRouter TTS model. Default: `google/gemini-3.1-flash-tts-preview`.                 |
+| `voice.openrouter.tts_voice`    | OpenRouter TTS voice id (model-specific). Default: `alloy`.                           |
+| `voice.openrouter.tts_format`   | OpenRouter TTS response format: `mp3` (default) or `pcm`.                             |
+| `voice.openrouter.stt_format`   | Format to normalize input audio into before STT: `mp3` (default), `wav`, or `oggopus` |
+| `voice.openrouter.stt_language` | ISO-639-1 language hint for STT (e.g. `ru`). Empty = auto-detect.                     |
+| `voice.openrouter.referer`      | Optional `HTTP-Referer` header for OpenRouter rankings.                               |
+| `voice.openrouter.title`        | Optional `X-OpenRouter-Title` header.                                                 |
 
 Voice features are **optional**. Leave the relevant keys empty to disable voice. Yandex TTS returns OGG Opus directly; OpenRouter TTS returns MP3/PCM which Skye transcodes to OGG Opus via the bundled `ffmpeg-static` binary so it can be sent as a Telegram voice note.
 
 ### Logging & audit
 
-| Key                | Purpose                                                                              |
-| ------------------ | ------------------------------------------------------------------------------------ |
+| Key                    | Purpose                                                                              |
+| ---------------------- | ------------------------------------------------------------------------------------ |
 | `log_level`            | Pino log level: `trace`, `debug`, `info`, `warn`, `error`, `fatal`. Default: `info`. |
 | `audit.retention_days` | Auto-delete audit logs older than N days. Default: `90`.                             |
 | `audit.max_rows`       | Maximum audit log rows to keep. Default: `100000`.                                   |
 
 ### MCP
 
-| Key                | Purpose                                             |
-| ------------------ | --------------------------------------------------- |
-| `mcp.config_path`  | Path to the MCP config file. Default: `./mcp.json`. |
+| Key               | Purpose                                             |
+| ----------------- | --------------------------------------------------- |
+| `mcp.config_path` | Path to the MCP config file. Default: `./mcp.json`. |
 
 See [MCP Tools](mcp-tools.md) for configuration details.
 
 ### Settings panel
 
-| Key                | Purpose                                                                          |
-| ------------------ | -------------------------------------------------------------------------------- |
+| Key                 | Purpose                                                                          |
+| ------------------- | -------------------------------------------------------------------------------- |
 | `panel.webapp_url`  | Public URL where the Telegram Mini App is accessible. Set this in BotFather too. |
 | `panel.webapp_port` | Port for the panel web server. Default: `3001`.                                  |
 
@@ -116,27 +117,31 @@ See [MCP Tools](mcp-tools.md) for configuration details.
 
 Surfaced via the `/terms`, `/privacy`, `/paysupport`, `/developer_info`, and `/delete_my_data` commands. Override to point at your own hosted documents and support contacts.
 
-| Key                | Purpose                                                                                       |
-| ------------------ | --------------------------------------------------------------------------------------------- |
-| `legal.terms_url`    | Public Terms of Service URL opened by /terms. Default: Skye project ToS.                    |
-| `legal.privacy_url`  | Public Privacy Policy URL opened by /privacy. Default: Skye project privacy policy.         |
-| `legal.support_username` | Telegram handle shown by /paysupport and /developer_info. Default: `@overwaven`.       |
-| `legal.developer_name`   | Developer name shown by /developer_info. Default: `Sergey Gamuylo`.                    |
-| `legal.developer_email`  | Contact email shown by /paysupport and /developer_info. Default: `serg@skye-bot.com`.  |
+| Key                      | Purpose                                                                               |
+| ------------------------ | ------------------------------------------------------------------------------------- |
+| `legal.terms_url`        | Public Terms of Service URL opened by /terms. Default: Skye project ToS.              |
+| `legal.privacy_url`      | Public Privacy Policy URL opened by /privacy. Default: Skye project privacy policy.   |
+| `legal.support_username` | Telegram handle shown by /paysupport and /developer_info. Default: `@overwaven`.      |
+| `legal.developer_name`   | Developer name shown by /developer_info. Default: `Sergey Gamuylo`.                   |
+| `legal.developer_email`  | Contact email shown by /paysupport and /developer_info. Default: `serg@skye-bot.com`. |
 
 ### Vercel Sandbox
 
-| Key                | Purpose                                                                                   |
-| ------------------ | ----------------------------------------------------------------------------------------- |
-| `sandbox.enabled`  | Enable the Vercel Sandbox feature. Default: `true`.                                       |
-| `sandbox.runtime`  | Sandbox runtime. Default: `node24`.                                                       |
-| `sandbox.timeout_ms` | Sandbox VM timeout. Default: `300000`.                                                   |
-| `sandbox.vcpus`    | Sandbox vCPUs. Default: `2`.                                                              |
-| `sandbox.persistent` | Keep sandbox filesystem between sessions. Default: `false`.                              |
-| `sandbox.command_timeout_ms` | Per-command timeout. Default: `60000`.                                           |
-| `sandbox.vercel_access_token` | Vercel API token. Can be overridden by `VERCEL_OIDC_TOKEN` env var on Vercel.     |
-| `sandbox.vercel_project_id`   | Vercel project ID.                                                                |
-| `sandbox.vercel_team_id`      | Vercel team ID.                                                                   |
+| Key                                          | Purpose                                                                       |
+| -------------------------------------------- | ----------------------------------------------------------------------------- |
+| `sandbox.enabled`                            | Enable the Vercel Sandbox feature. Default: `true`.                           |
+| `sandbox.runtime`                            | Sandbox runtime. Default: `node24`.                                           |
+| `sandbox.timeout_ms`                         | Sandbox VM timeout. Default: `300000`.                                        |
+| `sandbox.vcpus`                              | Sandbox vCPUs. Default: `2`.                                                  |
+| `sandbox.persistent`                         | Keep sandbox filesystem between sessions. Default: `false`.                   |
+| `sandbox.command_timeout_ms`                 | Per-command timeout. Default: `60000`.                                        |
+| `sandbox.network_policy`                     | Network policy: `deny-all` (default) or explicit `allow-all`.                 |
+| `sandbox.max_output_chars`                   | Maximum stdout/stderr returned from one command. Default: `64000`.            |
+| `sandbox.max_file_bytes`                     | Maximum file size accepted by sandbox read/write. Default: `1000000`.         |
+| `sandbox.max_args` / `sandbox.max_arg_chars` | Command argument count and size limits.                                       |
+| `sandbox.vercel_access_token`                | Vercel API token. Can be overridden by `VERCEL_OIDC_TOKEN` env var on Vercel. |
+| `sandbox.vercel_project_id`                  | Vercel project ID.                                                            |
+| `sandbox.vercel_team_id`                     | Vercel team ID.                                                               |
 
 ## Access control
 

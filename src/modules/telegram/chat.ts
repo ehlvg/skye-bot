@@ -179,7 +179,7 @@ export async function runChatLoop(
       let failed = false;
       try {
         if (isMcp) {
-          result = await deps.mcp.execute(fc.name, args);
+          result = await deps.mcp.execute(fc.name, args, tenant.userId);
         } else {
           const tool = builtinMap.get(fc.name);
           result = tool

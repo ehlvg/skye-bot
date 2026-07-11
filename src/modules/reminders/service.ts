@@ -1,4 +1,5 @@
 import { getDb } from "../../core/db.js";
+import { randomUUID } from "node:crypto";
 
 export type RepeatInterval = "none" | "hourly" | "daily" | "weekly" | "monthly";
 
@@ -48,7 +49,7 @@ function rowToReminder(row: ReminderRow): Reminder {
 }
 
 function genId(): string {
-  return `rem_${Date.now().toString(36)}${Math.random().toString(36).slice(2, 7)}`;
+  return `rem_${randomUUID()}`;
 }
 
 export function createReminder(
@@ -140,36 +141,40 @@ export function deleteReminder(id: string, chatId: number): boolean {
 
 export function getReminder(id: string, chatId: number): Reminder | null {
   const row = getDb()
-    .prepare<[string, number], ReminderRow>(
-      "SELECT * FROM reminders WHERE id = ? AND chat_id = ? AND active = 1"
-    )
+    .prepare<
+      [string, number],
+      ReminderRow
+    >("SELECT * FROM reminders WHERE id = ? AND chat_id = ? AND active = 1")
     .get(id, chatId);
   return row ? rowToReminder(row) : null;
 }
 
 export function listReminders(chatId: number): Reminder[] {
   const rows = getDb()
-    .prepare<[number], ReminderRow>(
-      "SELECT * FROM reminders WHERE chat_id = ? AND active = 1 ORDER BY fire_at ASC"
-    )
+    .prepare<
+      [number],
+      ReminderRow
+    >("SELECT * FROM reminders WHERE chat_id = ? AND active = 1 ORDER BY fire_at ASC")
     .all(chatId);
   return rows.map(rowToReminder);
 }
 
 export function listRemindersByUser(userId: number): Reminder[] {
   const rows = getDb()
-    .prepare<[number], ReminderRow>(
-      "SELECT * FROM reminders WHERE user_id = ? AND active = 1 ORDER BY fire_at ASC"
-    )
+    .prepare<
+      [number],
+      ReminderRow
+    >("SELECT * FROM reminders WHERE user_id = ? AND active = 1 ORDER BY fire_at ASC")
     .all(userId);
   return rows.map(rowToReminder);
 }
 
 export function dueReminders(now: Date = new Date()): Reminder[] {
   const rows = getDb()
-    .prepare<[string], ReminderRow>(
-      "SELECT * FROM reminders WHERE active = 1 AND fire_at <= ? ORDER BY fire_at ASC"
-    )
+    .prepare<
+      [string],
+      ReminderRow
+    >("SELECT * FROM reminders WHERE active = 1 AND fire_at <= ? ORDER BY fire_at ASC")
     .all(now.toISOString());
   return rows.map(rowToReminder);
 }
@@ -221,9 +226,10 @@ export function deactivateReminder(id: string): void {
 
 export function countActiveRemindersByUser(userId: number): number {
   const row = getDb()
-    .prepare<[number], { count: number }>(
-      "SELECT COUNT(*) AS count FROM reminders WHERE user_id = ? AND active = 1"
-    )
+    .prepare<
+      [number],
+      { count: number }
+    >("SELECT COUNT(*) AS count FROM reminders WHERE user_id = ? AND active = 1")
     .get(userId);
   return row?.count ?? 0;
 }

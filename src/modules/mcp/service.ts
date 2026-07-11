@@ -385,14 +385,17 @@ export class McpService {
     return false;
   }
 
-  async execute(toolName: string, args: Record<string, unknown>): Promise<string> {
+  async execute(toolName: string, args: Record<string, unknown>, userId?: number): Promise<string> {
     let mapping = this.globalToolMap.get(toolName);
-    if (!mapping) {
-      for (const map of this.userToolMaps.values()) {
-        mapping = map.get(toolName);
-        if (mapping) break;
+    if (!mapping && userId != null) {
+      for (const [key, map] of this.userToolMaps) {
+        if (key.startsWith(`${userId}:`)) {
+          mapping = map.get(toolName);
+          if (mapping) break;
+        }
       }
     }
+    if (mapping?.scope === "user" && mapping.userId !== userId) return "Unknown tool";
     if (!mapping) return `Unknown tool: ${toolName}`;
 
     try {
