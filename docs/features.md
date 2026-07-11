@@ -11,13 +11,14 @@ Skye supports several interaction modes and commands. This page covers what you 
 | `/image <prompt>` | Generates an image from your description. Example: `/image a cat on the moon`.                            | No      |
 | `/voice`          | Toggles voice reply mode on/off. When on, Skye speaks its responses as voice notes.                       | Yes     |
 | `/forget`         | Clears all long-term memories for the current chat. Conversation history is not affected.                 | No      |
+| `/memories`       | Lists active memories with their category and expiration information.                                     | No      |
 | `/status`         | Shows current model, vision, voice, memory, context, and MCP capability status.                           | Yes     |
 | `/catchup`        | Summarizes the current group context from the rolling chat summary and recent log.                        | Yes     |
-| `/terms`          | Opens the Terms of Service.                                                                                | Yes     |
-| `/privacy`        | Opens the Privacy Policy.                                                                                  | Yes     |
-| `/paysupport`     | Shows payment support contact details (Telegram + email).                                                  | Yes     |
-| `/developer_info` | Shows the developer's name and contact details.                                                            | Yes     |
-| `/delete_my_data` | Permanently erases all data Skye stores about you (private chats only, with confirmation).                 | Yes     |
+| `/terms`          | Opens the Terms of Service.                                                                               | Yes     |
+| `/privacy`        | Opens the Privacy Policy.                                                                                 | Yes     |
+| `/paysupport`     | Shows payment support contact details (Telegram + email).                                                 | Yes     |
+| `/developer_info` | Shows the developer's name and contact details.                                                           | Yes     |
+| `/delete_my_data` | Permanently erases all data Skye stores about you (private chats only, with confirmation).                | Yes     |
 
 ## Interactions
 
@@ -70,12 +71,24 @@ Toggle voice replies with `/voice`. When active, Skye synthesizes its text respo
 
 ## Long-term memory
 
-Skye can remember things across conversations. Two built-in tools are available to the LLM:
+Skye can remember things across conversations. Memory is scoped to a chat and uses four categories:
+
+- `preference` — stable user preferences; no automatic expiration.
+- `fact` — stable facts; no automatic expiration.
+- `task` — short-lived tasks; expires after 30 days by default.
+- `project` — project context; expires after 180 days by default.
+
+The memory service searches relevant records for the current request and sends only those results to the model. The model can also call `search_memory` explicitly. Expired records are archived automatically when the chat uses memory, and are excluded from normal lists and searches.
+
+When a new memory is sufficiently similar to an existing active memory in the same category, Skye updates the existing record instead of creating a duplicate.
+
+Three built-in tools are available to the LLM:
 
 - **`save_memory`** — Stores a fact, preference, or note. Skye uses this automatically when you tell it something worth remembering, or you can ask it directly: "Remember that my favorite color is blue."
+- **`search_memory`** — Searches relevant memories by keywords and can filter by category.
 - **`delete_memory`** — Removes a specific memory by its ID.
 
-Memories are stored per chat in the database and are injected into every conversation. Use `/forget` to wipe all memories for the current chat. You can also view and delete individual memories from the Settings panel.
+Memories are stored per chat. Use `/forget` to wipe all memories for the current chat. You can view, delete, and import/export memories from the Settings panel. Imports are limited to authorized chats and pass through the same validation and duplicate-merging rules as normal saves.
 
 ## Group chat features
 

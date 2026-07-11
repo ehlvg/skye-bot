@@ -1,6 +1,19 @@
 import type { ModuleContext, PanelRoute } from "../../core/module.js";
 import type { PanelRequest } from "../panel/index.js";
 import { getDb } from "../../core/db.js";
+import { MEMORY_CATEGORIES, memoryService, type MemoryCategory } from "./service.js";
+
+function authorizedChat(userId: number, chatId: number): boolean {
+  return Boolean(
+    getDb()
+      .prepare("SELECT 1 FROM request_logs WHERE user_id = ? AND chat_id = ? LIMIT 1")
+      .get(userId, chatId)
+  );
+}
+
+function validCategory(value: unknown): value is MemoryCategory {
+  return MEMORY_CATEGORIES.includes(value as MemoryCategory);
+}
 
 export function buildRoutes(ctx: ModuleContext): PanelRoute[] {
   void ctx;
@@ -10,16 +23,89 @@ export function buildRoutes(ctx: ModuleContext): PanelRoute[] {
       path: "/memories",
       handler: (req, res) => {
         const userId = (req as PanelRequest).tenant.userId!;
-        // Cross-reference request_logs to find chats this user participated in.
         const rows = getDb()
-          .prepare<[number], { id: string; content: string; createdAt: string; chatId: number }>(
-            `SELECT m.id, m.content, m.created_at AS createdAt, m.chat_id AS chatId
-             FROM memories m
-             WHERE m.chat_id IN (SELECT DISTINCT chat_id FROM request_logs WHERE user_id = ?)
-             ORDER BY m.created_at DESC LIMIT 100`
-          )
+          .prepare<
+            [number],
+            { chatId: number }
+          >("SELECT DISTINCT chat_id AS chatId FROM request_logs WHERE user_id = ?")
           .all(userId);
-        res.json(rows);
+        const memories = rows.flatMap(({ chatId }) => memoryService.export(chatId));
+        memories.sort((a, b) =>
+          (b.updatedAt ?? b.createdAt).localeCompare(a.updatedAt ?? a.createdAt)
+        );
+        res.json(memories.slice(0, 100));
+      },
+    },
+    {
+      method: "get",
+      path: "/memories/export",
+      handler: (req, res) => {
+        const userId = (req as PanelRequest).tenant.userId!;
+        const rawChatId = req.query.chatId;
+        const chatIds =
+          rawChatId === undefined
+            ? getDb()
+                .prepare<[number], { chatId: number }>(
+                  "SELECT DISTINCT chat_id AS chatId FROM request_logs WHERE user_id = ?"
+                )
+                .all(userId)
+                .map((row) => row.chatId)
+            : [Number(rawChatId)];
+        if (
+          chatIds.some((chatId) => !Number.isSafeInteger(chatId) || !authorizedChat(userId, chatId))
+        ) {
+          res.status(404).json({ error: "Memories not found" });
+          return;
+        }
+        const memories = chatIds.flatMap((chatId) => memoryService.export(chatId));
+        res.setHeader("Content-Disposition", `attachment; filename="skye-memory-export.json"`);
+        res.json({ version: 1, exportedAt: new Date().toISOString(), memories });
+      },
+    },
+    {
+      method: "post",
+      path: "/memories/import",
+      handler: async (req, res) => {
+        const userId = (req as PanelRequest).tenant.userId!;
+        const body = req.body as { chatId?: unknown; memories?: unknown };
+        const chatId = Number(body.chatId);
+        if (!Number.isSafeInteger(chatId) || !authorizedChat(userId, chatId)) {
+          res.status(404).json({ error: "Memories not found" });
+          return;
+        }
+        if (
+          !Array.isArray(body.memories) ||
+          body.memories.length === 0 ||
+          body.memories.length > 1_000
+        ) {
+          res.status(400).json({ error: "Import must contain between 1 and 1000 memories" });
+          return;
+        }
+        try {
+          const records = body.memories.map((raw) => {
+            const record = raw as { content?: unknown; category?: unknown; expiresAt?: unknown };
+            if (
+              typeof record.content !== "string" ||
+              (record.category !== undefined && !validCategory(record.category))
+            ) {
+              throw new Error("Each memory needs valid content and category");
+            }
+            return {
+              content: record.content,
+              category: record.category as MemoryCategory | undefined,
+              expiresAt:
+                record.expiresAt === null || typeof record.expiresAt === "string"
+                  ? record.expiresAt
+                  : undefined,
+            };
+          });
+          const result = await memoryService.import(chatId, records);
+          res.json({ ok: true, ...result });
+        } catch (error) {
+          res
+            .status(400)
+            .json({ error: error instanceof Error ? error.message : "Invalid memory import" });
+        }
       },
     },
     {
@@ -28,18 +114,12 @@ export function buildRoutes(ctx: ModuleContext): PanelRoute[] {
       handler: async (req, res) => {
         const userId = (req as PanelRequest).tenant.userId!;
         const chatId = Number(req.params.chatId);
-        const id = String(req.params.id);
-        if (!Number.isSafeInteger(chatId)) {
-          res.status(400).json({ error: "Invalid chat ID" });
+        if (!Number.isSafeInteger(chatId) || !authorizedChat(userId, chatId)) {
+          res.status(404).json({ error: "Memory not found" });
           return;
         }
-        const result = getDb()
-          .prepare(
-            `DELETE FROM memories WHERE chat_id = ? AND id = ?
-             AND EXISTS (SELECT 1 FROM request_logs WHERE user_id = ? AND chat_id = memories.chat_id)`
-          )
-          .run(chatId, id, userId);
-        if (result.changes === 0) {
+        const deleted = await memoryService.delete(chatId, String(req.params.id));
+        if (!deleted) {
           res.status(404).json({ error: "Memory not found" });
           return;
         }
@@ -52,18 +132,11 @@ export function buildRoutes(ctx: ModuleContext): PanelRoute[] {
       handler: async (req, res) => {
         const userId = (req as PanelRequest).tenant.userId!;
         const chatId = Number(req.params.chatId);
-        if (!Number.isSafeInteger(chatId)) {
-          res.status(400).json({ error: "Invalid chat ID" });
-          return;
-        }
-        const authorized = getDb()
-          .prepare(`SELECT 1 FROM request_logs WHERE user_id = ? AND chat_id = ? LIMIT 1`)
-          .get(userId, chatId);
-        if (!authorized) {
+        if (!Number.isSafeInteger(chatId) || !authorizedChat(userId, chatId)) {
           res.status(404).json({ error: "Memories not found" });
           return;
         }
-        getDb().prepare(`DELETE FROM memories WHERE chat_id = ?`).run(chatId);
+        await memoryService.clear(chatId);
         res.json({ ok: true });
       },
     },

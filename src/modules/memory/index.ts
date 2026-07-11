@@ -9,6 +9,9 @@ import {
   getMemories,
   memoryService,
   type MemoryService,
+  searchMemories,
+  MEMORY_CATEGORIES,
+  type MemoryCategory,
 } from "./service.js";
 
 declare module "../../core/module.js" {
@@ -21,7 +24,7 @@ const memoryTools: ToolDefinition[] = [
   {
     name: "save_memory",
     description:
-      "Save a piece of information to long-term memory for this chat. Use this when the user asks you to remember something, or when you encounter important facts worth preserving (names, preferences, project details, etc.).",
+      "Save information to long-term memory. Categorize it as preference (stable user preference), fact (stable fact), task (expires after 30 days), or project (expires after 180 days). Similar memories are merged automatically.",
     parameters: {
       type: "object",
       properties: {
@@ -29,13 +32,52 @@ const memoryTools: ToolDefinition[] = [
           type: "string",
           description: "The information to remember, written as a clear factual statement.",
         },
+        category: {
+          type: "string",
+          enum: [...MEMORY_CATEGORIES],
+          description: "Memory category: preference, fact, task, or project.",
+        },
+        expires_at: {
+          type: ["string", "null"],
+          description:
+            "Optional ISO 8601 expiration date. Defaults to 30 days for tasks, 180 days for projects, and never for preferences/facts.",
+        },
       },
       required: ["content"],
     },
     execute: async (args, tenant) => {
       const content = String(args.content ?? "");
-      const entry = await addMemory(tenant.chatId, content);
-      return `Memory saved with ID ${entry.id}.`;
+      const category = MEMORY_CATEGORIES.includes(args.category as MemoryCategory)
+        ? (args.category as MemoryCategory)
+        : "fact";
+      const expiresAt =
+        args.expires_at === null || typeof args.expires_at === "string"
+          ? args.expires_at
+          : undefined;
+      const entry = await addMemory(tenant.chatId, content, category, expiresAt);
+      return `${entry.merged ? "Memory merged" : "Memory saved"} with ID ${entry.id}.`;
+    },
+  },
+  {
+    name: "search_memory",
+    description:
+      "Search relevant, non-expired long-term memories for this chat instead of loading every memory.",
+    parameters: {
+      type: "object",
+      properties: {
+        query: { type: "string", description: "Keywords or a short question to search for." },
+        category: { type: "string", enum: [...MEMORY_CATEGORIES] },
+      },
+      required: ["query"],
+    },
+    execute: async (args, tenant) => {
+      const category = MEMORY_CATEGORIES.includes(args.category as MemoryCategory)
+        ? (args.category as MemoryCategory)
+        : undefined;
+      const results = searchMemories(tenant.chatId, String(args.query ?? ""), { category });
+      return results.length
+        ? results.map((entry) => `[${entry.id}] (${entry.category}) ${entry.content}`).join("\n")
+        : "No matching memories found.";
     },
   },
   {
@@ -85,13 +127,16 @@ export const memoryModule: SkyeModule = {
                 timeStyle: "short",
               });
               const content = m.content.replace(/\|/g, "\\|").slice(0, 80);
-              return `| \`${m.id}\` | ${local} | ${content} |`;
+              const expiry = m.expiresAt
+                ? new Date(m.expiresAt).toLocaleDateString("en-US")
+                : "never";
+              return `| \`${m.id}\` | ${m.category} | ${local} | ${expiry} | ${content} |`;
             });
             const md = [
               `## Memories (${memories.length})`,
               "",
-              "| ID | Created | Content |",
-              "|---|---|---|",
+              "| ID | Category | Created | Expires | Content |",
+              "|---|---|---|---|---|",
               ...rows,
               "",
               "_Use /forget to clear all memories._",

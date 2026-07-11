@@ -15,4 +15,20 @@ export const migrations: Migration[] = [
       `);
     },
   },
+  {
+    id: "002-memory-management",
+    up: (db) => {
+      db.exec(`
+        ALTER TABLE memories ADD COLUMN category TEXT NOT NULL DEFAULT 'fact';
+        ALTER TABLE memories ADD COLUMN updated_at TEXT NOT NULL DEFAULT '';
+        ALTER TABLE memories ADD COLUMN last_used_at TEXT;
+        ALTER TABLE memories ADD COLUMN expires_at TEXT;
+        ALTER TABLE memories ADD COLUMN archived_at TEXT;
+        UPDATE memories SET updated_at = created_at WHERE updated_at = '';
+        CREATE INDEX IF NOT EXISTS idx_memories_active
+          ON memories(chat_id, category, expires_at, archived_at);
+        CREATE INDEX IF NOT EXISTS idx_memories_updated ON memories(chat_id, updated_at);
+      `);
+    },
+  },
 ];

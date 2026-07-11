@@ -5,7 +5,11 @@ import {
   deleteMemory,
   clearMemories,
   executeMemoryTool,
+  searchMemories,
+  importMemories,
+  exportMemories,
 } from "../modules/memory/service.js";
+import { getDb } from "../core/db.js";
 
 const CHAT = 42;
 
@@ -107,5 +111,70 @@ describe("executeMemoryTool", () => {
       arguments: "{}",
     });
     expect(result).toBe("Unknown tool: fly_spaceship");
+  });
+});
+
+describe("memory management", () => {
+  test("stores categories and applies category expiry defaults", async () => {
+    const task = await addMemory(CHAT, "Finish the release checklist", "task");
+    const preference = await addMemory(CHAT, "User prefers concise answers", "preference");
+    expect(task.category).toBe("task");
+    expect(task.expiresAt).toBeTruthy();
+    expect(preference.category).toBe("preference");
+    expect(preference.expiresAt).toBeNull();
+  });
+
+  test("merges highly similar memories instead of creating duplicates", async () => {
+    const first = await addMemory(CHAT, "User likes black coffee", "preference");
+    const second = await addMemory(CHAT, "User likes black coffee", "preference");
+    expect(second.id).toBe(first.id);
+    expect(second.merged).toBe(true);
+    expect(getMemories(CHAT)).toHaveLength(1);
+  });
+
+  test("search returns relevant active memories and records usage", async () => {
+    await addMemory(CHAT, "The project uses TypeScript", "project");
+    await addMemory(CHAT, "User likes tea", "preference");
+    const results = searchMemories(CHAT, "project TypeScript");
+    expect(results).toHaveLength(1);
+    expect(results[0].content).toContain("TypeScript");
+    expect(results[0].lastUsedAt).toBeTruthy();
+  });
+
+  test("search_memory without a category searches across all categories", async () => {
+    await addMemory(CHAT, "The launch project is called Aurora", "project");
+    const result = await executeMemoryTool(CHAT, {
+      name: "search_memory",
+      arguments: JSON.stringify({ query: "Aurora launch" }),
+    });
+    expect(result).toContain("Aurora");
+  });
+
+  test("rejects invalid custom expiration dates", async () => {
+    await expect(addMemory(CHAT, "Invalid expiry", "fact", "not-a-date")).rejects.toThrow(
+      "valid date"
+    );
+  });
+
+  test("archives expired memories automatically", async () => {
+    const entry = await addMemory(CHAT, "Old task", "task");
+    getDb()
+      .prepare("UPDATE memories SET expires_at = ? WHERE id = ?")
+      .run("2000-01-01T00:00:00.000Z", entry.id);
+    expect(getMemories(CHAT)).toHaveLength(0);
+    const archived = getDb()
+      .prepare<
+        { id: string },
+        { archivedAt: string | null }
+      >("SELECT archived_at AS archivedAt FROM memories WHERE id = @id")
+      .get({ id: entry.id });
+    expect(archived?.archivedAt).toBeTruthy();
+  });
+
+  test("imports through the same validation and exports a portable record set", async () => {
+    const result = await importMemories(CHAT, [{ content: "Imported fact", category: "fact" }]);
+    expect(result.imported).toBe(1);
+    const exported = exportMemories(CHAT);
+    expect(exported.some((entry) => entry.content === "Imported fact")).toBe(true);
   });
 });
