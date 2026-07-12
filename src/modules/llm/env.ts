@@ -44,7 +44,7 @@ export const llmEnvSchema = z.object({
   MODELS: modelsArray.default(defaultModels),
   /** Masked id of the model new subscribers start on. */
   DEFAULT_MODEL_ID: z.string().default("sydney"),
-  MAX_COMPLETION_TOKENS: z.coerce.number().int().positive().max(10_000).default(500),
+  MAX_COMPLETION_TOKENS: z.coerce.number().int().positive().default(500),
   // Set to "true" to use Chat Completions API instead of Responses API.
   USE_CHAT_COMPLETIONS: z.coerce.boolean().default(false),
   // Image generation/editing provider — separate from chat. Defaults to empty,

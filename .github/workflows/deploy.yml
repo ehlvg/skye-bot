@@ -56,6 +56,7 @@ jobs:
           ssh vilnius << 'EOF'
             set -euo pipefail
             cd /root/skye-bot
+            git switch main
             git pull --ff-only origin main
             docker compose up --build -d
             docker image prune -f
