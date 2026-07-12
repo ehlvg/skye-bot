@@ -163,12 +163,15 @@ export function buildSystemPrompt(
 
 ## Memory
 
-You have access to long-term memory tools. Use save_memory to remember important information when asked or when you encounter notable facts (names, preferences, project details). Use delete_memory with the memory ID to forget something when asked.`;
+You have access to long-term memory tools. Use search_memory when you need a memory not shown below. Use save_memory to remember important information and always choose a category: preference, fact, task, or project. Tasks expire after 30 days and projects after 180 days; similar memories are merged automatically. Use delete_memory with the memory ID to forget something when asked.`;
 
   if (memories.length > 0) {
     content += "\n\nSaved memories for this chat:";
     for (const m of memories) {
-      content += `\n- [${m.id}] ${m.content}`;
+      const metadata = m.category
+        ? ` (${m.category}${m.expiresAt ? `; expires ${m.expiresAt}` : "; permanent"})`
+        : "";
+      content += `\n- [${m.id}]${metadata} ${m.content}`;
     }
   }
 

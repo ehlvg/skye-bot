@@ -159,7 +159,12 @@ export class ProactiveService {
     recent: GroupMessage[],
     modelId?: string
   ): Promise<ProactiveDecision | null> {
-    const memories = this.deps.memory.list(chatId);
+    const memoryQuery = recent
+      .slice(-3)
+      .map((message) => message.content)
+      .join(" ")
+      .slice(0, 500);
+    const memories = this.deps.memory.search(chatId, memoryQuery, { limit: 12 });
     const memoryLines = memories.length
       ? memories.map((m) => `- ${m.content}`).join("\n")
       : "(none)";
@@ -196,7 +201,11 @@ Respond ONLY with a single JSON object, nothing else. Shape:
 If you choose not to react, return: {"react": false, "kind": "none"}`;
 
     try {
-      const res = await this.deps.llm.ask(instructions, "Decide and respond with JSON only.", modelId);
+      const res = await this.deps.llm.ask(
+        instructions,
+        "Decide and respond with JSON only.",
+        modelId
+      );
       const text = res.output_text ?? "";
       const json = this.parseDecisionJson(text);
       if (!json) return null;

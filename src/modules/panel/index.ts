@@ -25,7 +25,8 @@ export const panelModule: SkyeModule = {
     const webappPort = Number(ctx.config.PANEL_WEBAPP_PORT);
 
     const app: Express = extra.app ?? express();
-    app.use(express.json());
+    // Import accepts up to 1000 memories, each capped by the memory service.
+    app.use(express.json({ limit: "3mb" }));
 
     // Auth middleware — populates req.tenant from validated initData.
     app.use("/api", (req: Request, res: Response, next: NextFunction) => {

@@ -51,7 +51,8 @@ export async function runChatLoop(
   onChunk?: (snapshot: string) => void,
   onToolCalls?: (calls: ToolCallRecord[]) => void
 ): Promise<string> {
-  const memories = deps.memory.list(tenant.chatId);
+  const memoryQuery = extractInputText(input);
+  const memories = deps.memory.search(tenant.chatId, memoryQuery, { limit: 12 });
   const chatContext = deps.chatLog.context(tenant.chatId);
   const mcpTools = deps.allowMcpTools === false ? [] : deps.mcp.toolsFor(tenant.userId);
   const mcpToolNames = mcpTools.map((t) => t.name);
@@ -216,6 +217,19 @@ export async function runChatLoop(
     iterations++;
   }
   return "";
+}
+
+function extractInputText(input: ResponseInputItem[]): string {
+  const lastItem = input[input.length - 1];
+  if (lastItem?.type !== "message") return "";
+  const content = (lastItem as { content?: unknown }).content;
+  if (typeof content === "string") return content.slice(0, 500);
+  if (!Array.isArray(content)) return "";
+  return (content as { type?: string; text?: string }[])
+    .filter((part) => part.type === "input_text")
+    .map((part) => part.text ?? "")
+    .join(" ")
+    .slice(0, 500);
 }
 
 function extractFinalText(response: { output_text?: string; output: unknown[] }): string {

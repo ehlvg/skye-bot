@@ -51,6 +51,16 @@ export interface Memory {
   content: string;
   createdAt: string;
   chatId: number;
+  category: "preference" | "fact" | "task" | "project";
+  updatedAt?: string;
+  expiresAt?: string | null;
+  archivedAt?: string | null;
+}
+
+export interface MemoryExport {
+  version: number;
+  exportedAt: string;
+  memories: Memory[];
 }
 
 export interface Stats {
@@ -137,6 +147,13 @@ export const api = {
   deleteMcpServer: (id: number) => request<{ ok: true }>(`/mcp/${id}`, { method: "DELETE" }),
 
   getMemories: () => request<Memory[]>("/memories"),
+  exportMemories: (chatId?: number) =>
+    request<MemoryExport>(`/memories/export${chatId === undefined ? "" : `?chatId=${chatId}`}`),
+  importMemories: (chatId: number, memories: unknown[]) =>
+    request<{ ok: true; imported: number; merged: number }>("/memories/import", {
+      method: "POST",
+      body: JSON.stringify({ chatId, memories }),
+    }),
   deleteMemory: (chatId: number, id: string) =>
     request<{ ok: true }>(`/memories/${chatId}/${encodeURIComponent(id)}`, { method: "DELETE" }),
   clearMemoriesForChat: (chatId: number) =>
