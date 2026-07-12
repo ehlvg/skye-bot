@@ -55,12 +55,8 @@ jobs:
         run: |
           ssh vilnius << 'EOF'
             set -euo pipefail
-            cd /root/skye-bot
+            cd "${{ secrets.DEPLOY_PATH }}"
             git switch main
             git pull --ff-only origin main
-            docker compose up --build -d
-            docker image prune -f
-            sleep 5
-            docker compose ps
-            docker compose logs --tail=20
+            bash scripts/deploy-pm2.sh
           EOF
