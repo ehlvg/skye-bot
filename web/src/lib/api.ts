@@ -71,6 +71,13 @@ export interface Stats {
   errorRate: number;
 }
 
+export interface Monitoring {
+  status: "ok";
+  startedAt: string;
+  uptimeSeconds: number;
+  logs: { out: string[]; error: string[] };
+}
+
 export interface BillingAccount {
   modelId: string;
   subStatus: "none" | "active" | "cancelled";
@@ -161,6 +168,7 @@ export const api = {
     request<{ ok: true }>(`/memories/${chatId}`, { method: "DELETE" }),
 
   getStats: () => request<Stats>("/stats"),
+  getMonitoring: () => request<Monitoring>("/monitoring"),
 
   getBillingAccount: () => request<BillingAccount>("/billing/account"),
   getModels: () => request<ModelsResponse>("/billing/models"),

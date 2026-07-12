@@ -21,6 +21,7 @@ import { legalModule } from "./modules/legal/index.js";
 import { llmModule } from "./modules/llm/index.js";
 import { mcpModule } from "./modules/mcp/index.js";
 import { memoryModule } from "./modules/memory/index.js";
+import { monitoringModule } from "./modules/monitoring/index.js";
 import { panelModule } from "./modules/panel/index.js";
 import { proactiveModule } from "./modules/proactive/index.js";
 import { remindersModule } from "./modules/reminders/index.js";
@@ -50,6 +51,7 @@ const modules: readonly SkyeModule[] = [
   chatLogModule,
   speechModule,
   auditModule,
+  monitoringModule,
   mcpModule,
   sandboxModule,
   proactiveModule,

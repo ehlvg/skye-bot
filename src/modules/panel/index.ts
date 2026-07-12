@@ -28,6 +28,10 @@ export const panelModule: SkyeModule = {
     // Import accepts up to 1000 memories, each capped by the memory service.
     app.use(express.json({ limit: "3mb" }));
 
+    app.get("/healthz", (_req: Request, res: Response) => {
+      res.json({ status: "ok", uptimeSeconds: Math.floor(process.uptime()) });
+    });
+
     // Auth middleware — populates req.tenant from validated initData.
     app.use("/api", (req: Request, res: Response, next: NextFunction) => {
       const initData = req.headers["x-telegram-init-data"];
