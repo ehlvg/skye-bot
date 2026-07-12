@@ -132,6 +132,15 @@ describe("memory management", () => {
     expect(getMemories(CHAT)).toHaveLength(1);
   });
 
+  test("preserves the existing expiration when a merge omits expiresAt", async () => {
+    const expiry = "2030-01-01T00:00:00.000Z";
+    const first = await addMemory(CHAT, "The release deadline is January 1", "fact", expiry);
+    const second = await addMemory(CHAT, "The release deadline is January 1", "fact");
+    expect(second.id).toBe(first.id);
+    expect(second.expiresAt).toBe(expiry);
+    expect(getMemories(CHAT)[0].expiresAt).toBe(expiry);
+  });
+
   test("search returns relevant active memories and records usage", async () => {
     await addMemory(CHAT, "The project uses TypeScript", "project");
     await addMemory(CHAT, "User likes tea", "preference");
@@ -176,5 +185,15 @@ describe("memory management", () => {
     expect(result.imported).toBe(1);
     const exported = exportMemories(CHAT);
     expect(exported.some((entry) => entry.content === "Imported fact")).toBe(true);
+  });
+
+  test("rolls back the entire import when a later record is invalid", async () => {
+    await expect(
+      importMemories(CHAT, [
+        { content: "This record must not remain", category: "fact" },
+        { content: "Invalid expiry", category: "fact", expiresAt: "not-a-date" },
+      ])
+    ).rejects.toThrow("valid date");
+    expect(getMemories(CHAT)).toHaveLength(0);
   });
 });

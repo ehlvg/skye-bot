@@ -186,12 +186,12 @@ function rowContainsPhrase(query: string, content: string): boolean {
   return content.toLocaleLowerCase().includes(query.toLocaleLowerCase());
 }
 
-export async function addMemory(
+function addMemorySync(
   chatId: number,
   rawContent: string,
   category: MemoryCategory = "fact",
   expiresAt?: string | null
-): Promise<MemoryEntry> {
+): MemoryEntry {
   const content = normalizeContent(rawContent);
   const now = new Date();
   const createdAt = now.toISOString();
@@ -214,7 +214,8 @@ export async function addMemory(
 
   if (existing) {
     const mergedContent = existing.content.length >= content.length ? existing.content : content;
-    const mergedExpiry = expiryFor(validCategory, now, expiresAt);
+    const mergedExpiry =
+      expiresAt === undefined ? existing.expiresAt : expiryFor(validCategory, now, expiresAt);
     getDb()
       .prepare(
         "UPDATE memories SET content = ?, updated_at = ?, last_used_at = ?, expires_at = ? WHERE chat_id = ? AND id = ?"
@@ -258,6 +259,15 @@ export async function addMemory(
   return entry;
 }
 
+export async function addMemory(
+  chatId: number,
+  rawContent: string,
+  category: MemoryCategory = "fact",
+  expiresAt?: string | null
+): Promise<MemoryEntry> {
+  return addMemorySync(chatId, rawContent, category, expiresAt);
+}
+
 export interface ImportedMemory extends MemoryInput {
   chatId?: number;
 }
@@ -270,16 +280,22 @@ export async function importMemories(
     throw new Error("Import must contain between 1 and 1000 memories");
   let imported = 0;
   let merged = 0;
-  for (const record of records) {
-    const entry = await addMemory(
-      chatId,
-      record.content,
-      categoryOf(record.category),
-      record.expiresAt
-    );
-    if (entry.merged) merged++;
-    else imported++;
-  }
+
+  // addMemorySync is deliberately used inside the transaction: an async
+  // function would turn a synchronous validation error into a rejected
+  // promise, which better-sqlite3 could not roll back reliably.
+  getDb().transaction(() => {
+    for (const record of records) {
+      const entry = addMemorySync(
+        chatId,
+        record.content,
+        categoryOf(record.category),
+        record.expiresAt
+      );
+      if (entry.merged) merged++;
+      else imported++;
+    }
+  })();
   return { imported, merged };
 }
 
