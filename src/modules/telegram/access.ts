@@ -59,3 +59,8 @@ export function checkAccess(deps: AccessDeps, chatId: number, userId?: number): 
 export function hasAccess(deps: AccessDeps, chatId: number, userId?: number): boolean {
   return checkAccess(deps, chatId, userId).ok;
 }
+
+export function hasMeteredAccess(deps: AccessDeps, userId?: number): boolean {
+  if (!userId) return false;
+  return deps.billing.hasActiveSub(deps.billing.getAccount(userId));
+}

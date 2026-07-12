@@ -21,7 +21,7 @@ import type { ChannelService } from "../channel/service.js";
 import type { EventBus } from "../../core/events.js";
 import type { Contributions, TelegramCommand, ToolDefinition } from "../../core/module.js";
 import { tenantFromGrammy, threadKey, type TenantContext } from "../../core/tenant.js";
-import { checkAccess, type AccessDeps } from "./access.js";
+import { checkAccess, hasMeteredAccess, type AccessDeps } from "./access.js";
 import { runChatLoop } from "./chat.js";
 import type { BillingService } from "../billing/service.js";
 import type { AdminService } from "../admin/service.js";
@@ -1167,9 +1167,9 @@ export function installTelegram(bot: Bot, deps: TelegramDeps, contributions: Con
       }
 
       const meterUsage = (usage: { promptTokens: number; completionTokens: number }) => {
-        if (!tenant.userId) return;
+        if (!hasMeteredAccess(access, tenant.userId)) return;
         const r = deps.billing.charge(
-          tenant.userId,
+          tenant.userId!,
           usage.promptTokens,
           usage.completionTokens,
           modelEntry.multiplier
@@ -2013,9 +2013,9 @@ export function installTelegram(bot: Bot, deps: TelegramDeps, contributions: Con
         const reminderModelId = reminderAcc?.modelId ?? deps.defaultModelId;
         const reminderModel = deps.llm.resolveModel(reminderModelId);
         const reminderMeter = (usage: { promptTokens: number; completionTokens: number }) => {
-          if (!reminder.userId) return;
+          if (!hasMeteredAccess(access, reminder.userId)) return;
           const result = deps.billing.charge(
-            reminder.userId,
+            reminder.userId!,
             usage.promptTokens,
             usage.completionTokens,
             reminderModel.multiplier
