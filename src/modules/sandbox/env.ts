@@ -32,8 +32,6 @@ export const sandboxEnvSchema = z.object({
     .positive()
     .max(50 * 1024 * 1024)
     .default(1_000_000),
-  SANDBOX_MAX_ARGS: z.coerce.number().int().positive().max(256).default(64),
-  SANDBOX_MAX_ARG_CHARS: z.coerce.number().int().positive().max(100_000).default(4_096),
 });
 
 export type SandboxEnv = z.infer<typeof sandboxEnvSchema>;

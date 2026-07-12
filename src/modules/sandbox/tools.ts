@@ -30,8 +30,7 @@ export function sandboxTools(service: SandboxService): ToolDefinition[] {
           },
           cwd: {
             type: "string",
-            description:
-              "Optional working directory inside the sandbox. Defaults to /home/daytona.",
+            description: "Optional working directory inside the sandbox.",
           },
           timeout_ms: {
             type: "number",
@@ -58,8 +57,7 @@ export function sandboxTools(service: SandboxService): ToolDefinition[] {
     },
     {
       name: "sandbox_write_file",
-      description:
-        "Create or overwrite a text file inside the sandbox. Paths are relative to /home/daytona unless absolute.",
+      description: "Create or overwrite a text file inside the sandbox.",
       parameters: {
         type: "object",
         properties: {
@@ -102,7 +100,7 @@ export function sandboxTools(service: SandboxService): ToolDefinition[] {
         properties: {
           path: {
             type: "string",
-            description: "Directory path inside the sandbox. Defaults to /home/daytona.",
+            description: "Directory path inside the sandbox.",
           },
         },
       },

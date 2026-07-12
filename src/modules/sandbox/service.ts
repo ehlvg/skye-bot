@@ -1,6 +1,5 @@
 import { Daytona, DaytonaNotFoundError, type Sandbox } from "@daytona/sdk";
 import { log } from "../../utils/log.js";
-import { resolve, relative, isAbsolute, sep } from "node:path";
 
 export interface SandboxServiceConfig {
   enabled: boolean;
@@ -18,35 +17,6 @@ export interface SandboxServiceConfig {
   commandTimeoutMs: number;
   maxOutputChars: number;
   maxFileBytes: number;
-  maxArgs: number;
-  maxArgChars: number;
-}
-
-const SANDBOX_ROOT = "/home/daytona";
-
-export function sandboxPath(input: string): string {
-  const value = String(input || ".");
-  const candidate = isAbsolute(value) ? value : `${SANDBOX_ROOT}/${value}`;
-  const normalized = resolve(candidate);
-  const rel = relative(SANDBOX_ROOT, normalized);
-  if (rel === ".." || rel.startsWith(`..${sep}`) || isAbsolute(rel)) {
-    throw new Error("Sandbox path must stay inside /home/daytona");
-  }
-  return normalized;
-}
-
-export function validateSandboxCommand(
-  command: string,
-  args: string[],
-  maxArgs: number,
-  maxArgChars: number
-): void {
-  if (!/^[A-Za-z0-9_./-]+$/.test(command) || command === "." || command === "..") {
-    throw new Error("Sandbox command must be an executable name or path, without shell syntax");
-  }
-  if (args.length > maxArgs) throw new Error(`Too many command arguments (maximum ${maxArgs})`);
-  if (args.some((arg) => arg.length > maxArgChars))
-    throw new Error(`Command argument exceeds ${maxArgChars} characters`);
 }
 
 function limitText(value: string, limit: number): string {
@@ -118,6 +88,7 @@ export class SandboxService {
       log.info({ chatId, sandbox: name }, "Creating Daytona Sandbox");
       const common = {
         name,
+        user: "root",
         language: "typescript",
         labels: { chat: String(chatId), source: "skye-bot" },
         autoStopInterval: this.config.autoStopMinutes,
@@ -155,7 +126,6 @@ export class SandboxService {
     args: string[] = [],
     opts: { timeoutMs?: number; cwd?: string; env?: Record<string, string> } = {}
   ): Promise<{ exitCode: number; stdout: string; stderr: string }> {
-    validateSandboxCommand(command, args, this.config.maxArgs, this.config.maxArgChars);
     const sandbox = await this.getOrCreate(chatId);
     const timeoutMs = Math.min(
       opts.timeoutMs ?? this.config.commandTimeoutMs,
@@ -170,7 +140,7 @@ export class SandboxService {
     );
     const result = await sandbox.process.executeCommand(
       commandLine,
-      sandboxPath(opts.cwd ?? "."),
+      opts.cwd,
       opts.env,
       Math.ceil(timeoutMs / 1000)
     );
@@ -183,15 +153,14 @@ export class SandboxService {
   }
 
   /**
-   * Write a text file into the sandbox. Paths are relative to /home/daytona
-   * unless absolute.
+   * Write a text file into the sandbox.
    */
   async writeFile(chatId: number, path: string, content: string): Promise<void> {
     if (Buffer.byteLength(content, "utf8") > this.config.maxFileBytes) {
       throw new Error(`Sandbox file exceeds ${this.config.maxFileBytes} bytes`);
     }
     const sandbox = await this.getOrCreate(chatId);
-    await sandbox.fs.uploadFile(Buffer.from(content, "utf8"), sandboxPath(path));
+    await sandbox.fs.uploadFile(Buffer.from(content, "utf8"), path);
   }
 
   /**
@@ -200,7 +169,7 @@ export class SandboxService {
   async readFile(chatId: number, path: string): Promise<string | null> {
     const sandbox = await this.getOrCreate(chatId);
     try {
-      const content = (await sandbox.fs.downloadFile(sandboxPath(path))).toString("utf8");
+      const content = (await sandbox.fs.downloadFile(path)).toString("utf8");
       if (Buffer.byteLength(content, "utf8") > this.config.maxFileBytes) {
         throw new Error(`Sandbox file exceeds ${this.config.maxFileBytes} bytes`);
       }
@@ -214,10 +183,10 @@ export class SandboxService {
   /**
    * List files and directories at the given path.
    */
-  async listFiles(chatId: number, path = SANDBOX_ROOT): Promise<string[]> {
+  async listFiles(chatId: number, path = "."): Promise<string[]> {
     const sandbox = await this.getOrCreate(chatId);
     try {
-      return (await sandbox.fs.listFiles(sandboxPath(path))).map((file) => file.name);
+      return (await sandbox.fs.listFiles(path)).map((file) => file.name);
     } catch (e) {
       if (e instanceof DaytonaNotFoundError) return [];
       throw e;

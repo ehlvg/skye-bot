@@ -38,8 +38,6 @@ export const sandboxModule: SkyeModule = {
       commandTimeoutMs: Number(ctx.config.SANDBOX_COMMAND_TIMEOUT_MS),
       maxOutputChars: Number(ctx.config.SANDBOX_MAX_OUTPUT_CHARS),
       maxFileBytes: Number(ctx.config.SANDBOX_MAX_FILE_BYTES),
-      maxArgs: Number(ctx.config.SANDBOX_MAX_ARGS),
-      maxArgChars: Number(ctx.config.SANDBOX_MAX_ARG_CHARS),
     });
 
     serviceRef = service;

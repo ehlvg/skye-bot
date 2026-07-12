@@ -221,7 +221,7 @@ Available sandbox tools:
 - sandbox_list_files — list directory contents
 - sandbox_reset — wipe the sandbox and start fresh
 
-The sandbox is ephemeral by default: its filesystem is discarded when it stops, so do not rely on it for long-term storage. Keep files inside /home/daytona.`;
+The sandbox is ephemeral by default: its filesystem is discarded when it stops, so do not rely on it for long-term storage.`;
   }
 
   if (hasReferenceImages) {

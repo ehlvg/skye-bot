@@ -127,21 +127,20 @@ Surfaced via the `/terms`, `/privacy`, `/paysupport`, `/developer_info`, and `/d
 
 ### Daytona Sandbox
 
-| Key                                          | Purpose                                                                                                  |
-| -------------------------------------------- | -------------------------------------------------------------------------------------------------------- |
-| `sandbox.enabled`                            | Enable the Daytona Sandbox feature. Default: `true`.                                                     |
-| `sandbox.image`                              | Docker image used when no snapshot is configured. Default: `node:24-bookworm`.                           |
-| `sandbox.snapshot`                           | Optional Daytona snapshot; takes precedence over `image`.                                                |
-| `sandbox.cpu` / `memory_gib` / `disk_gib`    | Resources for image-based sandboxes. Defaults: `1` CPU, `1` GiB RAM, `3` GiB disk.                       |
-| `sandbox.auto_stop_minutes`                  | Stop a sandbox after this period of inactivity. Default: `15`; `0` disables auto-stop.                   |
-| `sandbox.auto_archive_minutes`               | Archive a stopped persistent sandbox after this period. Default: `10080` (7 days).                       |
-| `sandbox.persistent`                         | Keep the sandbox filesystem after it stops. Default: `false`; ephemeral sandboxes delete after stopping. |
-| `sandbox.command_timeout_ms`                 | Per-command timeout. Default: `60000`.                                                                   |
-| `sandbox.max_output_chars`                   | Maximum command output returned. Default: `64000`.                                                       |
-| `sandbox.max_file_bytes`                     | Maximum file size accepted by sandbox read/write. Default: `1000000`.                                    |
-| `sandbox.max_args` / `sandbox.max_arg_chars` | Command argument count and size limits.                                                                  |
-| `sandbox.daytona_api_key`                    | Daytona API key. Can also be set as `DAYTONA_API_KEY`.                                                   |
-| `sandbox.daytona_api_url` / `target`         | Optional Daytona API endpoint and target region.                                                         |
+| Key                                       | Purpose                                                                                                  |
+| ----------------------------------------- | -------------------------------------------------------------------------------------------------------- |
+| `sandbox.enabled`                         | Enable the Daytona Sandbox feature. Default: `true`.                                                     |
+| `sandbox.image`                           | Docker image used when no snapshot is configured. Default: `node:24-bookworm`.                           |
+| `sandbox.snapshot`                        | Optional Daytona snapshot; takes precedence over `image`.                                                |
+| `sandbox.cpu` / `memory_gib` / `disk_gib` | Resources for image-based sandboxes. Defaults: `1` CPU, `1` GiB RAM, `3` GiB disk.                       |
+| `sandbox.auto_stop_minutes`               | Stop a sandbox after this period of inactivity. Default: `15`; `0` disables auto-stop.                   |
+| `sandbox.auto_archive_minutes`            | Archive a stopped persistent sandbox after this period. Default: `10080` (7 days).                       |
+| `sandbox.persistent`                      | Keep the sandbox filesystem after it stops. Default: `false`; ephemeral sandboxes delete after stopping. |
+| `sandbox.command_timeout_ms`              | Per-command timeout. Default: `60000`.                                                                   |
+| `sandbox.max_output_chars`                | Maximum command output returned. Default: `64000`.                                                       |
+| `sandbox.max_file_bytes`                  | Maximum file size accepted by sandbox read/write. Default: `1000000`.                                    |
+| `sandbox.daytona_api_key`                 | Daytona API key. Can also be set as `DAYTONA_API_KEY`.                                                   |
+| `sandbox.daytona_api_url` / `target`      | Optional Daytona API endpoint and target region.                                                         |
 
 Skye does not send Daytona network restriction parameters. The sandbox uses the organization's default
 tier-based policy, including the essential-service allowlist on Tier 1 and Tier 2.

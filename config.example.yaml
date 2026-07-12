@@ -225,8 +225,6 @@ sandbox:
   command_timeout_ms: 60000
   max_output_chars: 64000
   max_file_bytes: 1000000
-  max_args: 64
-  max_arg_chars: 4096
   daytona_api_key: ""
   # daytona_api_url: "https://app.daytona.io/api"
   # daytona_target: "us"
