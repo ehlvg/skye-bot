@@ -5,7 +5,7 @@ import type { BillingService } from "./service.js";
 import type { ModelEntry } from "../llm/env.js";
 import type { LlmClient } from "../llm/client.js";
 import type { TokenPack } from "./env.js";
-import { decodePayload, packPayload, subPayload, type InvoiceConfig } from "./invoices.js";
+import { decodeInvoicePayload, invoicePayload, type InvoiceConfig } from "./invoices.js";
 import { sendRichReply, sendRichEdit } from "../telegram/helpers.js";
 import { log } from "../../utils/log.js";
 
@@ -20,6 +20,7 @@ interface SuccessfulPaymentLike {
   is_recurring?: true;
   is_first_recurring?: true;
   invoice_payload: string;
+  currency: string;
 }
 
 function fmtTokens(n: number): string {
@@ -256,13 +257,23 @@ function buildHandlers(deps: BillingDeps): TelegramHandler[] {
             return;
           }
           await ctx.answerCallbackQuery("Generating invoice…");
+          const invoice = deps.billing.issueInvoice({
+            userId,
+            kind: "subscription",
+            productId: null,
+            title: deps.cfg.title,
+            currency: deps.cfg.currency,
+            amount: deps.cfg.subscriptionStars,
+            tokens: null,
+            subscriptionPeriod: deps.cfg.subscriptionPeriodSeconds,
+          });
           // Stars recurring subscriptions must be created via createInvoiceLink
           // (sendInvoice doesn't accept subscription_period). Send the link as a
           // tappable invoice button.
           const url = await ctx.api.createInvoiceLink(
             deps.cfg.title,
             deps.cfg.description,
-            subPayload(userId),
+            invoicePayload(invoice.id),
             "",
             deps.cfg.currency,
             [{ label: `${deps.cfg.title} (30 days)`, amount: deps.cfg.subscriptionStars }],
@@ -293,10 +304,20 @@ function buildHandlers(deps: BillingDeps): TelegramHandler[] {
             return;
           }
           await ctx.answerCallbackQuery("Generating invoice…");
+          const invoice = deps.billing.issueInvoice({
+            userId,
+            kind: "pack",
+            productId: pack.id,
+            title: pack.name,
+            currency: deps.cfg.currency,
+            amount: pack.stars,
+            tokens: pack.tokens,
+            subscriptionPeriod: null,
+          });
           await ctx.replyWithInvoice(
             deps.cfg.title,
             `${pack.name} — adds ${fmtTokens(pack.tokens)} tokens.`,
-            packPayload(userId, pack.id),
+            invoicePayload(invoice.id),
             deps.cfg.currency,
             [{ label: pack.name, amount: pack.stars }],
             { provider_token: "" }
@@ -348,7 +369,21 @@ function buildHandlers(deps: BillingDeps): TelegramHandler[] {
     order: 10,
     handler: async (ctx) => {
       try {
-        await ctx.answerPreCheckoutQuery(true);
+        const query = ctx.preCheckoutQuery;
+        if (!query) return;
+        const invoiceId = decodeInvoicePayload(query.invoice_payload);
+        const valid = invoiceId
+          ? deps.billing.validateInvoice(
+              query.from.id,
+              invoiceId,
+              query.currency,
+              query.total_amount
+            )
+          : null;
+        await ctx.answerPreCheckoutQuery(
+          !!valid,
+          valid ? undefined : { error_message: "Invoice is invalid or expired." }
+        );
       } catch (e) {
         log.warn({ err: e }, "answerPreCheckoutQuery failed");
       }
@@ -362,39 +397,35 @@ function buildHandlers(deps: BillingDeps): TelegramHandler[] {
       const payment = (ctx.message as { successful_payment?: SuccessfulPaymentLike })
         ?.successful_payment;
       if (!payment) return;
-      const decoded = decodePayload(String(payment.invoice_payload ?? ""));
-      if (!decoded) {
+      const invoiceId = decodeInvoicePayload(String(payment.invoice_payload ?? ""));
+      if (!invoiceId || tenant.userId == null) {
         log.warn({ payload: payment.invoice_payload }, "Unknown payment payload");
         return;
       }
-      if (decoded.userId !== tenant.userId) {
-        log.warn({ decoded, userId: tenant.userId }, "Payment user mismatch");
+      const invoice = deps.billing.fulfillInvoice({
+        userId: tenant.userId,
+        invoiceId,
+        currency: payment.currency,
+        amount: payment.total_amount,
+        chargeId: payment.telegram_payment_charge_id,
+        subscriptionExpirationDate: payment.subscription_expiration_date,
+        isRecurring: payment.is_recurring,
+        isFirstRecurring: payment.is_first_recurring,
+      });
+      if (!invoice) {
+        log.warn({ invoiceId, userId: tenant.userId }, "Payment terms mismatch");
         return;
       }
-      if (decoded.kind === "subscription") {
-        deps.billing.recordSubscriptionPayment(decoded.userId, {
-          telegram_payment_charge_id: payment.telegram_payment_charge_id,
-          total_amount: payment.total_amount,
-          subscription_expiration_date: payment.subscription_expiration_date,
-          is_recurring: payment.is_recurring,
-          is_first_recurring: payment.is_first_recurring,
-          invoice_payload: payment.invoice_payload,
-        });
+      if (invoice.kind === "subscription") {
         await sendRichReply(
           ctx,
           "🎉 **Skye Plus activated.**\n\nYou've got 2,000,000 tokens to spend this month. Use /models to pick your model, or just start chatting."
         );
       } else {
-        const pack = deps.packs.find((p) => p.id === decoded.packId);
-        if (pack) {
-          deps.billing.recordPackPurchase(decoded.userId, pack);
-          await sendRichReply(
-            ctx,
-            `✅ **${pack.name} added** — +${fmtTokens(pack.tokens)} tokens.`
-          );
-        } else {
-          log.warn({ packId: decoded.packId }, "Unknown pack in payment");
-        }
+        await sendRichReply(
+          ctx,
+          `✅ **${invoice.title} added** — +${fmtTokens(invoice.tokens ?? 0)} tokens.`
+        );
       }
     },
   };

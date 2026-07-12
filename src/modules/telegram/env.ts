@@ -5,6 +5,12 @@ export const telegramEnvSchema = z.object({
   // Legacy manual allow-list. Seeds the admin allowlist table once on upgrade.
   ALLOWED_IDS: z.string().default(""),
   TELEGRAM_POLLING_LOCK: z.string().default("1"),
+  TELEGRAM_MAX_ATTACHMENT_BYTES: z.coerce
+    .number()
+    .int()
+    .positive()
+    .max(50 * 1024 * 1024)
+    .default(25 * 1024 * 1024),
 });
 
 export type TelegramEnv = z.infer<typeof telegramEnvSchema>;

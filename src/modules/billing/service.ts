@@ -1,5 +1,6 @@
 import { getDb } from "../../core/db.js";
 import type { BillingConfig } from "./index.js";
+import { randomUUID } from "node:crypto";
 
 export type SubStatus = "none" | "active" | "cancelled";
 
@@ -60,6 +61,47 @@ interface PackLike {
   tokens: number;
 }
 
+export interface IssuedInvoice {
+  id: string;
+  userId: number;
+  kind: "subscription" | "pack";
+  productId: string | null;
+  title: string;
+  currency: string;
+  amount: number;
+  tokens: number | null;
+  subscriptionPeriod: number | null;
+  status: "issued" | "paid" | "void";
+}
+
+type InvoiceRow = {
+  id: string;
+  user_id: number;
+  kind: "subscription" | "pack";
+  product_id: string | null;
+  title: string;
+  currency: string;
+  amount: number;
+  tokens: number | null;
+  subscription_period: number | null;
+  status: "issued" | "paid" | "void";
+};
+
+function rowToInvoice(row: InvoiceRow): IssuedInvoice {
+  return {
+    id: row.id,
+    userId: row.user_id,
+    kind: row.kind,
+    productId: row.product_id,
+    title: row.title,
+    currency: row.currency,
+    amount: row.amount,
+    tokens: row.tokens,
+    subscriptionPeriod: row.subscription_period,
+    status: row.status,
+  };
+}
+
 function rowToAccount(row: AccountRow): BillingAccount {
   return {
     userId: row.user_id,
@@ -80,6 +122,116 @@ export class BillingService {
     private readonly defaultModelId: string
   ) {}
 
+  issueInvoice(input: Omit<IssuedInvoice, "id" | "status">): IssuedInvoice {
+    const invoice: IssuedInvoice = { ...input, id: randomUUID(), status: "issued" };
+    getDb()
+      .prepare(
+        `INSERT INTO billing_invoices
+       (id, user_id, kind, product_id, title, currency, amount, tokens, subscription_period, status, created_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'issued', ?)`
+      )
+      .run(
+        invoice.id,
+        invoice.userId,
+        invoice.kind,
+        invoice.productId,
+        invoice.title,
+        invoice.currency,
+        invoice.amount,
+        invoice.tokens,
+        invoice.subscriptionPeriod,
+        new Date().toISOString()
+      );
+    return invoice;
+  }
+
+  getInvoice(id: string): IssuedInvoice | null {
+    const row = getDb()
+      .prepare<[string], InvoiceRow>("SELECT * FROM billing_invoices WHERE id = ?")
+      .get(id);
+    return row ? rowToInvoice(row) : null;
+  }
+
+  validateInvoice(
+    userId: number,
+    id: string,
+    currency: string,
+    amount: number
+  ): IssuedInvoice | null {
+    const invoice = this.getInvoice(id);
+    if (
+      !invoice ||
+      invoice.userId !== userId ||
+      invoice.currency !== currency ||
+      invoice.amount !== amount
+    )
+      return null;
+    if (invoice.kind === "pack" && invoice.status !== "issued") return null;
+    if (invoice.status === "void") return null;
+    return invoice;
+  }
+
+  fulfillInvoice(input: {
+    userId: number;
+    invoiceId: string;
+    currency: string;
+    amount: number;
+    chargeId: string;
+    subscriptionExpirationDate?: number;
+    isRecurring?: true;
+    isFirstRecurring?: true;
+  }): IssuedInvoice | null {
+    return getDb().transaction(() => {
+      const duplicate = getDb()
+        .prepare<[string], { invoice_id: string }>(
+          "SELECT invoice_id FROM billing_payments WHERE telegram_payment_charge_id = ?"
+        )
+        .get(input.chargeId);
+      if (duplicate)
+        return duplicate.invoice_id === input.invoiceId ? this.getInvoice(input.invoiceId) : null;
+      const invoice = this.validateInvoice(
+        input.userId,
+        input.invoiceId,
+        input.currency,
+        input.amount
+      );
+      if (!invoice) return null;
+      getDb()
+        .prepare(
+          `INSERT INTO billing_payments (telegram_payment_charge_id, invoice_id, user_id, currency, amount, created_at)
+         VALUES (?, ?, ?, ?, ?, ?)`
+        )
+        .run(
+          input.chargeId,
+          invoice.id,
+          input.userId,
+          input.currency,
+          input.amount,
+          new Date().toISOString()
+        );
+      if (invoice.kind === "pack") {
+        this.recordPackPurchase(input.userId, {
+          id: invoice.productId ?? invoice.id,
+          name: invoice.title,
+          tokens: invoice.tokens ?? 0,
+        });
+        getDb()
+          .prepare("UPDATE billing_invoices SET status = 'paid', paid_at = ? WHERE id = ?")
+          .run(new Date().toISOString(), invoice.id);
+      } else {
+        this.recordSubscriptionPayment(input.userId, {
+          telegram_payment_charge_id: input.chargeId,
+          total_amount: input.amount,
+          subscription_expiration_date: input.subscriptionExpirationDate,
+          is_recurring: input.isRecurring,
+          is_first_recurring: input.isFirstRecurring,
+          invoice_payload: invoice.id,
+        });
+      }
+      return invoice;
+    })();
+  }
+
   ensureAccount(userId: number): BillingAccount {
     const now = new Date().toISOString();
     getDb()
@@ -97,9 +249,7 @@ export class BillingService {
 
   private readRaw(userId: number): BillingAccount | null {
     const row = getDb()
-      .prepare<[number], AccountRow>(
-        `SELECT * FROM billing_accounts WHERE user_id = ?`
-      )
+      .prepare<[number], AccountRow>(`SELECT * FROM billing_accounts WHERE user_id = ?`)
       .get(userId);
     return row ? rowToAccount(row) : null;
   }
@@ -146,9 +296,7 @@ export class BillingService {
     this.ensureAccount(userId);
     const id = String(modelId || "").trim() || this.defaultModelId;
     getDb()
-      .prepare(
-        `UPDATE billing_accounts SET model_id = ?, updated_at = ? WHERE user_id = ?`
-      )
+      .prepare(`UPDATE billing_accounts SET model_id = ?, updated_at = ? WHERE user_id = ?`)
       .run(id, new Date().toISOString(), userId);
     this.logEvent(userId, "model_select", { modelId: id }, null);
   }
@@ -164,39 +312,39 @@ export class BillingService {
     completionTokens: number,
     multiplier: number
   ): ChargeResult {
-    const acc = this.getAccount(userId);
-    if (!this.hasActiveSub(acc)) {
-      return { ok: false, cost: 0, remaining: 0, reason: "no_subscription" };
-    }
-
     const cost = Math.max(1, Math.round((promptTokens + completionTokens) * multiplier));
-    const fromPacks = Math.min(acc.packsTokens, cost);
-    const rest = cost - fromPacks;
+    return getDb().transaction(() => {
+      const acc = this.getAccount(userId);
+      if (!this.hasActiveSub(acc)) {
+        return { ok: false, cost, remaining: 0, reason: "no_subscription" } as ChargeResult;
+      }
+      const remaining = this.effectiveRemaining(acc);
+      if (cost > remaining) {
+        return { ok: false, cost, remaining, reason: "no_quota" } as ChargeResult;
+      }
 
-    const newPacks = acc.packsTokens - fromPacks;
-    const newBaseUsed = acc.baseUsedTokens + rest;
-    const newTotal = acc.totalUsedTokens + cost;
-
-    getDb()
-      .prepare(
-        `UPDATE billing_accounts SET
-           packs_tokens = ?,
-           base_used_tokens = ?,
-           total_used_tokens = ?,
-           updated_at = ?
-         WHERE user_id = ?`
-      )
-      .run(newPacks, newBaseUsed, newTotal, new Date().toISOString(), userId);
-
-    this.logEvent(
-      userId,
-      "token_spend",
-      { promptTokens, completionTokens, multiplier, fromPacks, rest },
-      cost
-    );
-
-    const refreshed = this.readRaw(userId) as BillingAccount;
-    return { ok: true, cost, remaining: this.effectiveRemaining(refreshed) };
+      const fromPacks = Math.min(acc.packsTokens, cost);
+      const rest = cost - fromPacks;
+      getDb()
+        .prepare(
+          `UPDATE billing_accounts SET packs_tokens = ?, base_used_tokens = ?,
+             total_used_tokens = total_used_tokens + ?, updated_at = ? WHERE user_id = ?`
+        )
+        .run(
+          acc.packsTokens - fromPacks,
+          acc.baseUsedTokens + rest,
+          cost,
+          new Date().toISOString(),
+          userId
+        );
+      this.logEvent(
+        userId,
+        "token_spend",
+        { promptTokens, completionTokens, multiplier, fromPacks, rest },
+        cost
+      );
+      return { ok: true, cost, remaining: remaining - cost };
+    })();
   }
 
   /** Record a successful Stars subscription payment (first or recurring). */
@@ -270,7 +418,17 @@ export class BillingService {
 
   listEvents(userId: number, limit = 50): BillingEvent[] {
     const rows = getDb()
-      .prepare<[number, number], { id: number; user_id: number; type: string; payload: string | null; amount: number | null; created_at: string }>(
+      .prepare<
+        [number, number],
+        {
+          id: number;
+          user_id: number;
+          type: string;
+          payload: string | null;
+          amount: number | null;
+          created_at: string;
+        }
+      >(
         `SELECT id, user_id, type, payload, amount, created_at
          FROM billing_events WHERE user_id = ?
          ORDER BY id DESC LIMIT ?`

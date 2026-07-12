@@ -2,6 +2,7 @@ import type { ModuleContext, PanelRoute } from "../../core/module.js";
 import type { UserConfig } from "./service.js";
 import type { PanelRequest } from "../panel/index.js";
 import { log } from "../../utils/log.js";
+import { parseUserMcpConfig } from "../mcp/service.js";
 
 export function buildRoutes(ctx: ModuleContext): PanelRoute[] {
   const userConfig = ctx.services.get("userConfig");
@@ -62,7 +63,14 @@ export function buildRoutes(ctx: ModuleContext): PanelRoute[] {
           return;
         }
 
-        const id = userConfig.addMcpServer(userId, name, config);
+        let parsed;
+        try {
+          parsed = parseUserMcpConfig(config);
+        } catch {
+          res.status(400).json({ error: "Only HTTPS remote MCP servers are supported" });
+          return;
+        }
+        const id = userConfig.addMcpServer(userId, name, parsed);
 
         if (inputs && typeof inputs === "object") {
           for (const [inputId, value] of Object.entries(inputs)) {
@@ -72,16 +80,19 @@ export function buildRoutes(ctx: ModuleContext): PanelRoute[] {
 
         if (mcp) {
           try {
-            await mcp.connectUserServer(userId, id, name, config, inputs ?? {});
+            await mcp.connectUserServer(userId, id, name, parsed, inputs ?? {});
           } catch (e) {
             log.error({ userId, server: name, err: e }, "Failed to connect user MCP server");
+            userConfig.deleteMcpServer(id, userId);
+            res.status(502).json({ error: "Failed to connect MCP server" });
+            return;
           }
         }
 
         res.json({
           id,
           name,
-          config,
+          config: parsed,
           connected: true,
           toolCount: mcp?.userToolCount(userId, id) ?? 0,
         });
@@ -106,8 +117,15 @@ export function buildRoutes(ctx: ModuleContext): PanelRoute[] {
           return;
         }
 
+        let parsed;
+        try {
+          parsed = parseUserMcpConfig(config ?? existing.config);
+        } catch {
+          res.status(400).json({ error: "Only HTTPS remote MCP servers are supported" });
+          return;
+        }
         if (mcp) await mcp.disconnectUserServer(userId, id);
-        userConfig.updateMcpServer(id, userId, name ?? existing.name, config ?? existing.config);
+        userConfig.updateMcpServer(id, userId, name ?? existing.name, parsed);
 
         if (inputs && typeof inputs === "object") {
           for (const [inputId, value] of Object.entries(inputs)) {
@@ -117,13 +135,7 @@ export function buildRoutes(ctx: ModuleContext): PanelRoute[] {
 
         if (mcp) {
           try {
-            await mcp.connectUserServer(
-              userId,
-              id,
-              name ?? existing.name,
-              config ?? existing.config,
-              inputs ?? {}
-            );
+            await mcp.connectUserServer(userId, id, name ?? existing.name, parsed, inputs ?? {});
           } catch (e) {
             log.error({ userId, server: name, err: e }, "Failed to reconnect user MCP server");
           }
@@ -132,7 +144,7 @@ export function buildRoutes(ctx: ModuleContext): PanelRoute[] {
         res.json({
           id,
           name: name ?? existing.name,
-          config: config ?? existing.config,
+          config: parsed,
           connected: true,
           toolCount: mcp?.userToolCount(userId, id) ?? 0,
         });
@@ -145,6 +157,16 @@ export function buildRoutes(ctx: ModuleContext): PanelRoute[] {
         const mcp = getMcp();
         const userId = (req as PanelRequest).tenant.userId!;
         const id = Number(req.params.id);
+
+        if (!Number.isSafeInteger(id) || id <= 0) {
+          res.status(400).json({ error: "Invalid server ID" });
+          return;
+        }
+
+        if (!userConfig.getMcpServer(id, userId)) {
+          res.status(404).json({ error: "Server not found" });
+          return;
+        }
 
         if (mcp) await mcp.disconnectUserServer(userId, id);
         const deleted = userConfig.deleteMcpServer(id, userId);

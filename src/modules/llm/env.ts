@@ -16,22 +16,20 @@ export const modelSchema = z.object({
 });
 export type ModelEntry = z.infer<typeof modelSchema>;
 
-const modelsArray = z
-  .string()
-  .transform((raw, ctx): ModelEntry[] => {
-    try {
-      const parsed = JSON.parse(raw);
-      const arr = z.array(modelSchema).safeParse(parsed);
-      if (!arr.success) {
-        ctx.addIssue({ code: "custom", message: "invalid models array" });
-        return z.NEVER;
-      }
-      return arr.data;
-    } catch {
-      ctx.addIssue({ code: "custom", message: "models must be a JSON array" });
+const modelsArray = z.string().transform((raw, ctx): ModelEntry[] => {
+  try {
+    const parsed = JSON.parse(raw);
+    const arr = z.array(modelSchema).safeParse(parsed);
+    if (!arr.success) {
+      ctx.addIssue({ code: "custom", message: "invalid models array" });
       return z.NEVER;
     }
-  });
+    return arr.data;
+  } catch {
+    ctx.addIssue({ code: "custom", message: "models must be a JSON array" });
+    return z.NEVER;
+  }
+});
 
 const defaultModels: ModelEntry[] = [
   { id: "sydney", name: "Sydney", model: "google/gemini-3.1-flash-lite", multiplier: 1 },
@@ -46,7 +44,7 @@ export const llmEnvSchema = z.object({
   MODELS: modelsArray.default(defaultModels),
   /** Masked id of the model new subscribers start on. */
   DEFAULT_MODEL_ID: z.string().default("sydney"),
-  MAX_COMPLETION_TOKENS: z.coerce.number().positive().default(500),
+  MAX_COMPLETION_TOKENS: z.coerce.number().int().positive().max(10_000).default(500),
   // Set to "true" to use Chat Completions API instead of Responses API.
   USE_CHAT_COMPLETIONS: z.coerce.boolean().default(false),
   // Image generation/editing provider — separate from chat. Defaults to empty,
@@ -60,7 +58,10 @@ export const llmEnvSchema = z.object({
   // plugins. Ignored for providers that don't support the plugins parameter.
   PDF_ENGINE: z.string().default(""),
   // Maximum PDF file size to accept, in bytes (default 25 MB).
-  PDF_MAX_BYTES: z.coerce.number().positive().default(25 * 1024 * 1024),
+  PDF_MAX_BYTES: z.coerce
+    .number()
+    .positive()
+    .default(25 * 1024 * 1024),
   // --- Perplexity Agent API ---
   // Required only if any model in MODELS has provider: "perplexity".
   PERPLEXITY_API_KEY: z.string().optional(),

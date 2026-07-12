@@ -98,11 +98,18 @@ export function updateUserMcpServer(
 }
 
 export function deleteUserMcpServer(id: number, userId: number): boolean {
-  getDb().prepare(`DELETE FROM user_mcp_inputs WHERE server_id = ?`).run(id);
-  const result = getDb()
-    .prepare(`DELETE FROM user_mcp_servers WHERE id = ? AND user_id = ?`)
-    .run(id, userId);
-  return result.changes > 0;
+  return getDb().transaction(() => {
+    getDb()
+      .prepare(
+        `DELETE FROM user_mcp_inputs
+         WHERE server_id IN (SELECT id FROM user_mcp_servers WHERE id = ? AND user_id = ?)`
+      )
+      .run(id, userId);
+    const result = getDb()
+      .prepare(`DELETE FROM user_mcp_servers WHERE id = ? AND user_id = ?`)
+      .run(id, userId);
+    return result.changes > 0;
+  })();
 }
 
 export function setUserMcpInput(serverId: number, inputId: string, value: string): void {
@@ -116,10 +123,9 @@ export function setUserMcpInput(serverId: number, inputId: string, value: string
 
 export function getUserMcpInputs(serverId: number): Record<string, string> {
   const rows = getDb()
-    .prepare<
-      [number],
-      { inputId: string; value: string }
-    >(`SELECT input_id AS inputId, value FROM user_mcp_inputs WHERE server_id = ?`)
+    .prepare<[number], { inputId: string; value: string }>(
+      `SELECT input_id AS inputId, value FROM user_mcp_inputs WHERE server_id = ?`
+    )
     .all(serverId);
   return Object.fromEntries(rows.map((r) => [r.inputId, r.value]));
 }

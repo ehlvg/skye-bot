@@ -38,6 +38,16 @@ describe("reminders service", () => {
     expect(list[1].prompt).toBe("Second");
   });
 
+  test("counts only active reminders owned by a user", () => {
+    const first = remindersService.create(CHAT, "First", new Date(Date.now() + 60_000), {
+      userId: 42,
+    });
+    remindersService.create(CHAT + 1, "Second", new Date(Date.now() + 60_000), { userId: 42 });
+    remindersService.create(CHAT, "Other", new Date(Date.now() + 60_000), { userId: 43 });
+    remindersService.deactivate(first.id);
+    expect(remindersService.countActiveByUser(42)).toBe(1);
+  });
+
   test("delete a reminder", () => {
     const r = remindersService.create(CHAT, "Delete me", new Date(Date.now() + 60_000));
     const ok = remindersService.delete(r.id, CHAT);

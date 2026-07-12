@@ -13,11 +13,30 @@ const MIME_MAP: Record<string, string> = {
   pdf: "application/pdf",
 };
 
+async function readLimitedBody(res: Response, maxBytes: number): Promise<Buffer> {
+  const length = Number(res.headers.get("content-length") ?? 0);
+  if (length > maxBytes) throw new Error(`Downloaded file exceeds ${maxBytes} bytes`);
+  if (!res.body) throw new Error("Download response has no body");
+
+  const chunks: Buffer[] = [];
+  let total = 0;
+  for await (const chunk of res.body as AsyncIterable<Uint8Array>) {
+    total += chunk.byteLength;
+    if (total > maxBytes) throw new Error(`Downloaded file exceeds ${maxBytes} bytes`);
+    chunks.push(Buffer.from(chunk));
+  }
+  return Buffer.concat(chunks, total);
+}
+
 /** Download an image from a URL and return it as a base64 data URL. */
-export async function toDataUrl(url: string, timeoutMs = 60_000): Promise<string> {
+export async function toDataUrl(
+  url: string,
+  timeoutMs = 60_000,
+  maxBytes = 25 * 1024 * 1024
+): Promise<string> {
   const res = await fetch(url, { signal: AbortSignal.timeout(timeoutMs) });
   if (!res.ok) throw new Error(`Failed to download image: ${res.status}`);
-  const buf = Buffer.from(await res.arrayBuffer());
+  const buf = await readLimitedBody(res, maxBytes);
 
   const ext = url.split(/[?#]/)[0].split(".").pop()?.toLowerCase() || "";
   const headerMime = (res.headers.get("content-type") || "").split(";")[0].trim();
@@ -34,11 +53,12 @@ export async function toDataUrl(url: string, timeoutMs = 60_000): Promise<string
 export async function toFileDataUrl(
   url: string,
   mimeType: string,
-  timeoutMs = 60_000
+  timeoutMs = 60_000,
+  maxBytes = 25 * 1024 * 1024
 ): Promise<string> {
   const res = await fetch(url, { signal: AbortSignal.timeout(timeoutMs) });
   if (!res.ok) throw new Error(`Failed to download file: ${res.status}`);
-  const buf = Buffer.from(await res.arrayBuffer());
+  const buf = await readLimitedBody(res, maxBytes);
   return `data:${mimeType};base64,${buf.toString("base64")}`;
 }
 
@@ -233,7 +253,6 @@ type ChatAction =
   | "find_location"
   | "record_video_note"
   | "upload_video_note";
-
 
 const THINKING_CUSTOM_EMOJI_ID = "5368324170671202286";
 const DRAFT_MIN_INTERVAL_MS = 5000;
