@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { Fragment, useEffect, useState } from "react";
 import { useApp } from "../store";
 import { Caption, Footnote, LargeTitle, Section } from "../components/ui";
 import { List } from "../components/Row";
@@ -11,10 +11,7 @@ function eventTitle(event: AuditEvent): string {
   return event.action.replaceAll("_", " ");
 }
 
-function eventDetails(event: AuditEvent): string | null {
-  if (event.error) return event.error;
-  if (event.outputText) return event.outputText;
-  if (event.inputText) return event.inputText;
+function activityDetails(event: AuditEvent): string | null {
   if (event.details && typeof event.details === "object") {
     return Object.entries(event.details as Record<string, unknown>)
       .map(([key, value]) => `${key}: ${typeof value === "string" ? value : JSON.stringify(value)}`)
@@ -41,6 +38,7 @@ export function StatsScreen() {
   const [monitoring, setMonitoring] = useState<Monitoring | null>(null);
   const [events, setEvents] = useState<AuditEvent[]>([]);
   const [filter, setFilter] = useState<"all" | AuditEvent["kind"]>("all");
+  const [expanded, setExpanded] = useState<string | null>(null);
 
   useEffect(() => {
     void api.getMonitoring().then(setMonitoring).catch(() => setMonitoring(null));
@@ -107,28 +105,66 @@ export function StatsScreen() {
               </button>
             ))}
           </div>
-          <div className="audit-timeline">
+          <div className="audit-scroll">
+            <table className="audit-table">
+              <thead>
+                <tr>
+                  <th>Event</th>
+                  <th>Time</th>
+                  <th>Info</th>
+                  <th>Status</th>
+                </tr>
+              </thead>
+              <tbody>
             {visibleEvents.map((event) => {
-              const details = eventDetails(event);
+              const key = `${event.kind}-${event.id}`;
+              const details = activityDetails(event);
               const tools = toolSummary(event.toolCalls);
+              const isOpen = expanded === key;
               return (
-                <article key={`${event.kind}-${event.id}`} className={`audit-card audit-${event.kind}`}>
-                  <div className="audit-card-head">
-                    <div>
+                <Fragment key={key}>
+                  <tr
+                    className={`audit-row audit-${event.kind}${isOpen ? " is-open" : ""}`}
+                    tabIndex={0}
+                    role="button"
+                    aria-expanded={isOpen}
+                    onClick={() => setExpanded(isOpen ? null : key)}
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter" || e.key === " ") {
+                        e.preventDefault();
+                        setExpanded(isOpen ? null : key);
+                      }
+                    }}
+                  >
+                    <td>
                       <div className="audit-title">{eventTitle(event)}</div>
-                      <div className="audit-meta">
-                        {new Date(event.ts).toLocaleString()} · user {event.userId}
-                        {event.model ? ` · ${event.model}` : ""}
-                      </div>
-                    </div>
-                    {event.status && <span className={`audit-status is-${event.status}`}>{event.status}</span>}
-                  </div>
-                  {event.latencyMs != null && <div className="audit-facts">{event.latencyMs} ms</div>}
-                  {tools && <div className="audit-facts">{tools}</div>}
-                  {details && <pre className={event.error ? "audit-detail is-error" : "audit-detail"}>{details}</pre>}
-                </article>
+                      <div className="audit-meta">user {event.userId}</div>
+                    </td>
+                    <td className="audit-time">{new Date(event.ts).toLocaleTimeString()}</td>
+                    <td className="audit-info">
+                      {event.model || "—"}
+                      {event.latencyMs != null ? ` · ${event.latencyMs} ms` : ""}
+                    </td>
+                    <td>{event.status && <span className={`audit-status is-${event.status}`}>{event.status}</span>}</td>
+                  </tr>
+                  {isOpen && (
+                    <tr className="audit-expanded-row">
+                      <td colSpan={4}>
+                        {event.inputText && <pre className="audit-detail"><strong>Request</strong>{`\n${event.inputText}`}</pre>}
+                        {event.outputText && <pre className="audit-detail"><strong>Response</strong>{`\n${event.outputText}`}</pre>}
+                        {tools && <div className="audit-facts">{tools}</div>}
+                        {details && <pre className={event.error ? "audit-detail is-error" : "audit-detail"}>{details}</pre>}
+                        {!event.inputText && !event.outputText && !details && !tools && (
+                          <div className="audit-empty">No detailed content was captured for this older event.</div>
+                        )}
+                      </td>
+                    </tr>
+                  )}
+                </Fragment>
               );
             })}
+              </tbody>
+            </table>
           </div>
         </Section>
       )}
