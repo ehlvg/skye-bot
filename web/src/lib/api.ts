@@ -78,6 +78,23 @@ export interface Monitoring {
   logs: { out: string[]; error: string[] };
 }
 
+export interface AuditEvent {
+  ts: string;
+  kind: "request" | "activity" | "billing";
+  id: number;
+  userId: number;
+  chatId: number | null;
+  action: string;
+  model: string | null;
+  status: string | null;
+  latencyMs: number | null;
+  inputText: string | null;
+  outputText: string | null;
+  toolCalls: unknown;
+  details: unknown;
+  error: string | null;
+}
+
 export interface BillingAccount {
   modelId: string;
   subStatus: "none" | "active" | "cancelled";
@@ -169,6 +186,7 @@ export const api = {
 
   getStats: () => request<Stats>("/stats"),
   getMonitoring: () => request<Monitoring>("/monitoring"),
+  getAuditEvents: () => request<AuditEvent[]>("/audit/events"),
 
   getBillingAccount: () => request<BillingAccount>("/billing/account"),
   getModels: () => request<ModelsResponse>("/billing/models"),

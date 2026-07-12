@@ -29,4 +29,25 @@ export const migrations: Migration[] = [
       `);
     },
   },
+  {
+    id: "002-content-and-events",
+    up: (db) => {
+      db.exec(`
+        ALTER TABLE request_logs ADD COLUMN input_text TEXT;
+        ALTER TABLE request_logs ADD COLUMN output_text TEXT;
+        ALTER TABLE request_logs ADD COLUMN tool_calls TEXT;
+
+        CREATE TABLE IF NOT EXISTS audit_events (
+          id         INTEGER PRIMARY KEY AUTOINCREMENT,
+          ts         TEXT    NOT NULL,
+          user_id    INTEGER NOT NULL,
+          chat_id    INTEGER,
+          action     TEXT    NOT NULL,
+          details    TEXT
+        );
+        CREATE INDEX IF NOT EXISTS idx_ae_ts ON audit_events(ts);
+        CREATE INDEX IF NOT EXISTS idx_ae_user_id ON audit_events(user_id);
+      `);
+    },
+  },
 ];

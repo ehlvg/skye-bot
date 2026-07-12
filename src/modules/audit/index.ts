@@ -1,7 +1,13 @@
 import type { SkyeModule } from "../../core/module.js";
 import { migrations } from "./migrations.js";
 import { buildRoutes } from "./routes.js";
-import { type AuditEntry, type AuditService, logRequest, scheduleAuditPruning } from "./service.js";
+import {
+  type AuditEntry,
+  type AuditService,
+  logActivity,
+  logRequest,
+  scheduleAuditPruning,
+} from "./service.js";
 
 declare module "../../core/module.js" {
   interface SkyeServices {
@@ -18,9 +24,12 @@ export const auditModule: SkyeModule = {
       log(entry: AuditEntry) {
         logRequest(entry, model);
       },
+      event(entry) {
+        logActivity(entry);
+      },
     };
     ctx.services.set("audit", service);
     scheduleAuditPruning();
-    return { service, panelRoutes: buildRoutes() };
+    return { service, panelRoutes: buildRoutes(ctx) };
   },
 };

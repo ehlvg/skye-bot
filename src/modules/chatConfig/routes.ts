@@ -4,6 +4,7 @@ import { getDb } from "../../core/db.js";
 
 export function buildRoutes(ctx: ModuleContext): PanelRoute[] {
   const chatConfig = ctx.services.get("chatConfig");
+  const audit = () => (ctx.services.has("audit") ? ctx.services.get("audit") : null);
 
   return [
     {
@@ -44,6 +45,14 @@ export function buildRoutes(ctx: ModuleContext): PanelRoute[] {
         if (row) {
           if (body.voiceMode !== undefined) chatConfig.setVoiceMode(row.chatId, body.voiceMode);
           const cfg = chatConfig.get(row.chatId);
+          if (body.voiceMode !== undefined) {
+            audit()?.event({
+              action: "voice_mode_changed",
+              userId,
+              chatId: row.chatId,
+              details: { enabled: cfg.voiceMode },
+            });
+          }
           res.json({ voiceMode: cfg.voiceMode });
         } else {
           res.json({ voiceMode: body.voiceMode ?? false });

@@ -166,21 +166,21 @@ code {
   border-radius: 6px;
 }
 
-.log-viewer {
-  max-height: 320px;
-  overflow: auto;
-  margin-top: 10px;
-  padding: 12px;
-  border: 1px solid var(--glass-border);
-  border-radius: var(--radius);
-  background: var(--glass-bg);
-  color: var(--text);
-  font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
-  font-size: 11px;
-  line-height: 1.45;
-  white-space: pre-wrap;
-  overflow-wrap: anywhere;
-}
+.audit-filters { display: flex; gap: 7px; margin: 10px 0; overflow-x: auto; }
+.audit-filter { border: 1px solid var(--glass-border); border-radius: 999px; background: var(--glass-bg); padding: 6px 10px; font-size: 12px; text-transform: capitalize; }
+.audit-filter.is-active { background: var(--accent); border-color: var(--accent); color: var(--tg-button-text); }
+.audit-timeline { display: grid; gap: 9px; }
+.audit-card { padding: 12px; border: 1px solid var(--glass-border); border-left-width: 3px; border-radius: var(--radius); background: var(--glass-bg); }
+.audit-request { border-left-color: var(--c-blue); }
+.audit-activity { border-left-color: var(--c-purple); }
+.audit-billing { border-left-color: var(--c-orange); }
+.audit-card-head { display: flex; justify-content: space-between; gap: 10px; }
+.audit-title { font-weight: 650; text-transform: capitalize; }
+.audit-meta, .audit-facts { margin-top: 3px; color: var(--hint); font-size: 11px; }
+.audit-status { align-self: flex-start; border-radius: 999px; padding: 3px 7px; background: color-mix(in srgb, var(--c-green) 17%, transparent); color: var(--c-green); font-size: 11px; }
+.audit-status.is-error { background: color-mix(in srgb, var(--c-red) 17%, transparent); color: var(--c-red); }
+.audit-detail { max-height: 220px; overflow: auto; margin: 10px 0 0; padding: 9px; border-radius: 9px; background: color-mix(in srgb, var(--tg-text) 7%, transparent); font: 11px/1.45 ui-monospace, "SF Mono", Menlo, Consolas, monospace; white-space: pre-wrap; overflow-wrap: anywhere; }
+.audit-detail.is-error { color: var(--destructive); }
 
 ::selection {
   background: color-mix(in srgb, var(--accent) 28%, transparent);

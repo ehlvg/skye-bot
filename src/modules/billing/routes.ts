@@ -63,6 +63,8 @@ export function buildRoutes(ctx: ModuleContext): PanelRoute[] {
           return;
         }
         billing.selectModel(userId, modelId);
+        const audit = ctx.services.has("audit") ? ctx.services.get("audit") : null;
+        audit?.event({ action: "model_changed", userId, details: { modelId, source: "panel" } });
         res.json({ ok: true, modelId });
       },
     },

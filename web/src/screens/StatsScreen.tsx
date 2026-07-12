@@ -4,15 +4,50 @@ import { Caption, Footnote, LargeTitle, Section } from "../components/ui";
 import { List } from "../components/Row";
 import { Row } from "../components/Row";
 import { Icon } from "../components/Icon";
-import { api, type Monitoring } from "../lib/api";
+import { api, type AuditEvent, type Monitoring } from "../lib/api";
+
+function eventTitle(event: AuditEvent): string {
+  if (event.kind === "request") return `${event.action} request`;
+  return event.action.replaceAll("_", " ");
+}
+
+function eventDetails(event: AuditEvent): string | null {
+  if (event.error) return event.error;
+  if (event.outputText) return event.outputText;
+  if (event.inputText) return event.inputText;
+  if (event.details && typeof event.details === "object") {
+    return Object.entries(event.details as Record<string, unknown>)
+      .map(([key, value]) => `${key}: ${typeof value === "string" ? value : JSON.stringify(value)}`)
+      .join("\n");
+  }
+  if (event.details) return String(event.details);
+  return null;
+}
+
+function toolSummary(toolCalls: unknown): string | null {
+  if (!Array.isArray(toolCalls) || toolCalls.length === 0) return null;
+  return toolCalls
+    .map((call) => {
+      if (!call || typeof call !== "object") return "Tool call";
+      const tool = call as { name?: unknown; isMcp?: unknown; args?: unknown };
+      const keys = tool.args && typeof tool.args === "object" ? Object.keys(tool.args as object) : [];
+      return `${tool.isMcp ? "MCP" : "Tool"}: ${String(tool.name ?? "unknown")}${keys.length ? ` (${keys.join(", ")})` : ""}`;
+    })
+    .join(" · ");
+}
 
 export function StatsScreen() {
   const { stats } = useApp();
   const [monitoring, setMonitoring] = useState<Monitoring | null>(null);
+  const [events, setEvents] = useState<AuditEvent[]>([]);
+  const [filter, setFilter] = useState<"all" | AuditEvent["kind"]>("all");
 
   useEffect(() => {
     void api.getMonitoring().then(setMonitoring).catch(() => setMonitoring(null));
+    void api.getAuditEvents().then(setEvents).catch(() => setEvents([]));
   }, []);
+
+  const visibleEvents = events.filter((event) => filter === "all" || event.kind === filter);
 
   const tiles = [
     { icon: Icon.ChartBar, color: "c-blue", label: "Total Requests", value: stats.totalRequests },
@@ -54,10 +89,47 @@ export function StatsScreen() {
               chevron={false}
             />
           </List>
-          <div className="log-viewer">
-            {[...monitoring.logs.error, ...monitoring.logs.out].slice(-250).join("\n") || "No log entries yet."}
+          <Footnote>Live process status. Only bot administrators can see the audit timeline below.</Footnote>
+        </Section>
+      )}
+      {events.length > 0 && (
+        <Section>
+          <Caption>Audit timeline</Caption>
+          <div className="audit-filters">
+            {(["all", "request", "activity", "billing"] as const).map((value) => (
+              <button
+                key={value}
+                type="button"
+                className={filter === value ? "audit-filter is-active" : "audit-filter"}
+                onClick={() => setFilter(value)}
+              >
+                {value === "all" ? "All" : value}
+              </button>
+            ))}
           </div>
-          <Footnote>Latest PM2 logs. This section is visible only to bot administrators.</Footnote>
+          <div className="audit-timeline">
+            {visibleEvents.map((event) => {
+              const details = eventDetails(event);
+              const tools = toolSummary(event.toolCalls);
+              return (
+                <article key={`${event.kind}-${event.id}`} className={`audit-card audit-${event.kind}`}>
+                  <div className="audit-card-head">
+                    <div>
+                      <div className="audit-title">{eventTitle(event)}</div>
+                      <div className="audit-meta">
+                        {new Date(event.ts).toLocaleString()} · user {event.userId}
+                        {event.model ? ` · ${event.model}` : ""}
+                      </div>
+                    </div>
+                    {event.status && <span className={`audit-status is-${event.status}`}>{event.status}</span>}
+                  </div>
+                  {event.latencyMs != null && <div className="audit-facts">{event.latencyMs} ms</div>}
+                  {tools && <div className="audit-facts">{tools}</div>}
+                  {details && <pre className={event.error ? "audit-detail is-error" : "audit-detail"}>{details}</pre>}
+                </article>
+              );
+            })}
+          </div>
         </Section>
       )}
     </div>

@@ -754,6 +754,7 @@ export function installTelegram(bot: Bot, deps: TelegramDeps, contributions: Con
               outputLen: 0,
               latencyMs: Date.now() - t0,
               status: "ok",
+              inputText: prompt,
             });
             return;
           }
@@ -781,6 +782,7 @@ export function installTelegram(bot: Bot, deps: TelegramDeps, contributions: Con
             outputLen: 0,
             latencyMs: Date.now() - t0,
             status: "ok",
+            inputText: prompt,
           });
         } catch (e) {
           const ms = Date.now() - t0;
@@ -805,6 +807,7 @@ export function installTelegram(bot: Bot, deps: TelegramDeps, contributions: Con
             latencyMs: ms,
             status: "error",
             errorMsg: fmtError(e),
+            inputText: prompt,
           });
         } finally {
           clearInterval(actionInterval);
@@ -1264,13 +1267,16 @@ export function installTelegram(bot: Bot, deps: TelegramDeps, contributions: Con
       const fallbackIds = deps.llm.models.map((model) => model.id).filter((id) => id !== modelId);
       const attempts = [modelId, modelId, ...fallbackIds];
       let rawText = "";
+      let usedModelId = modelId;
       let lastAttemptError: unknown;
       for (const attemptModelId of attempts) {
         controller.signal.throwIfAborted();
         try {
-          rawText = await withBillingLock(tenant.userId, () =>
+          const attemptText = await withBillingLock(tenant.userId, () =>
             runAttempt(attemptModelId, builtinTools)
           );
+          rawText = attemptText;
+          if (rawText) usedModelId = attemptModelId;
           if (rawText) break;
           throw new Error("Model returned an empty response");
         } catch (e) {
@@ -1290,6 +1296,7 @@ export function installTelegram(bot: Bot, deps: TelegramDeps, contributions: Con
         void draft.send("Trying to answer without tools…");
         try {
           rawText = await withBillingLock(tenant.userId, () => runAttempt(recoveryModelId, []));
+          if (rawText) usedModelId = recoveryModelId;
         } catch (e) {
           lastAttemptError = e;
         }
@@ -1309,6 +1316,7 @@ export function installTelegram(bot: Bot, deps: TelegramDeps, contributions: Con
           outputLen: 0,
           latencyMs: Date.now() - t0,
           status: "ok",
+          inputText,
         });
         return;
       }
@@ -1332,6 +1340,10 @@ export function installTelegram(bot: Bot, deps: TelegramDeps, contributions: Con
             outputLen: text.length,
             latencyMs: Date.now() - t0,
             status: "ok",
+            model: deps.llm.resolveModel(usedModelId).model,
+            inputText,
+            outputText: text,
+            toolCalls: toolCallHistory,
           });
           return;
         }
@@ -1350,6 +1362,10 @@ export function installTelegram(bot: Bot, deps: TelegramDeps, contributions: Con
         outputLen: text.length,
         latencyMs: Date.now() - t0,
         status: "ok",
+        model: deps.llm.resolveModel(usedModelId).model,
+        inputText,
+        outputText: finalText,
+        toolCalls: toolCallHistory,
       });
     } catch (e) {
       if (controller.signal.aborted) return;
@@ -1373,6 +1389,8 @@ export function installTelegram(bot: Bot, deps: TelegramDeps, contributions: Con
         latencyMs: ms,
         status: "error",
         errorMsg: fmtError(e),
+        inputText,
+        toolCalls: toolCallHistory,
       });
     } finally {
       actionTicker.stop();
@@ -1629,6 +1647,7 @@ export function installTelegram(bot: Bot, deps: TelegramDeps, contributions: Con
         outputLen: 0,
         latencyMs: Date.now() - t0,
         status: "ok",
+        inputText: prompt,
       });
     } catch (e) {
       const ms = Date.now() - t0;
@@ -1653,6 +1672,7 @@ export function installTelegram(bot: Bot, deps: TelegramDeps, contributions: Con
         latencyMs: ms,
         status: "error",
         errorMsg: fmtError(e),
+        inputText: prompt,
       });
     } finally {
       clearInterval(actionInterval);

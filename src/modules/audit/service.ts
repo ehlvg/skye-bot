@@ -25,19 +25,31 @@ export interface AuditEntry {
   latencyMs: number;
   status: "ok" | "error";
   errorMsg?: string;
+  model?: string;
+  inputText?: string;
+  outputText?: string;
+  toolCalls?: unknown;
+}
+
+export interface AuditActivity {
+  action: string;
+  userId: number;
+  chatId?: number;
+  details?: Record<string, unknown>;
 }
 
 const RETENTION_DAYS = Number(process.env.AUDIT_RETENTION_DAYS ?? "90");
 const MAX_ROWS = Number(process.env.AUDIT_MAX_ROWS ?? "100000");
 
-export function logRequest(entry: AuditEntry, model: string): void {
+export function logRequest(entry: AuditEntry, defaultModel: string): void {
   try {
     getDb()
       .prepare(
         `INSERT INTO request_logs (
           ts, chat_id, chat_type, thread_id, user_id, username, first_name,
-          msg_type, command, input_len, output_len, latency_ms, model, status, error_msg
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+          msg_type, command, input_len, output_len, latency_ms, model, status, error_msg,
+          input_text, output_text, tool_calls
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
       )
       .run(
         new Date().toISOString(),
@@ -52,12 +64,34 @@ export function logRequest(entry: AuditEntry, model: string): void {
         entry.inputLen,
         entry.outputLen,
         entry.latencyMs,
-        model,
+        entry.model ?? defaultModel,
         entry.status,
-        entry.errorMsg ?? null
+        entry.errorMsg ?? null,
+        entry.inputText ?? null,
+        entry.outputText ?? null,
+        entry.toolCalls == null ? null : JSON.stringify(entry.toolCalls)
       );
   } catch (e) {
     log.error({ err: e }, "Failed to write audit log entry");
+  }
+}
+
+export function logActivity(entry: AuditActivity): void {
+  try {
+    getDb()
+      .prepare(
+        `INSERT INTO audit_events (ts, user_id, chat_id, action, details)
+         VALUES (?, ?, ?, ?, ?)`
+      )
+      .run(
+        new Date().toISOString(),
+        entry.userId,
+        entry.chatId ?? null,
+        entry.action,
+        entry.details == null ? null : JSON.stringify(entry.details)
+      );
+  } catch (e) {
+    log.error({ err: e }, "Failed to write audit event");
   }
 }
 
@@ -72,7 +106,16 @@ export function pruneAuditLog(): { byAge: number; byCount: number } {
        WHERE id NOT IN (SELECT id FROM request_logs ORDER BY id DESC LIMIT ${MAX_ROWS})`
     )
     .run();
-  return { byAge: byAge.changes, byCount: byCount.changes };
+  const eventsByAge = db
+    .prepare(`DELETE FROM audit_events WHERE ts < datetime('now', '-${RETENTION_DAYS} days')`)
+    .run();
+  const eventsByCount = db
+    .prepare(
+      `DELETE FROM audit_events
+       WHERE id NOT IN (SELECT id FROM audit_events ORDER BY id DESC LIMIT ${MAX_ROWS})`
+    )
+    .run();
+  return { byAge: byAge.changes + eventsByAge.changes, byCount: byCount.changes + eventsByCount.changes };
 }
 
 export function scheduleAuditPruning(): void {
@@ -89,4 +132,5 @@ export function scheduleAuditPruning(): void {
 
 export interface AuditService {
   log(entry: AuditEntry): void;
+  event(entry: AuditActivity): void;
 }

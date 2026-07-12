@@ -6,6 +6,7 @@ import { parseUserMcpConfig } from "../mcp/service.js";
 
 export function buildRoutes(ctx: ModuleContext): PanelRoute[] {
   const userConfig = ctx.services.get("userConfig");
+  const audit = () => (ctx.services.has("audit") ? ctx.services.get("audit") : null);
   // mcp service is registered AFTER userConfig — resolve lazily at request time.
   const getMcp = () => (ctx.services.has("mcp") ? ctx.services.get("mcp") : null);
 
@@ -30,6 +31,15 @@ export function buildRoutes(ctx: ModuleContext): PanelRoute[] {
           clean.personality = body.personality;
         }
         userConfig.set(userId, clean);
+        audit()?.event({
+          action: "settings_saved",
+          userId,
+          details: {
+            changed: Object.keys(clean),
+            ...(clean.personality ? { personality: clean.personality } : {}),
+            ...(clean.systemPrompt !== undefined ? { systemPromptLength: clean.systemPrompt.length } : {}),
+          },
+        });
         res.json(userConfig.get(userId));
       },
     },
@@ -99,6 +109,7 @@ export function buildRoutes(ctx: ModuleContext): PanelRoute[] {
           connected: true,
           toolCount: mcp?.userToolCount(userId, id) ?? 0,
         });
+        audit()?.event({ action: "mcp_server_added", userId, details: { id, name } });
       },
     },
     {
@@ -151,6 +162,7 @@ export function buildRoutes(ctx: ModuleContext): PanelRoute[] {
           connected: true,
           toolCount: mcp?.userToolCount(userId, id) ?? 0,
         });
+        audit()?.event({ action: "mcp_server_updated", userId, details: { id, name: name ?? existing.name } });
       },
     },
     {
@@ -166,7 +178,8 @@ export function buildRoutes(ctx: ModuleContext): PanelRoute[] {
           return;
         }
 
-        if (!userConfig.getMcpServer(id, userId)) {
+        const existing = userConfig.getMcpServer(id, userId);
+        if (!existing) {
           res.status(404).json({ error: "Server not found" });
           return;
         }
@@ -179,6 +192,7 @@ export function buildRoutes(ctx: ModuleContext): PanelRoute[] {
           return;
         }
         res.json({ ok: true });
+        audit()?.event({ action: "mcp_server_deleted", userId, details: { id, name: existing.name } });
       },
     },
   ];
