@@ -11,10 +11,10 @@ export function sandboxTools(service: SandboxService): ToolDefinition[] {
     {
       name: "sandbox_run_command",
       description:
-        "Run a shell command inside this chat's isolated Vercel Sandbox. " +
-        "The sandbox has internet access and comes with node, python, npm, pnpm, pip, uv, git, curl, and common build tools. " +
+        "Run a command inside this chat's isolated Daytona Sandbox. " +
+        "The sandbox has Daytona's standard tier-based network access and the tools provided by its configured image. " +
         "Use it to fetch data from the web, install packages, run scripts, compile code, or execute any other task the user asks for. " +
-        "Commands run with a timeout; if a long-running server is needed, start it in the background and expose ports via sandbox_expose_port.",
+        "Commands run with a timeout.",
       parameters: {
         type: "object",
         properties: {
@@ -31,7 +31,7 @@ export function sandboxTools(service: SandboxService): ToolDefinition[] {
           cwd: {
             type: "string",
             description:
-              "Optional working directory inside the sandbox. Defaults to /vercel/sandbox.",
+              "Optional working directory inside the sandbox. Defaults to /home/daytona.",
           },
           timeout_ms: {
             type: "number",
@@ -59,7 +59,7 @@ export function sandboxTools(service: SandboxService): ToolDefinition[] {
     {
       name: "sandbox_write_file",
       description:
-        "Create or overwrite a text file inside the sandbox. Paths are relative to /vercel/sandbox unless absolute.",
+        "Create or overwrite a text file inside the sandbox. Paths are relative to /home/daytona unless absolute.",
       parameters: {
         type: "object",
         properties: {
@@ -102,7 +102,7 @@ export function sandboxTools(service: SandboxService): ToolDefinition[] {
         properties: {
           path: {
             type: "string",
-            description: "Directory path inside the sandbox. Defaults to /vercel/sandbox.",
+            description: "Directory path inside the sandbox. Defaults to /home/daytona.",
           },
         },
       },

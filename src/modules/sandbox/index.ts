@@ -15,29 +15,27 @@ export const sandboxModule: SkyeModule = {
   name: "sandbox",
   envSchema: sandboxEnvSchema,
   init(ctx) {
-    const token = ctx.config.VERCEL_ACCESS_TOKEN
-      ? String(ctx.config.VERCEL_ACCESS_TOKEN)
-      : undefined;
-    const teamId = ctx.config.VERCEL_TEAM_ID ? String(ctx.config.VERCEL_TEAM_ID) : undefined;
-    const projectId = ctx.config.VERCEL_PROJECT_ID
-      ? String(ctx.config.VERCEL_PROJECT_ID)
-      : undefined;
+    const configuredApiKey = ctx.config.DAYTONA_API_KEY ?? ctx.config.SANDBOX_DAYTONA_API_KEY;
+    const apiKey = configuredApiKey ? String(configuredApiKey) : undefined;
+    const apiUrl = ctx.config.DAYTONA_API_URL ?? ctx.config.SANDBOX_DAYTONA_API_URL;
+    const target = ctx.config.DAYTONA_TARGET ?? ctx.config.SANDBOX_DAYTONA_TARGET;
 
-    const enabled =
-      Boolean(ctx.config.SANDBOX_ENABLED) &&
-      (token != null || process.env.VERCEL_OIDC_TOKEN != null);
+    const enabled = Boolean(ctx.config.SANDBOX_ENABLED) && apiKey != null;
 
     const service = new SandboxService({
       enabled,
-      token,
-      teamId,
-      projectId,
-      runtime: String(ctx.config.SANDBOX_RUNTIME),
-      timeoutMs: Number(ctx.config.SANDBOX_TIMEOUT_MS),
-      vcpus: Number(ctx.config.SANDBOX_VCPUS),
+      apiKey,
+      apiUrl: apiUrl ? String(apiUrl) : undefined,
+      target: target ? String(target) : undefined,
+      image: String(ctx.config.SANDBOX_IMAGE),
+      snapshot: ctx.config.SANDBOX_SNAPSHOT ? String(ctx.config.SANDBOX_SNAPSHOT) : undefined,
+      cpu: Number(ctx.config.SANDBOX_CPU),
+      memoryGiB: Number(ctx.config.SANDBOX_MEMORY_GIB),
+      diskGiB: Number(ctx.config.SANDBOX_DISK_GIB),
+      autoStopMinutes: Number(ctx.config.SANDBOX_AUTO_STOP_MINUTES),
+      autoArchiveMinutes: Number(ctx.config.SANDBOX_AUTO_ARCHIVE_MINUTES),
       persistent: Boolean(ctx.config.SANDBOX_PERSISTENT),
       commandTimeoutMs: Number(ctx.config.SANDBOX_COMMAND_TIMEOUT_MS),
-      networkPolicy: ctx.config.SANDBOX_NETWORK_POLICY as "deny-all" | "allow-all",
       maxOutputChars: Number(ctx.config.SANDBOX_MAX_OUTPUT_CHARS),
       maxFileBytes: Number(ctx.config.SANDBOX_MAX_FILE_BYTES),
       maxArgs: Number(ctx.config.SANDBOX_MAX_ARGS),
@@ -52,12 +50,12 @@ export const sandboxModule: SkyeModule = {
         ? [
             {
               name: "sandbox",
-              description: "Run a command in this chat's Vercel Sandbox",
+              description: "Run a command in this chat's Daytona Sandbox",
               handler: async (ctx, tenant) => {
                 const command = ctx.match?.toString().trim();
                 if (!command) {
                   await ctx.reply(
-                    "Usage: /sandbox <command>\nExample: /sandbox curl -s https://api.github.com/users/vercel"
+                    "Usage: /sandbox <command>\nExample: /sandbox curl -s https://api.github.com/users/daytonaio"
                   );
                   return;
                 }
@@ -75,7 +73,7 @@ export const sandboxModule: SkyeModule = {
             },
             {
               name: "sandbox_reset",
-              description: "Reset this chat's Vercel Sandbox to a clean state",
+              description: "Reset this chat's Daytona Sandbox to a clean state",
               handler: async (ctx, tenant) => {
                 await ctx.api.sendChatAction(tenant.chatId, "typing");
                 await service.reset(tenant.chatId);
@@ -84,7 +82,7 @@ export const sandboxModule: SkyeModule = {
             },
             {
               name: "sandbox_status",
-              description: "Show this chat's Vercel Sandbox status",
+              description: "Show this chat's Daytona Sandbox status",
               handler: async (ctx, tenant) => {
                 const status = await service.status(tenant.chatId);
                 if (!status) {
@@ -92,7 +90,7 @@ export const sandboxModule: SkyeModule = {
                   return;
                 }
                 await ctx.reply(
-                  `Name: ${status.name}\nStatus: ${status.status}\nRuntime: ${status.runtime ?? "unknown"}\nTimeout: ${status.timeout ?? "unknown"}ms\nPersistent: ${status.persistent}`
+                  `Name: ${status.name}\nStatus: ${status.status}\nResources: ${status.cpu} CPU, ${status.memoryGiB} GiB RAM, ${status.diskGiB} GiB disk\nAuto-stop: ${status.autoStopMinutes ?? "unknown"} minutes\nPersistent: ${status.persistent}`
                 );
               },
             },

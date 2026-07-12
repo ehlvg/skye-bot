@@ -75,8 +75,8 @@ describe("sandbox tools", () => {
     const service = makeService();
     const tools = sandboxTools(service);
     const list = tools.find((t) => t.name === "sandbox_list_files")!;
-    const result = await list.execute({ path: "/vercel/sandbox" }, tenant);
-    expect(service.listFiles).toHaveBeenCalledWith(123, "/vercel/sandbox");
+    const result = await list.execute({ path: "/home/daytona" }, tenant);
+    expect(service.listFiles).toHaveBeenCalledWith(123, "/home/daytona");
     expect(result).toBe("a.txt\nb.txt");
   });
 

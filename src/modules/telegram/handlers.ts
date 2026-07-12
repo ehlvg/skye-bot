@@ -637,7 +637,7 @@ export function installTelegram(bot: Bot, deps: TelegramDeps, contributions: Con
             activeTurns.delete(key);
           }
         }
-        await ctx.reply("Остановилась.", { reply_to_message_id: ctx.message?.message_id });
+        await ctx.reply("Stopped.", { reply_to_message_id: ctx.message?.message_id });
       },
     },
     {
@@ -1140,12 +1140,12 @@ export function installTelegram(bot: Bot, deps: TelegramDeps, contributions: Con
     const onToolCalls = (calls: ToolCallRecord[]) => {
       toolCallHistory.push(...calls);
       const status = calls.some((call) => call.name.includes("image"))
-        ? "Создаю изображение…"
+        ? "Creating an image…"
         : calls.some((call) => call.name.startsWith("sandbox_"))
-          ? "Работаю с файлами и кодом…"
+          ? "Working with files and code…"
           : calls.some((call) => call.name.includes("memory"))
-            ? "Проверяю память…"
-            : "Ищу нужную информацию…";
+            ? "Checking memory…"
+            : "Looking for the right information…";
       void draft.send(
         tenant.chatType === "private" ? buildDraftMarkdown(toolCallHistory, status) : status
       );
@@ -1154,7 +1154,7 @@ export function installTelegram(bot: Bot, deps: TelegramDeps, contributions: Con
     try {
       reactSafely(ctx, "👀");
       actionTicker.start();
-      void draft.send("Думаю…");
+      void draft.send("Thinking…");
 
       // Collect media content parts from the replied-to message (photos,
       // PDFs, audio transcripts) so the model can reason about them even
@@ -1277,14 +1277,17 @@ export function installTelegram(bot: Bot, deps: TelegramDeps, contributions: Con
           lastAttemptError = e;
           if (controller.signal.aborted) throw e;
           if (toolCallHistory.length > 0) break;
-          log.warn({ err: e, modelId: attemptModelId, chatId: tenant.chatId }, "LLM attempt failed");
-          void draft.send("Первая попытка не сработала — пробую ещё раз…");
+          log.warn(
+            { err: e, modelId: attemptModelId, chatId: tenant.chatId },
+            "LLM attempt failed"
+          );
+          void draft.send("The first attempt did not work — trying again…");
         }
       }
 
       if (!rawText) {
         const recoveryModelId = fallbackIds[0] ?? modelId;
-        void draft.send("Пробую ответить без инструментов…");
+        void draft.send("Trying to answer without tools…");
         try {
           rawText = await withBillingLock(tenant.userId, () => runAttempt(recoveryModelId, []));
         } catch (e) {
@@ -1355,9 +1358,12 @@ export function installTelegram(bot: Bot, deps: TelegramDeps, contributions: Con
       await draft.delete();
       reactSafely(ctx, "😢");
       await ctx
-        .reply(`Не смогла закончить ответ на этот запрос — все доступные попытки сорвались. Попробуй отправить его ещё раз.`, {
-          reply_to_message_id: ctx.message?.message_id,
-        })
+        .reply(
+          `I could not complete this response — every available attempt failed. Please send it again.`,
+          {
+            reply_to_message_id: ctx.message?.message_id,
+          }
+        )
         .catch(() => {});
       deps.audit.log({
         ...ctxAudit(ctx),

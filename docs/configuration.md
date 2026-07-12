@@ -6,7 +6,7 @@ Skye is configured through a `config.yaml` file and per-user settings. This page
 
 Create a `config.yaml` from `config.example.yaml`. All keys are required unless marked optional.
 
-Real environment variables override YAML values — useful for platform-injected secrets (e.g. `VERCEL_OIDC_TOKEN` on Vercel hosting) or PaaS dashboards that don't allow mounting config files. For local dev and VPS, put everything in `config.yaml`.
+Real environment variables override YAML values — useful for platform-injected secrets (e.g. `DAYTONA_API_KEY`) or PaaS dashboards that don't allow mounting config files. For local dev and VPS, put everything in `config.yaml`.
 
 ### Core
 
@@ -125,23 +125,26 @@ Surfaced via the `/terms`, `/privacy`, `/paysupport`, `/developer_info`, and `/d
 | `legal.developer_name`   | Developer name shown by /developer_info. Default: `Sergey Gamuylo`.                   |
 | `legal.developer_email`  | Contact email shown by /paysupport and /developer_info. Default: `serg@skye-bot.com`. |
 
-### Vercel Sandbox
+### Daytona Sandbox
 
-| Key                                          | Purpose                                                                       |
-| -------------------------------------------- | ----------------------------------------------------------------------------- |
-| `sandbox.enabled`                            | Enable the Vercel Sandbox feature. Default: `true`.                           |
-| `sandbox.runtime`                            | Sandbox runtime. Default: `node24`.                                           |
-| `sandbox.timeout_ms`                         | Sandbox VM timeout. Default: `300000`.                                        |
-| `sandbox.vcpus`                              | Sandbox vCPUs. Default: `2`.                                                  |
-| `sandbox.persistent`                         | Keep sandbox filesystem between sessions. Default: `false`.                   |
-| `sandbox.command_timeout_ms`                 | Per-command timeout. Default: `60000`.                                        |
-| `sandbox.network_policy`                     | Network policy: `deny-all` (default) or explicit `allow-all`.                 |
-| `sandbox.max_output_chars`                   | Maximum stdout/stderr returned from one command. Default: `64000`.            |
-| `sandbox.max_file_bytes`                     | Maximum file size accepted by sandbox read/write. Default: `1000000`.         |
-| `sandbox.max_args` / `sandbox.max_arg_chars` | Command argument count and size limits.                                       |
-| `sandbox.vercel_access_token`                | Vercel API token. Can be overridden by `VERCEL_OIDC_TOKEN` env var on Vercel. |
-| `sandbox.vercel_project_id`                  | Vercel project ID.                                                            |
-| `sandbox.vercel_team_id`                     | Vercel team ID.                                                               |
+| Key                                          | Purpose                                                                                                  |
+| -------------------------------------------- | -------------------------------------------------------------------------------------------------------- |
+| `sandbox.enabled`                            | Enable the Daytona Sandbox feature. Default: `true`.                                                     |
+| `sandbox.image`                              | Docker image used when no snapshot is configured. Default: `node:24-bookworm`.                           |
+| `sandbox.snapshot`                           | Optional Daytona snapshot; takes precedence over `image`.                                                |
+| `sandbox.cpu` / `memory_gib` / `disk_gib`    | Resources for image-based sandboxes. Defaults: `1` CPU, `1` GiB RAM, `3` GiB disk.                       |
+| `sandbox.auto_stop_minutes`                  | Stop a sandbox after this period of inactivity. Default: `15`; `0` disables auto-stop.                   |
+| `sandbox.auto_archive_minutes`               | Archive a stopped persistent sandbox after this period. Default: `10080` (7 days).                       |
+| `sandbox.persistent`                         | Keep the sandbox filesystem after it stops. Default: `false`; ephemeral sandboxes delete after stopping. |
+| `sandbox.command_timeout_ms`                 | Per-command timeout. Default: `60000`.                                                                   |
+| `sandbox.max_output_chars`                   | Maximum command output returned. Default: `64000`.                                                       |
+| `sandbox.max_file_bytes`                     | Maximum file size accepted by sandbox read/write. Default: `1000000`.                                    |
+| `sandbox.max_args` / `sandbox.max_arg_chars` | Command argument count and size limits.                                                                  |
+| `sandbox.daytona_api_key`                    | Daytona API key. Can also be set as `DAYTONA_API_KEY`.                                                   |
+| `sandbox.daytona_api_url` / `target`         | Optional Daytona API endpoint and target region.                                                         |
+
+Skye does not send Daytona network restriction parameters. The sandbox uses the organization's default
+tier-based policy, including the essential-service allowlist on Tier 1 and Tier 2.
 
 ## Access control
 

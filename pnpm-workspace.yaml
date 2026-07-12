@@ -5,6 +5,7 @@ allowBuilds:
   better-sqlite3: true
   esbuild: true
   ffmpeg-static: true
+  protobufjs: false
 minimumReleaseAgeExclude:
   - "@vitest/expect@3.2.6"
   - "@vitest/mocker@3.2.6"

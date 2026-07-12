@@ -210,18 +210,18 @@ You have access to a built-in sandbox for executing code (Python and more). Use 
   } else if (sandboxEnabled) {
     content += `
 
-## Vercel Sandbox
+## Daytona Sandbox
 
-You have access to an isolated per-chat Vercel Sandbox with internet access. Use it whenever the user asks you to run code, fetch data from the web, install packages, analyze files, or perform any task that benefits from a real Linux environment.
+You have access to an isolated per-chat Daytona Sandbox. Use it whenever the user asks you to run code, use available network services, install packages, analyze files, or perform any task that benefits from a real Linux environment. Network access follows the Daytona organization's tier-based policy.
 
 Available sandbox tools:
-- sandbox_run_command — execute a command (curl, node, python3, npm, pip, uv, git, etc.)
+- sandbox_run_command — execute a command available in the configured image
 - sandbox_write_file — create or overwrite a text file
 - sandbox_read_file — read a text file
 - sandbox_list_files — list directory contents
 - sandbox_reset — wipe the sandbox and start fresh
 
-The sandbox is ephemeral by default: its filesystem is discarded when the VM stops, so do not rely on it for long-term storage. Keep files inside /vercel/sandbox unless you need system paths.`;
+The sandbox is ephemeral by default: its filesystem is discarded when it stops, so do not rely on it for long-term storage. Keep files inside /home/daytona.`;
   }
 
   if (hasReferenceImages) {

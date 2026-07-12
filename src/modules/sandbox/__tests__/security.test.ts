@@ -3,8 +3,8 @@ import { sandboxPath, validateSandboxCommand } from "../service.js";
 
 describe("sandbox security boundaries", () => {
   it("keeps relative paths inside the sandbox root", () => {
-    expect(sandboxPath("workspace/file.txt")).toBe("/vercel/sandbox/workspace/file.txt");
-    expect(sandboxPath("workspace/../file.txt")).toBe("/vercel/sandbox/file.txt");
+    expect(sandboxPath("workspace/file.txt")).toBe("/home/daytona/workspace/file.txt");
+    expect(sandboxPath("workspace/../file.txt")).toBe("/home/daytona/file.txt");
   });
 
   it("rejects absolute paths and traversal outside the sandbox", () => {

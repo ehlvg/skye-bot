@@ -65,7 +65,7 @@ export async function runChatLoop(
   const builtinTools = modelEntry.builtinTools;
   const hasBuiltinSandbox = builtinTools?.includes("sandbox") ?? false;
 
-  // Filter out Vercel sandbox client-side tools when the model has a
+  // Filter out Daytona sandbox client-side tools when the model has a
   // built-in Perplexity sandbox — no need to offer both.
   const effectiveBuiltinTools = hasBuiltinSandbox
     ? deps.builtinTools.filter((t) => !t.name.startsWith("sandbox_"))

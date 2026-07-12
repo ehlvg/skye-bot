@@ -491,20 +491,20 @@ export function createChatActionTicker(ctx: GrammyContext, action: ChatAction, i
 
 export function createDraftManager(ctx: GrammyContext) {
   if (ctx.chat?.type !== "private") {
-    let latestText = "Думаю…";
+    let latestText = "Thinking…";
     let statusMessage: Message | undefined;
     let stopped = false;
     let updating = Promise.resolve();
     const timer = setTimeout(() => {
       if (stopped || !ctx.chat) return;
-      updating = updating.then(async () => {
-        statusMessage = await ctx.reply(latestText, {
-          message_thread_id: threadId(ctx),
-          ...(ctx.message?.message_id
-            ? { reply_to_message_id: ctx.message.message_id }
-            : {}),
-        });
-      }).catch((e) => log.debug({ err: e }, "Group status message failed"));
+      updating = updating
+        .then(async () => {
+          statusMessage = await ctx.reply(latestText, {
+            message_thread_id: threadId(ctx),
+            ...(ctx.message?.message_id ? { reply_to_message_id: ctx.message.message_id } : {}),
+          });
+        })
+        .catch((e) => log.debug({ err: e }, "Group status message failed"));
     }, 4_000);
 
     return {

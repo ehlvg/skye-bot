@@ -57,13 +57,13 @@ describe("buildSystemPrompt", () => {
 
   test("includes sandbox section when enabled", () => {
     const prompt = buildSystemPrompt([], undefined, undefined, undefined, true);
-    expect(prompt).toContain("Vercel Sandbox");
+    expect(prompt).toContain("Daytona Sandbox");
     expect(prompt).toContain("sandbox_run_command");
   });
 
   test("omits sandbox section when disabled", () => {
     const prompt = buildSystemPrompt([], undefined, undefined, undefined, false);
-    expect(prompt).not.toContain("Vercel Sandbox");
+    expect(prompt).not.toContain("Daytona Sandbox");
   });
 
   test("includes reminders section when enabled", () => {

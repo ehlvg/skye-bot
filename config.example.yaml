@@ -209,25 +209,27 @@ panel:
 # Database path. Supports ":memory:" for ephemeral storage.
 # db_path: "data/skye.db"
 
-# Vercel Sandbox — isolated per-chat compute. Network is disabled by default.
-# Get a token at https://vercel.com/account/tokens and your project/team IDs
-# from the Vercel dashboard. If the bot runs on Vercel you can omit these and
-# rely on VERCEL_OIDC_TOKEN instead (set by the Vercel runtime as an env var).
+# Daytona Sandbox — isolated per-chat compute. Daytona applies the
+# organization's tier-based network policy; no per-sandbox network restrictions
+# are sent by Skye. Create an API key at https://app.daytona.io/dashboard/keys.
 sandbox:
   enabled: true
-  runtime: "node24"
-  timeout_ms: 300000
-  vcpus: 2
+  image: "node:24-bookworm"
+  # snapshot: "skye-runtime" # optional; takes precedence over image
+  cpu: 1
+  memory_gib: 1
+  disk_gib: 3
+  auto_stop_minutes: 15
+  auto_archive_minutes: 10080
   persistent: false
   command_timeout_ms: 60000
-  network_policy: "deny-all" # use "allow-all" only when internet access is required
   max_output_chars: 64000
   max_file_bytes: 1000000
   max_args: 64
   max_arg_chars: 4096
-  vercel_access_token: ""
-  vercel_project_id: ""
-  vercel_team_id: ""
+  daytona_api_key: ""
+  # daytona_api_url: "https://app.daytona.io/api"
+  # daytona_target: "us"
 
 # Channel — let Skye manage a Telegram channel (post updates, tips, changelog).
 # The bot must be added as an administrator to the channel with permission to

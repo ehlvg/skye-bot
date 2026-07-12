@@ -1,26 +1,28 @@
-import { Sandbox } from "@vercel/sandbox";
-import type { CommandFinished } from "@vercel/sandbox";
+import { Daytona, DaytonaNotFoundError, type Sandbox } from "@daytona/sdk";
 import { log } from "../../utils/log.js";
 import { resolve, relative, isAbsolute, sep } from "node:path";
 
 export interface SandboxServiceConfig {
   enabled: boolean;
-  token?: string;
-  teamId?: string;
-  projectId?: string;
-  runtime: string;
-  timeoutMs: number;
-  vcpus: number;
+  apiKey?: string;
+  apiUrl?: string;
+  target?: string;
+  image: string;
+  snapshot?: string;
+  cpu: number;
+  memoryGiB: number;
+  diskGiB: number;
+  autoStopMinutes: number;
+  autoArchiveMinutes: number;
   persistent: boolean;
   commandTimeoutMs: number;
-  networkPolicy: "deny-all" | "allow-all";
   maxOutputChars: number;
   maxFileBytes: number;
   maxArgs: number;
   maxArgChars: number;
 }
 
-const SANDBOX_ROOT = "/vercel/sandbox";
+const SANDBOX_ROOT = "/home/daytona";
 
 export function sandboxPath(input: string): string {
   const value = String(input || ".");
@@ -28,7 +30,7 @@ export function sandboxPath(input: string): string {
   const normalized = resolve(candidate);
   const rel = relative(SANDBOX_ROOT, normalized);
   if (rel === ".." || rel.startsWith(`..${sep}`) || isAbsolute(rel)) {
-    throw new Error("Sandbox path must stay inside /vercel/sandbox");
+    throw new Error("Sandbox path must stay inside /home/daytona");
   }
   return normalized;
 }
@@ -58,9 +60,9 @@ interface ActiveSandbox {
 }
 
 /**
- * Manages one Vercel Sandbox per Telegram chat. Each sandbox is isolated,
- * has no network access by default, and can run commands, read/write
- * files, and expose ports.
+ * Manages one Daytona Sandbox per Telegram chat. Each sandbox is isolated
+ * and can run commands and read/write files. Network policy is deliberately
+ * left to the Daytona organization, which is required for Tier 1 accounts.
  *
  * Sandboxes are named `skye-chat-<chatId>` so they can be resumed by name.
  * When persistence is disabled (the default) the filesystem is discarded
@@ -69,29 +71,27 @@ interface ActiveSandbox {
 export class SandboxService {
   private sandboxes = new Map<string, ActiveSandbox>();
   private config: SandboxServiceConfig;
+  private daytona: Daytona | null;
 
   constructor(config: SandboxServiceConfig) {
     this.config = config;
+    this.daytona = config.enabled
+      ? new Daytona({ apiKey: config.apiKey, apiUrl: config.apiUrl, target: config.target })
+      : null;
   }
 
   isEnabled(): boolean {
     return this.config.enabled;
   }
 
-  private credentials(): { token: string; teamId: string; projectId: string } | undefined {
-    if (!this.config.token || !this.config.projectId) return undefined;
-    return {
-      token: this.config.token,
-      projectId: this.config.projectId,
-      teamId: this.config.teamId ?? "",
-    };
-  }
-
   private sandboxName(chatId: number): string {
-    // Group chat IDs are negative; replace the leading minus so the name is a
-    // valid Vercel sandbox identifier.
     const safeId = String(chatId).replace(/^-/, "g_");
     return `skye-chat-${safeId}`;
+  }
+
+  private client(): Daytona {
+    if (!this.daytona) throw new Error("Daytona Sandbox is not enabled");
+    return this.daytona;
   }
 
   /**
@@ -108,20 +108,34 @@ export class SandboxService {
     }
 
     const name = this.sandboxName(chatId);
-    const creds = this.credentials();
-
-    log.info({ chatId, sandbox: name }, "Creating Vercel Sandbox");
-
-    const sandbox = await Sandbox.getOrCreate({
-      name,
-      runtime: this.config.runtime,
-      timeout: this.config.timeoutMs,
-      persistent: this.config.persistent,
-      resources: { vcpus: this.config.vcpus },
-      networkPolicy: this.config.networkPolicy,
-      tags: { chat: String(chatId), source: "skye-bot" },
-      ...(creds ? creds : {}),
-    });
+    const daytona = this.client();
+    let sandbox: Sandbox;
+    try {
+      sandbox = await daytona.get(name);
+      if (sandbox.state !== "started") await sandbox.start();
+    } catch (e) {
+      if (!(e instanceof DaytonaNotFoundError)) throw e;
+      log.info({ chatId, sandbox: name }, "Creating Daytona Sandbox");
+      const common = {
+        name,
+        language: "typescript",
+        labels: { chat: String(chatId), source: "skye-bot" },
+        autoStopInterval: this.config.autoStopMinutes,
+        autoArchiveInterval: this.config.autoArchiveMinutes,
+        ephemeral: !this.config.persistent,
+      };
+      sandbox = this.config.snapshot
+        ? await daytona.create({ ...common, snapshot: this.config.snapshot })
+        : await daytona.create({
+            ...common,
+            image: this.config.image,
+            resources: {
+              cpu: this.config.cpu,
+              memory: this.config.memoryGiB,
+              disk: this.config.diskGiB,
+            },
+          });
+    }
 
     this.sandboxes.set(key, {
       sandbox,
@@ -151,26 +165,25 @@ export class SandboxService {
 
     log.debug({ chatId, command, args, timeoutMs }, "Sandbox run command");
 
-    const result = (await sandbox.runCommand({
-      cmd: command,
-      args,
-      cwd: opts.cwd,
-      env: opts.env,
-      timeoutMs,
-    })) as CommandFinished;
-
-    const stdout = await result.stdout();
-    const stderr = await result.stderr();
+    const commandLine = [command, ...args.map((arg) => `'${arg.replaceAll("'", "'\\''")}'`)].join(
+      " "
+    );
+    const result = await sandbox.process.executeCommand(
+      commandLine,
+      sandboxPath(opts.cwd ?? "."),
+      opts.env,
+      Math.ceil(timeoutMs / 1000)
+    );
 
     return {
-      exitCode: result.exitCode ?? -1,
-      stdout: limitText(stdout, this.config.maxOutputChars),
-      stderr: limitText(stderr, this.config.maxOutputChars),
+      exitCode: result.exitCode,
+      stdout: limitText(result.result, this.config.maxOutputChars),
+      stderr: "",
     };
   }
 
   /**
-   * Write a text file into the sandbox. Paths are relative to /vercel/sandbox
+   * Write a text file into the sandbox. Paths are relative to /home/daytona
    * unless absolute.
    */
   async writeFile(chatId: number, path: string, content: string): Promise<void> {
@@ -178,7 +191,7 @@ export class SandboxService {
       throw new Error(`Sandbox file exceeds ${this.config.maxFileBytes} bytes`);
     }
     const sandbox = await this.getOrCreate(chatId);
-    await sandbox.fs.writeFile(sandboxPath(path), content);
+    await sandbox.fs.uploadFile(Buffer.from(content, "utf8"), sandboxPath(path));
   }
 
   /**
@@ -187,14 +200,13 @@ export class SandboxService {
   async readFile(chatId: number, path: string): Promise<string | null> {
     const sandbox = await this.getOrCreate(chatId);
     try {
-      const content = await sandbox.fs.readFile(sandboxPath(path), "utf8");
+      const content = (await sandbox.fs.downloadFile(sandboxPath(path))).toString("utf8");
       if (Buffer.byteLength(content, "utf8") > this.config.maxFileBytes) {
         throw new Error(`Sandbox file exceeds ${this.config.maxFileBytes} bytes`);
       }
       return content;
     } catch (e) {
-      const code = (e as { code?: string }).code;
-      if (code === "ENOENT" || code === "ENOTDIR") return null;
+      if (e instanceof DaytonaNotFoundError) return null;
       throw e;
     }
   }
@@ -202,13 +214,12 @@ export class SandboxService {
   /**
    * List files and directories at the given path.
    */
-  async listFiles(chatId: number, path = "/vercel/sandbox"): Promise<string[]> {
+  async listFiles(chatId: number, path = SANDBOX_ROOT): Promise<string[]> {
     const sandbox = await this.getOrCreate(chatId);
     try {
-      return await sandbox.fs.readdir(sandboxPath(path));
+      return (await sandbox.fs.listFiles(sandboxPath(path))).map((file) => file.name);
     } catch (e) {
-      const code = (e as { code?: string }).code;
-      if (code === "ENOENT" || code === "ENOTDIR") return [];
+      if (e instanceof DaytonaNotFoundError) return [];
       throw e;
     }
   }
@@ -224,7 +235,7 @@ export class SandboxService {
     if (existing) {
       this.sandboxes.delete(key);
       try {
-        log.info({ chatId, sandbox: name }, "Deleting Vercel Sandbox");
+        log.info({ chatId, sandbox: name }, "Deleting Daytona Sandbox");
         await existing.sandbox.delete();
       } catch (e) {
         log.warn({ chatId, err: e }, "Failed to delete sandbox during reset");
@@ -256,8 +267,10 @@ export class SandboxService {
   async status(chatId: number): Promise<{
     name: string;
     status: string;
-    runtime?: string;
-    timeout?: number;
+    cpu: number;
+    memoryGiB: number;
+    diskGiB: number;
+    autoStopMinutes?: number;
     persistent: boolean;
   } | null> {
     const key = String(chatId);
@@ -266,9 +279,11 @@ export class SandboxService {
 
     return {
       name: existing.sandbox.name,
-      status: existing.sandbox.status,
-      runtime: existing.sandbox.runtime,
-      timeout: existing.sandbox.timeout,
+      status: existing.sandbox.state ?? "unknown",
+      cpu: existing.sandbox.cpu,
+      memoryGiB: existing.sandbox.memory,
+      diskGiB: existing.sandbox.disk,
+      autoStopMinutes: existing.sandbox.autoStopInterval,
       persistent: this.config.persistent,
     };
   }

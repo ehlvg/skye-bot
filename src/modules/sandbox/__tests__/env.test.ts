@@ -5,18 +5,19 @@ describe("sandbox env schema", () => {
   it("parses defaults", () => {
     const parsed = sandboxEnvSchema.parse({});
     expect(parsed.SANDBOX_ENABLED).toBe(true);
-    expect(parsed.SANDBOX_RUNTIME).toBe("node24");
-    expect(parsed.SANDBOX_TIMEOUT_MS).toBe(300000);
-    expect(parsed.SANDBOX_VCPUS).toBe(2);
+    expect(parsed.SANDBOX_IMAGE).toBe("node:24-bookworm");
+    expect(parsed.SANDBOX_CPU).toBe(1);
+    expect(parsed.SANDBOX_MEMORY_GIB).toBe(1);
+    expect(parsed.SANDBOX_DISK_GIB).toBe(3);
+    expect(parsed.SANDBOX_AUTO_STOP_MINUTES).toBe(15);
     expect(parsed.SANDBOX_PERSISTENT).toBe(false);
     expect(parsed.SANDBOX_COMMAND_TIMEOUT_MS).toBe(60000);
-    expect(parsed.SANDBOX_NETWORK_POLICY).toBe("deny-all");
     expect(parsed.SANDBOX_MAX_OUTPUT_CHARS).toBe(64000);
     expect(parsed.SANDBOX_MAX_FILE_BYTES).toBe(1000000);
   });
 
-  it("rejects unsafe network policies and oversized limits", () => {
-    expect(() => sandboxEnvSchema.parse({ SANDBOX_NETWORK_POLICY: "custom" })).toThrow();
+  it("rejects oversized resource and file limits", () => {
+    expect(() => sandboxEnvSchema.parse({ SANDBOX_CPU: 5 })).toThrow();
     expect(() => sandboxEnvSchema.parse({ SANDBOX_MAX_FILE_BYTES: 100_000_000 })).toThrow();
   });
 
@@ -31,23 +32,23 @@ describe("sandbox env schema", () => {
 
   it("parses numeric values from strings", () => {
     const parsed = sandboxEnvSchema.parse({
-      SANDBOX_TIMEOUT_MS: "600000",
-      SANDBOX_VCPUS: "4",
+      SANDBOX_AUTO_STOP_MINUTES: "60",
+      SANDBOX_CPU: "4",
       SANDBOX_COMMAND_TIMEOUT_MS: "120000",
     });
-    expect(parsed.SANDBOX_TIMEOUT_MS).toBe(600000);
-    expect(parsed.SANDBOX_VCPUS).toBe(4);
+    expect(parsed.SANDBOX_AUTO_STOP_MINUTES).toBe(60);
+    expect(parsed.SANDBOX_CPU).toBe(4);
     expect(parsed.SANDBOX_COMMAND_TIMEOUT_MS).toBe(120000);
   });
 
-  it("captures Vercel credentials when present", () => {
+  it("captures Daytona credentials when present", () => {
     const parsed = sandboxEnvSchema.parse({
-      VERCEL_ACCESS_TOKEN: "tok_xxx",
-      VERCEL_PROJECT_ID: "prj_xxx",
-      VERCEL_TEAM_ID: "team_xxx",
+      DAYTONA_API_KEY: "dtn_xxx",
+      DAYTONA_API_URL: "https://daytona.example/api",
+      DAYTONA_TARGET: "us",
     });
-    expect(parsed.VERCEL_ACCESS_TOKEN).toBe("tok_xxx");
-    expect(parsed.VERCEL_PROJECT_ID).toBe("prj_xxx");
-    expect(parsed.VERCEL_TEAM_ID).toBe("team_xxx");
+    expect(parsed.DAYTONA_API_KEY).toBe("dtn_xxx");
+    expect(parsed.DAYTONA_API_URL).toBe("https://daytona.example/api");
+    expect(parsed.DAYTONA_TARGET).toBe("us");
   });
 });
