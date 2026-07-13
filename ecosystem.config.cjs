@@ -1,7 +1,12 @@
+const appName = process.env.SKYE_PM2_NAME ?? "skye-bot";
+const configPath = process.env.SKYE_CONFIG ?? `${__dirname}/config.yaml`;
+const dbPath = process.env.DB_PATH ?? `${__dirname}/data/skye.db`;
+const logDirectory = `${process.env.HOME ?? "/root"}/.pm2/logs`;
+
 module.exports = {
   apps: [
     {
-      name: "skye-bot",
+      name: appName,
       script: "dist/index.js",
       cwd: __dirname,
       interpreter: "node",
@@ -11,10 +16,10 @@ module.exports = {
       kill_timeout: 30000,
       env: {
         NODE_ENV: "production",
-        SKYE_CONFIG: `${__dirname}/config.yaml`,
-        DB_PATH: `${__dirname}/data/skye.db`,
-        MONITORING_OUT_LOG: `${process.env.HOME ?? "/root"}/.pm2/logs/skye-bot-out-0.log`,
-        MONITORING_ERROR_LOG: `${process.env.HOME ?? "/root"}/.pm2/logs/skye-bot-error-0.log`,
+        SKYE_CONFIG: configPath,
+        DB_PATH: dbPath,
+        MONITORING_OUT_LOG: `${logDirectory}/${appName}-out-0.log`,
+        MONITORING_ERROR_LOG: `${logDirectory}/${appName}-error-0.log`,
       },
     },
   ],

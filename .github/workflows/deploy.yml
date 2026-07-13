@@ -2,10 +2,10 @@ name: Deploy
 
 on:
   push:
-    branches: [main]
+    branches: [main, dev]
 
 concurrency:
-  group: deploy-production
+  group: deploy-${{ github.ref_name }}
   cancel-in-progress: false
 
 jobs:
@@ -52,11 +52,27 @@ jobs:
           EOF
 
       - name: Deploy
+        env:
+          BRANCH: ${{ github.ref_name }}
+          PRODUCTION_PATH: ${{ secrets.DEPLOY_PATH }}
         run: |
-          ssh vilnius << 'EOF'
+          ssh vilnius "BRANCH='$BRANCH' PRODUCTION_PATH='$PRODUCTION_PATH' bash -s" << 'EOF'
             set -euo pipefail
-            cd "${{ secrets.DEPLOY_PATH }}"
-            git switch main
-            git pull --ff-only origin main
-            bash scripts/deploy-pm2.sh
+
+            if [ "$BRANCH" = "main" ]; then
+              deploy_path="$PRODUCTION_PATH"
+              app_name="skye-bot"
+            else
+              deploy_path="${PRODUCTION_PATH}-dev"
+              app_name="skye-bot-dev"
+            fi
+
+            if [ ! -d "$deploy_path/.git" ]; then
+              git clone --branch "$BRANCH" https://github.com/ehlvg/skye-bot.git "$deploy_path"
+            fi
+
+            cd "$deploy_path"
+            git switch "$BRANCH"
+            git pull --ff-only origin "$BRANCH"
+            SKYE_PM2_NAME="$app_name" bash scripts/deploy-pm2.sh
           EOF
