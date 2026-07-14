@@ -10,7 +10,7 @@ concurrency:
 
 jobs:
   check:
-    name: Lint, Typecheck & Build
+    name: Lint, Test, Typecheck & Build
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -27,6 +27,8 @@ jobs:
       - run: pnpm run lint
 
       - run: pnpm run typecheck
+
+      - run: pnpm test
 
       - run: pnpm build
 
