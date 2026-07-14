@@ -164,7 +164,7 @@ export class ProactiveService {
       .map((message) => message.content)
       .join(" ")
       .slice(0, 500);
-    const memories = this.deps.memory.search(chatId, memoryQuery, { limit: 12 });
+    const memories = this.deps.memory.context(chatId, memoryQuery, 12);
     const memoryLines = memories.length
       ? memories.map((m) => `- ${m.content}`).join("\n")
       : "(none)";

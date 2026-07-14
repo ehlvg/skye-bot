@@ -54,7 +54,7 @@ export async function runChatLoop(
 ): Promise<string> {
   signal?.throwIfAborted();
   const memoryQuery = extractInputText(input);
-  const memories = deps.memory.search(tenant.chatId, memoryQuery, { limit: 12 });
+  const memories = deps.memory.context(tenant.chatId, memoryQuery, 12);
   const chatContext = deps.chatLog.context(tenant.chatId);
   const mcpTools = deps.allowMcpTools === false ? [] : deps.mcp.toolsFor(tenant.userId);
   const mcpToolNames = mcpTools.map((t) => t.name);
@@ -214,9 +214,9 @@ export async function runChatLoop(
       return {
         call: { name: fc.name, args, isMcp },
         output: {
-        type: "function_call_output",
-        call_id: fc.call_id,
-        output: result,
+          type: "function_call_output",
+          call_id: fc.call_id,
+          output: result,
         } as ResponseInputItem,
       };
     };
