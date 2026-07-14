@@ -2,6 +2,8 @@ import { test, expect, describe, beforeEach } from "vitest";
 import { resetDbForTesting, getDb, runMigrations } from "../../../core/db.js";
 import { remindersModule } from "../index.js";
 import { remindersService } from "../service.js";
+import { applyReminderControl, REMINDER_SNOOZE_MS } from "../controls.js";
+import { formatReminderTime, reminderListKeyboard, reminderListMarkdown } from "../presentation.js";
 
 beforeEach(() => {
   resetDbForTesting();
@@ -122,5 +124,66 @@ describe("reminders service", () => {
     });
     expect(r.threadId).toBe(42);
     expect(r.userId).toBe(999);
+  });
+
+  test("only the reminder owner can use inline controls", () => {
+    const reminder = remindersService.create(CHAT, "Owner only", new Date(Date.now() + 60_000), {
+      userId: 42,
+    });
+    const result = applyReminderControl(remindersService, {
+      action: "cancel",
+      id: reminder.id,
+      chatId: CHAT,
+      userId: 43,
+    });
+
+    expect(result.status).toBe("forbidden");
+    expect(remindersService.get(reminder.id, CHAT)).not.toBeNull();
+  });
+
+  test("inline controls stay isolated to the current chat", () => {
+    const reminder = remindersService.create(CHAT, "Private", new Date(Date.now() + 60_000));
+    const result = applyReminderControl(remindersService, {
+      action: "cancel",
+      id: reminder.id,
+      chatId: CHAT + 1,
+      userId: 42,
+    });
+
+    expect(result.status).toBe("not_found");
+    expect(remindersService.get(reminder.id, CHAT)).not.toBeNull();
+  });
+
+  test("snoozes an active reminder by one hour", () => {
+    const reminder = remindersService.create(CHAT, "Later", new Date(Date.now() + 60_000), {
+      userId: 42,
+    });
+    const now = new Date("2030-01-01T10:00:00.000Z");
+    const result = applyReminderControl(remindersService, {
+      action: "snooze",
+      id: reminder.id,
+      chatId: CHAT,
+      userId: 42,
+      now,
+    });
+
+    expect(result.status).toBe("snoozed");
+    expect(new Date(remindersService.get(reminder.id, CHAT)!.fireAt).getTime()).toBe(
+      now.getTime() + REMINDER_SNOOZE_MS
+    );
+  });
+
+  test("renders explicit UTC times and valid Telegram callback data", () => {
+    const reminder = remindersService.create(CHAT, "Review | release\nnotes", new Date(), {
+      userId: 42,
+    });
+    const markdown = reminderListMarkdown([reminder]);
+    const keyboard = reminderListKeyboard([reminder]);
+
+    expect(formatReminderTime("2030-01-02T03:04:00.000Z")).toContain("UTC");
+    expect(markdown).toContain("Review \\| release notes");
+    for (const button of keyboard.inline_keyboard.flat()) {
+      if ("callback_data" in button) expect(button.callback_data.length).toBeLessThanOrEqual(64);
+    }
   });
 });

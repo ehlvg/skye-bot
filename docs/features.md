@@ -90,6 +90,12 @@ Three built-in tools are available to the LLM:
 
 Memories are stored per chat. Use `/forget` to wipe all memories for the current chat. You can view, delete, and import/export memories from the Settings panel. Imports are limited to authorized chats and pass through the same validation and duplicate-merging rules as normal saves.
 
+## Reminders
+
+Ask Skye in natural language to create a one-time or repeating reminder. Use `/reminders` to view the active reminders in the current chat. The list shows explicit UTC times and provides inline controls to postpone an item by one hour or cancel it without another model request.
+
+Reminder controls are scoped to the current chat. When a reminder has an owner, only the user who created it can use its buttons; this prevents another group member from changing it. Older ownerless reminders remain manageable by members of their chat for backward compatibility.
+
 ## Group chat features
 
 In groups, Skye:

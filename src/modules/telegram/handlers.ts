@@ -17,6 +17,12 @@ import type { AuditService } from "../audit/service.js";
 import type { SandboxService } from "../sandbox/service.js";
 import type { ProactiveService } from "../proactive/service.js";
 import type { RemindersService, Reminder } from "../reminders/service.js";
+import { applyReminderControl, type ReminderControlAction } from "../reminders/controls.js";
+import {
+  REMINDER_CALLBACK_PATTERN,
+  reminderListKeyboard,
+  reminderListMarkdown,
+} from "../reminders/presentation.js";
 import type { ChannelService } from "../channel/service.js";
 import type { EventBus } from "../../core/events.js";
 import type { Contributions, TelegramCommand, ToolDefinition } from "../../core/module.js";
@@ -34,6 +40,7 @@ import {
   extractLogEntry,
   fmtError,
   reactSafely,
+  sendRichEdit,
   senderTag,
   sendRichReply,
   sendRichReplyChunked,
@@ -978,26 +985,9 @@ export function installTelegram(bot: Bot, deps: TelegramDeps, contributions: Con
           return;
         }
         const reminders = deps.reminders.list(tenant.chatId);
-        if (reminders.length === 0) {
-          await sendRichReply(ctx, "_No active reminders in this chat._");
-          return;
-        }
-        const rows = reminders.map((r) => {
-          const local = new Date(r.fireAt).toLocaleString("en-US", {
-            dateStyle: "medium",
-            timeStyle: "short",
-          });
-          const repeat = r.repeat !== "none" ? ` · ${r.repeat}` : "";
-          return `| \`${r.id}\` | ${local}${repeat} | ${r.prompt.slice(0, 60).replace(/\|/g, "\\|")} |`;
+        await sendRichReply(ctx, reminderListMarkdown(reminders), {
+          ...(reminders.length > 0 ? { replyMarkup: reminderListKeyboard(reminders) } : {}),
         });
-        const md = [
-          `## Reminders (${reminders.length})`,
-          "",
-          "| ID | When | Prompt |",
-          "|---|---|---|",
-          ...rows,
-        ].join("\n");
-        await sendRichReply(ctx, md);
       },
     },
   ];
@@ -1896,6 +1886,38 @@ export function installTelegram(bot: Bot, deps: TelegramDeps, contributions: Con
   });
 
   // --- Image control callbacks ---
+  if (deps.reminders) {
+    bot.callbackQuery(REMINDER_CALLBACK_PATTERN, async (ctx) => {
+      const tenant = tenantFromGrammy(ctx);
+      const decision = checkAccess(access, tenant.chatId, tenant.userId);
+      if (!decision.ok) {
+        await ctx.answerCallbackQuery(decision.message);
+        return;
+      }
+
+      const result = applyReminderControl(deps.reminders!, {
+        action: ctx.match[1] as ReminderControlAction,
+        id: ctx.match[2],
+        chatId: tenant.chatId,
+        ...(tenant.userId != null ? { userId: tenant.userId } : {}),
+      });
+      if (result.status === "not_found") {
+        await ctx.answerCallbackQuery("This reminder is no longer active");
+        return;
+      }
+      if (result.status === "forbidden") {
+        await ctx.answerCallbackQuery("Only the reminder creator can change it");
+        return;
+      }
+
+      await ctx.answerCallbackQuery(
+        result.status === "cancelled" ? "Reminder cancelled" : "Reminder postponed by one hour"
+      );
+      const reminders = deps.reminders!.list(tenant.chatId);
+      await sendRichEdit(ctx, reminderListMarkdown(reminders), reminderListKeyboard(reminders));
+    });
+  }
+
   bot.callbackQuery(/^img:(var|prompt|square|wide)$/, async (ctx) => {
     const tenant = tenantFromGrammy(ctx);
     const messageId = ctx.callbackQuery.message?.message_id;

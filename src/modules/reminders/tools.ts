@@ -1,5 +1,6 @@
 import type { ToolDefinition } from "../../core/module.js";
 import type { RemindersService, RepeatInterval } from "./service.js";
+import { formatReminderTime } from "./presentation.js";
 
 const REPEAT_VALUES = ["none", "hourly", "daily", "weekly", "monthly"] as const;
 const MAX_ACTIVE_REMINDERS_PER_USER = 25;
@@ -15,11 +16,7 @@ function parseDateTime(raw: string): Date | null {
 function formatReminderList(reminders: ReturnType<RemindersService["list"]>): string {
   if (reminders.length === 0) return "No reminders found.";
   const lines = reminders.map((r, i) => {
-    const local = new Date(r.fireAt).toLocaleString("en-US", {
-      dateStyle: "medium",
-      timeStyle: "short",
-    });
-    return `${i + 1}. ID \`${r.id}\` — ${local} (repeat: ${r.repeat})\n   ${r.prompt.slice(0, 120)}`;
+    return `${i + 1}. ID \`${r.id}\` — ${formatReminderTime(r.fireAt)} (repeat: ${r.repeat})\n   ${r.prompt.slice(0, 120)}`;
   });
   return `Found ${reminders.length} reminder(s):\n${lines.join("\n")}`;
 }
@@ -80,11 +77,7 @@ export function reminderTools(service: RemindersService): ToolDefinition[] {
           repeat,
         });
 
-        const local = fireAt.toLocaleString("en-US", {
-          dateStyle: "medium",
-          timeStyle: "short",
-        });
-        return `Reminder set. ID: ${reminder.id}. Will fire ${local}${repeat !== "none" ? `, repeating ${repeat}` : ""}.`;
+        return `Reminder set. ID: ${reminder.id}. Will fire ${formatReminderTime(fireAt)}${repeat !== "none" ? `, repeating ${repeat}` : ""}.`;
       },
     },
     {
@@ -163,11 +156,7 @@ export function reminderTools(service: RemindersService): ToolDefinition[] {
 
         const updated = service.update(id, tenant.chatId, patch);
         if (!updated) return `Reminder ${id} not found in this chat.`;
-        const local = new Date(updated.fireAt).toLocaleString("en-US", {
-          dateStyle: "medium",
-          timeStyle: "short",
-        });
-        return `Reminder updated. ID: ${updated.id}. Fires ${local} (repeat: ${updated.repeat}).`;
+        return `Reminder updated. ID: ${updated.id}. Fires ${formatReminderTime(updated.fireAt)} (repeat: ${updated.repeat}).`;
       },
     },
     {
