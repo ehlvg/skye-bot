@@ -1,5 +1,10 @@
 import type { Context as GrammyContext } from "grammy";
-import type { InputRichMessage, Message, ReplyParameters } from "grammy/types";
+import type {
+  InlineKeyboardMarkup,
+  InputRichMessage,
+  Message,
+  ReplyParameters,
+} from "grammy/types";
 import type { LogEntry } from "../chatLog/service.js";
 import type { AuditEntry } from "../audit/service.js";
 import { log } from "../../utils/log.js";
@@ -335,17 +340,23 @@ function replyParameters(ctx: GrammyContext): ReplyParameters | undefined {
   return id == null ? undefined : { message_id: id };
 }
 
-export async function sendRichReply(ctx: GrammyContext, markdown: string): Promise<Message> {
+export async function sendRichReply(
+  ctx: GrammyContext,
+  markdown: string,
+  options: { replyMarkup?: InlineKeyboardMarkup } = {}
+): Promise<Message> {
   try {
     const richMessage: InputRichMessage = { markdown };
     const other: {
       message_thread_id?: number;
       reply_parameters?: ReplyParameters;
+      reply_markup?: InlineKeyboardMarkup;
     } = {};
     const tid = threadId(ctx);
     if (tid != null) other.message_thread_id = tid;
     const rp = replyParameters(ctx);
     if (rp) other.reply_parameters = rp;
+    if (options.replyMarkup) other.reply_markup = options.replyMarkup;
     return await withTelegramRetry(
       () => ctx.api.sendRichMessage(ctx.chat!.id, richMessage, other),
       { context: "sendRichMessage" }
@@ -359,6 +370,9 @@ export async function sendRichReply(ctx: GrammyContext, markdown: string): Promi
         message_thread_id: threadId(ctx),
         ...(i === 0 && ctx.message?.message_id
           ? { reply_to_message_id: ctx.message.message_id }
+          : {}),
+        ...(i === chunks.length - 1 && options.replyMarkup
+          ? { reply_markup: options.replyMarkup }
           : {}),
       });
       first ??= msg;

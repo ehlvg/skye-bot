@@ -50,6 +50,11 @@ function seed(userId: number): void {
     "INSERT INTO reminders (id, chat_id, thread_id, user_id, prompt, fire_at, repeat, created_at, active) VALUES (?, ?, NULL, ?, 'x', ?, 'none', ?, 1)"
   ).run("rem_1", userId, userId, now, now);
   db.prepare(
+    `INSERT INTO response_feedback
+      (chat_id, message_id, user_id, rating, created_at, updated_at)
+     VALUES (?, 123, ?, 1, ?, ?)`
+  ).run(userId, userId, now, now);
+  db.prepare(
     `INSERT INTO request_logs
       (ts, chat_id, chat_type, thread_id, user_id, username, first_name,
        msg_type, command, input_len, output_len, latency_ms, model, status, error_msg)
@@ -65,6 +70,7 @@ function counts(userId: number): Record<string, number> {
     "billing_accounts",
     "billing_events",
     "reminders",
+    "response_feedback",
     "request_logs",
   ];
   const byChat = ["memories", "chat_summaries", "conversation_items", "group_messages", "chat_configs"];
@@ -101,6 +107,7 @@ beforeEach(() => {
     DELETE FROM group_messages;
     DELETE FROM chat_configs;
     DELETE FROM reminders;
+    DELETE FROM response_feedback;
     DELETE FROM request_logs;
   `);
 });
@@ -122,6 +129,7 @@ describe("deleteUserData", () => {
     expect(summary.groupMessages).toBe(1);
     expect(summary.chatConfigs).toBe(1);
     expect(summary.reminders).toBe(1);
+    expect(summary.responseFeedback).toBe(1);
     expect(summary.requestLogs).toBe(1);
 
     const after = counts(USER);

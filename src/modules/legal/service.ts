@@ -12,6 +12,7 @@ export interface DeletionSummary {
   groupMessages: number;
   chatConfigs: number;
   reminders: number;
+  responseFeedback: number;
   requestLogs: number;
 }
 
@@ -20,8 +21,8 @@ export interface DeletionSummary {
  *
  * Two scopes are wiped:
  *   1. Per-user data keyed by `user_id` — user configs, MCP servers (+ their
- *      inputs), billing accounts/events, reminders the user created, audit
- *      request logs.
+ *      inputs), billing accounts/events, reminders and response feedback the
+ *      user created, audit request logs.
  *   2. Private-chat data where `chat_id = userId` (in DMs chatId === userId) —
  *      memories, chat summaries, conversation items, group messages, chat
  *      config.
@@ -51,6 +52,7 @@ export function deleteUserData(userId: number): DeletionSummary {
     groupMessages: changes("DELETE FROM group_messages WHERE chat_id = ?"),
     chatConfigs: changes("DELETE FROM chat_configs WHERE chat_id = ?"),
     reminders: changes("DELETE FROM reminders WHERE user_id = ?"),
+    responseFeedback: changes("DELETE FROM response_feedback WHERE user_id = ?"),
     requestLogs: changes("DELETE FROM request_logs WHERE user_id = ?"),
   };
 

@@ -12,6 +12,7 @@ process.env.DB_PATH = ":memory:";
 import { adminModule } from "../modules/admin/index.js";
 import { auditModule } from "../modules/audit/index.js";
 import { billingModule } from "../modules/billing/index.js";
+import { feedbackModule } from "../modules/feedback/index.js";
 import { chatConfigModule } from "../modules/chatConfig/index.js";
 import { chatLogModule } from "../modules/chatLog/index.js";
 import { legalModule } from "../modules/legal/index.js";
@@ -28,5 +29,6 @@ runMigrations(getDb(), [
   remindersModule,
   adminModule,
   billingModule,
+  feedbackModule,
   legalModule,
 ]);

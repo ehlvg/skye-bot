@@ -98,6 +98,7 @@ export function buildLegalCommands(deps: LegalDeps): TelegramCommand[] {
           "- Your long-term memories",
           "- Your private conversation history and summaries",
           "- Your reminders",
+          "- Your answer feedback",
           "- Your audit log entries",
           "",
           "_Shared group data is kept — it belongs to the group, not to you alone._",
@@ -152,6 +153,7 @@ export function buildLegalHandlers(deps: LegalDeps): TelegramHandler[] {
             summary.groupMessages +
             summary.chatConfigs +
             summary.reminders +
+            summary.responseFeedback +
             summary.requestLogs;
 
           const md = [

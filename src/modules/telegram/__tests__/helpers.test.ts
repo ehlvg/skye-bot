@@ -5,6 +5,7 @@ import {
   stabilizeStreamingMarkdown,
   type ToolCallRecord,
 } from "../helpers.js";
+import { feedbackKeyboard } from "../handlers.js";
 
 const calls: ToolCallRecord[] = [
   { name: "save_memory", args: { content: "likes coffee" }, isMcp: false },
@@ -45,5 +46,16 @@ describe("stabilizeStreamingMarkdown", () => {
   test("leaves stable markdown unchanged", () => {
     const markdown = "| A | B |\n|---|---|\n| $x$ | `code` |";
     expect(stabilizeStreamingMarkdown(markdown)).toBe(markdown);
+  });
+});
+
+describe("feedbackKeyboard", () => {
+  test("uses compact stable callback values", () => {
+    expect(feedbackKeyboard().inline_keyboard).toEqual([
+      [
+        { text: "👍", callback_data: "feedback:up" },
+        { text: "👎", callback_data: "feedback:down" },
+      ],
+    ]);
   });
 });

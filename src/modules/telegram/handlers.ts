@@ -14,6 +14,7 @@ import type { ChatConfigService } from "../chatConfig/service.js";
 import type { UserConfigService } from "../userConfig/service.js";
 import type { SpeechService } from "../speech/service.js";
 import type { AuditService } from "../audit/service.js";
+import type { FeedbackService, FeedbackRating } from "../feedback/service.js";
 import type { SandboxService } from "../sandbox/service.js";
 import type { ProactiveService } from "../proactive/service.js";
 import type { RemindersService, Reminder } from "../reminders/service.js";
@@ -54,6 +55,7 @@ export interface TelegramDeps {
   userConfig: UserConfigService;
   speech: SpeechService;
   audit: AuditService;
+  feedback: FeedbackService;
   sandbox?: SandboxService;
   proactive?: ProactiveService;
   reminders?: RemindersService;
@@ -1093,7 +1095,8 @@ export function installTelegram(bot: Bot, deps: TelegramDeps, contributions: Con
   const maybeSendChecklist = async (
     ctx: GrammyContext,
     text: string,
-    inputText: string
+    inputText: string,
+    replyMarkup: InlineKeyboard
   ): Promise<Message | undefined> => {
     if (!shouldPreferChecklist(inputText, text)) return undefined;
     const checklist = extractChecklist(text);
@@ -1103,6 +1106,7 @@ export function installTelegram(bot: Bot, deps: TelegramDeps, contributions: Con
       try {
         return await ctx.replyWithChecklist(checklist, {
           reply_parameters: replyParametersFor(ctx),
+          reply_markup: replyMarkup,
         });
       } catch (e) {
         log.warn({ err: e }, "Native checklist failed, falling back to rich Markdown");
@@ -1331,6 +1335,7 @@ export function installTelegram(bot: Bot, deps: TelegramDeps, contributions: Con
           await draft.delete();
           await ctx.replyWithVoice(new InputFile(audioBuffer, "response.ogg"), {
             reply_to_message_id: ctx.message?.message_id,
+            reply_markup: feedbackKeyboard(),
           });
           reactSafely(ctx, "👍");
           deps.audit.log({
@@ -1352,8 +1357,11 @@ export function installTelegram(bot: Bot, deps: TelegramDeps, contributions: Con
 
       const finalText = buildFinalReply(toolCallHistory, text);
       await draft.delete();
-      const checklistMessage = await maybeSendChecklist(ctx, finalText, inputText);
-      if (!checklistMessage) await sendRichReply(ctx, finalText);
+      const replyMarkup = feedbackKeyboard();
+      const checklistMessage = await maybeSendChecklist(ctx, finalText, inputText, replyMarkup);
+      if (!checklistMessage) {
+        await sendRichReply(ctx, finalText, { replyMarkup });
+      }
       reactSafely(ctx, "👍");
       deps.audit.log({
         ...ctxAudit(ctx),
@@ -1895,6 +1903,38 @@ export function installTelegram(bot: Bot, deps: TelegramDeps, contributions: Con
     });
   });
 
+  // --- Answer feedback callbacks ---
+  bot.callbackQuery(/^feedback:(up|down)$/, async (ctx) => {
+    const tenant = tenantFromGrammy(ctx);
+    const messageId = ctx.callbackQuery.message?.message_id;
+    if (!messageId || !tenant.userId) {
+      await ctx.answerCallbackQuery("Не удалось определить ответ");
+      return;
+    }
+
+    const decision = checkAccess(access, tenant.chatId, tenant.userId);
+    if (!decision.ok) {
+      await ctx.answerCallbackQuery(decision.message);
+      return;
+    }
+
+    const rating: FeedbackRating = ctx.match[1] === "up" ? 1 : -1;
+    const result = deps.feedback.record(tenant.chatId, messageId, tenant.userId, rating);
+    const message =
+      result === "unchanged"
+        ? "Эта оценка уже сохранена"
+        : result === "updated"
+          ? "Оценка изменена, спасибо"
+          : "Спасибо за оценку";
+    await ctx.answerCallbackQuery(message);
+    deps.audit.event({
+      action: "response_feedback",
+      userId: tenant.userId,
+      chatId: tenant.chatId,
+      details: { messageId, rating, result },
+    });
+  });
+
   // --- Image control callbacks ---
   bot.callbackQuery(/^img:(var|prompt|square|wide)$/, async (ctx) => {
     const tenant = tenantFromGrammy(ctx);
@@ -2224,6 +2264,10 @@ function imageKeyboard(): InlineKeyboard {
     .row()
     .text("Square", "img:square")
     .text("Wide", "img:wide");
+}
+
+export function feedbackKeyboard(): InlineKeyboard {
+  return new InlineKeyboard().text("👍", "feedback:up").text("👎", "feedback:down");
 }
 
 function replyParametersFor(ctx: GrammyContext): ReplyParameters | undefined {

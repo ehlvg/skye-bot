@@ -55,6 +55,7 @@ export const telegramModule: SkyeModule = {
         userConfig: ctx.services.get("userConfig"),
         speech: ctx.services.get("speech"),
         audit: ctx.services.get("audit"),
+        feedback: ctx.services.get("feedback"),
         sandbox: ctx.services.has("sandbox") ? ctx.services.get("sandbox") : undefined,
         proactive: ctx.services.has("proactive") ? ctx.services.get("proactive") : undefined,
         reminders: ctx.services.has("reminders") ? ctx.services.get("reminders") : undefined,

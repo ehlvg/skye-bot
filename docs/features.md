@@ -19,6 +19,7 @@ Skye supports several interaction modes and commands. This page covers what you 
 | `/paysupport`     | Shows payment support contact details (Telegram + email).                                                 | Yes     |
 | `/developer_info` | Shows the developer's name and contact details.                                                           | Yes     |
 | `/delete_my_data` | Permanently erases all data Skye stores about you (private chats only, with confirmation).                | Yes     |
+| `/feedback_stats` | Shows aggregate 👍/👎 answer statistics (administrators only).                                            | Yes     |
 
 ## Interactions
 
@@ -27,6 +28,8 @@ Skye supports several interaction modes and commands. This page covers what you 
 Send a message. In private chats, Skye responds automatically. In groups, mention Skye by its username (e.g., `@skye_bot`) to get a reply.
 
 Conversations are **streaming** — you'll see Skye's response build in real time as a draft, then finalize when complete. Short bursts of Telegram messages are grouped into one request, and each thread has a serialized queue so messages are not silently dropped. Recent conversation context is stored per thread and restored after restarts. Use `/reset` to clear this buffer.
+
+Completed AI answers include **👍 / 👎 feedback buttons**. Each user can leave one rating per answer and change it later. Skye stores only Telegram chat, message and user IDs, the rating, and timestamps; it does not duplicate the answer text in the feedback table. Bot administrators can view aggregate statistics with `/feedback_stats`.
 
 ### Image generation
 
