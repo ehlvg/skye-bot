@@ -23,6 +23,11 @@ import type { Contributions, TelegramCommand, ToolDefinition } from "../../core/
 import { tenantFromGrammy, threadKey, type TenantContext } from "../../core/tenant.js";
 import { checkAccess, hasMeteredAccess, type AccessDeps } from "./access.js";
 import { runChatLoop } from "./chat.js";
+import {
+  formatToolConfirmation,
+  TOOL_CONFIRMATION_CALLBACK_PATTERN,
+  ToolConfirmationStore,
+} from "./toolConfirmation.js";
 import type { BillingService } from "../billing/service.js";
 import type { AdminService } from "../admin/service.js";
 import {
@@ -105,6 +110,7 @@ export function installTelegram(bot: Bot, deps: TelegramDeps, contributions: Con
   const chatEpochs = new Map<number, number>();
   const billingQueues = new Map<number, Promise<void>>();
   const imageControls = new Map<string, ImageControl>();
+  const toolConfirmations = new ToolConfirmationStore();
   // Reference images collected per-thread, consumed by the generate_image tool.
   const threadReferenceImages = new Map<string, string[]>();
   // Media-group (album) accumulator: key=media_group_id, value=all photos in arrival order.
@@ -1256,6 +1262,35 @@ export function installTelegram(bot: Bot, deps: TelegramDeps, contributions: Con
             beforeRound: checkRoundQuota,
             onUsage: meterUsage,
             owner: deps.owner,
+            requestToolConfirmation: async (request) => {
+              if (tenant.userId == null) {
+                return `Tool "${request.toolName}" was not executed because the user's identity is unavailable.`;
+              }
+              const pending = toolConfirmations.create({
+                chatId: tenant.chatId,
+                threadId: tenant.threadId,
+                userId: tenant.userId,
+                ...request,
+              });
+              const keyboard = new InlineKeyboard()
+                .text("Run", `tool_confirm:allow:${pending.id}`)
+                .text("Cancel", `tool_confirm:deny:${pending.id}`);
+              await ctx.reply(
+                formatToolConfirmation(pending.toolName, pending.args, pending.isMcp),
+                {
+                  reply_markup: keyboard,
+                  reply_parameters: replyParametersFor(ctx),
+                  ...(tenant.threadId != null ? { message_thread_id: tenant.threadId } : {}),
+                }
+              );
+              deps.audit.event({
+                action: "tool_confirmation_requested",
+                userId: tenant.userId,
+                chatId: tenant.chatId,
+                details: { toolName: pending.toolName, isMcp: pending.isMcp },
+              });
+              return `Tool "${pending.toolName}" is awaiting explicit user confirmation and has not been executed.`;
+            },
           },
           tenant,
           inputItems,
@@ -1890,6 +1925,103 @@ export function installTelegram(bot: Bot, deps: TelegramDeps, contributions: Con
         log.error({ ...serializeError(e) }, "Video-note preparation failed");
         await ctx.reply("Failed to process the video note.", {
           reply_to_message_id: ctx.message.message_id,
+        });
+      }
+    });
+  });
+
+  // --- Explicit confirmation for potentially mutating tools ---
+  bot.callbackQuery(TOOL_CONFIRMATION_CALLBACK_PATTERN, async (ctx) => {
+    const tenant = tenantFromGrammy(ctx);
+    const callbackMessage = ctx.callbackQuery.message;
+    const threadId =
+      callbackMessage && "message_thread_id" in callbackMessage
+        ? callbackMessage.message_thread_id
+        : undefined;
+    const decision = checkAccess(access, tenant.chatId, tenant.userId);
+    if (!decision.ok) {
+      await ctx.answerCallbackQuery(decision.message);
+      return;
+    }
+
+    const action = ctx.match[1];
+    const confirmationId = ctx.match[2];
+    const consumed = toolConfirmations.consume(
+      confirmationId,
+      tenant.chatId,
+      tenant.userId,
+      threadId
+    );
+    if (consumed.status === "forbidden") {
+      await ctx.answerCallbackQuery("Only the requester can confirm this action");
+      return;
+    }
+    if (consumed.status === "not_found") {
+      await ctx.answerCallbackQuery("This confirmation expired or was already used");
+      return;
+    }
+
+    const pending = consumed.confirmation;
+    if (action === "deny") {
+      await ctx.answerCallbackQuery("Cancelled");
+      await ctx.editMessageText(`Cancelled: ${pending.toolName}`).catch(() => {});
+      deps.audit.event({
+        action: "tool_confirmation_denied",
+        userId: pending.userId,
+        chatId: pending.chatId,
+        details: { toolName: pending.toolName, isMcp: pending.isMcp },
+      });
+      return;
+    }
+
+    await ctx.answerCallbackQuery("Approved — running");
+    await ctx.editMessageText(`Approved: ${pending.toolName}\nRunning…`).catch(() => {});
+    deps.audit.event({
+      action: "tool_confirmation_approved",
+      userId: pending.userId,
+      chatId: pending.chatId,
+      details: { toolName: pending.toolName, isMcp: pending.isMcp },
+    });
+
+    enqueue(threadKey({ chatId: pending.chatId, threadId: pending.threadId }), async () => {
+      try {
+        const result = await pending.execute();
+        const maxResultLength = 3_500;
+        const visibleResult =
+          result.length > maxResultLength ? `${result.slice(0, maxResultLength)}\n…` : result;
+        const completionText = `Finished: ${pending.toolName}\n\n${visibleResult || "No output."}`;
+        await bot.api.sendMessage(
+          pending.chatId,
+          completionText,
+          pending.threadId != null ? { message_thread_id: pending.threadId } : undefined
+        );
+        deps.chatLog.appendConversation(
+          pending.chatId,
+          threadKey({ chatId: pending.chatId, threadId: pending.threadId }),
+          {
+            role: "assistant",
+            content: completionText,
+            text: completionText,
+          }
+        );
+        deps.audit.event({
+          action: "tool_confirmation_executed",
+          userId: pending.userId,
+          chatId: pending.chatId,
+          details: { toolName: pending.toolName, isMcp: pending.isMcp },
+        });
+      } catch (e) {
+        log.error({ err: e, tool: pending.toolName }, "Confirmed tool execution failed");
+        await bot.api
+          .sendMessage(pending.chatId, `Failed to run ${pending.toolName}.`, {
+            ...(pending.threadId != null ? { message_thread_id: pending.threadId } : {}),
+          })
+          .catch(() => {});
+        deps.audit.event({
+          action: "tool_confirmation_failed",
+          userId: pending.userId,
+          chatId: pending.chatId,
+          details: { toolName: pending.toolName, isMcp: pending.isMcp },
         });
       }
     });

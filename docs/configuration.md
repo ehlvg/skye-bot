@@ -145,6 +145,8 @@ Surfaced via the `/terms`, `/privacy`, `/paysupport`, `/developer_info`, and `/d
 Skye does not send Daytona network restriction parameters. The sandbox uses the organization's default
 tier-based policy, including the essential-service allowlist on Tier 1 and Tier 2.
 
+Sandbox reads and directory listings can run immediately. Commands, file writes, and sandbox resets require a one-time confirmation from the requesting Telegram user. A confirmation expires after 5 minutes and is discarded on restart.
+
 ## Access control
 
 Skye is now SaaS-first. Who can use the bot is decided in this order:

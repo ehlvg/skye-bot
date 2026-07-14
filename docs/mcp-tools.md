@@ -81,11 +81,16 @@ Per-user servers connect on startup alongside global servers. Tools are scoped b
 When the LLM decides to use an MCP tool, Skye:
 
 1. Identifies which MCP server owns the tool.
-2. Calls the tool through the MCP connection.
-3. Returns the result to the LLM as part of the conversation.
-4. The LLM incorporates the result into its response.
+2. Checks the tool's MCP annotations.
+3. Runs tools with `annotations.readOnlyHint: true` immediately. For every other tool, sends the requesting user a one-time **Run** / **Cancel** confirmation.
+4. Calls the approved tool through the MCP connection.
+5. Returns the result to the conversation so it is available to later responses.
 
 Tool calls are shown in the streaming draft with a 🔌 indicator so you can see when Skye is reaching out to external services.
+
+Confirmations expire after 5 minutes and are bound to the original chat, user, and forum topic. They are not persisted across restarts. Common secret fields in tool arguments are masked in the confirmation message.
+
+`readOnlyHint` is advisory metadata supplied by the MCP server. Skye uses it to avoid interrupting harmless reads, but it cannot prove that a server implementation has no side effects. Only connect MCP servers you trust.
 
 ## Tool iteration limit
 

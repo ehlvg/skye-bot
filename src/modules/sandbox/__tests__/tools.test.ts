@@ -32,6 +32,17 @@ describe("sandbox tools", () => {
     ]);
   });
 
+  it("requires confirmation only for mutating sandbox operations", () => {
+    const tools = sandboxTools(makeService());
+    const byName = new Map(tools.map((tool) => [tool.name, tool]));
+
+    expect(byName.get("sandbox_run_command")?.requiresConfirmation).toBe(true);
+    expect(byName.get("sandbox_write_file")?.requiresConfirmation).toBe(true);
+    expect(byName.get("sandbox_reset")?.requiresConfirmation).toBe(true);
+    expect(byName.get("sandbox_read_file")?.requiresConfirmation).not.toBe(true);
+    expect(byName.get("sandbox_list_files")?.requiresConfirmation).not.toBe(true);
+  });
+
   it("runs a command and returns exit code and output", async () => {
     const service = makeService();
     const tools = sandboxTools(service);
