@@ -11,6 +11,8 @@ import {
   type MemoryService,
   searchMemories,
   updateMemory,
+  memoryUpdatePatch,
+  EMPTY_MEMORY_UPDATE_RESULT,
   MEMORY_CATEGORIES,
   type MemoryCategory,
 } from "./service.js";
@@ -101,16 +103,9 @@ const memoryTools: ToolDefinition[] = [
       required: ["memory_id"],
     },
     execute: async (args, tenant) => {
-      const category = MEMORY_CATEGORIES.includes(args.category as MemoryCategory)
-        ? (args.category as MemoryCategory)
-        : undefined;
-      const entry = await updateMemory(tenant.chatId, String(args.memory_id ?? ""), {
-        ...(typeof args.content === "string" ? { content: args.content } : {}),
-        ...(category ? { category } : {}),
-        ...(args.expires_at === null || typeof args.expires_at === "string"
-          ? { expiresAt: args.expires_at }
-          : {}),
-      });
+      const patch = memoryUpdatePatch(args);
+      if (!patch) return EMPTY_MEMORY_UPDATE_RESULT;
+      const entry = await updateMemory(tenant.chatId, String(args.memory_id ?? ""), patch);
       return entry ? `Memory ${entry.id} updated.` : `Memory ${args.memory_id} not found.`;
     },
   },

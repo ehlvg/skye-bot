@@ -10,6 +10,7 @@ import {
   importMemories,
   exportMemories,
   updateMemory,
+  EMPTY_MEMORY_UPDATE_RESULT,
 } from "../modules/memory/service.js";
 import { getDb } from "../core/db.js";
 
@@ -121,6 +122,17 @@ describe("executeMemoryTool", () => {
     expect(getMemories(CHAT)[0].content).toBe("User prefers detailed answers");
   });
 
+  test("update_memory explains which fields are required when the patch is empty", async () => {
+    const entry = await addMemory(CHAT, "User prefers short answers", "preference");
+    const result = await executeMemoryTool(CHAT, {
+      name: "update_memory",
+      arguments: JSON.stringify({ memory_id: entry.id }),
+    });
+
+    expect(result).toBe(EMPTY_MEMORY_UPDATE_RESULT);
+    expect(getMemories(CHAT)[0].content).toBe("User prefers short answers");
+  });
+
   test("unknown tool returns error message", async () => {
     const result = await executeMemoryTool(CHAT, {
       name: "fly_spaceship",
@@ -211,6 +223,22 @@ describe("memory management", () => {
     const entry = await addMemory(CHAT, "Private chat fact", "fact");
     expect(await updateMemory(100, entry.id, { content: "Changed" })).toBeNull();
     expect(getMemories(CHAT)[0].content).toBe("Private chat fact");
+  });
+
+  test("does not update or resurrect a memory that expired earlier today", async () => {
+    const entry = await addMemory(CHAT, "Expired fact", "fact");
+    const expiredAt = new Date(Date.now() - 60_000).toISOString();
+    getDb().prepare("UPDATE memories SET expires_at = ? WHERE id = ?").run(expiredAt, entry.id);
+
+    expect(await updateMemory(CHAT, entry.id, { content: "Resurrected fact" })).toBeNull();
+    const stored = getDb()
+      .prepare<
+        { id: string },
+        { content: string; archivedAt: string | null }
+      >("SELECT content, archived_at AS archivedAt FROM memories WHERE id = @id")
+      .get({ id: entry.id });
+    expect(stored?.content).toBe("Expired fact");
+    expect(stored?.archivedAt).toBeTruthy();
   });
 
   test("search_memory without a category searches across all categories", async () => {

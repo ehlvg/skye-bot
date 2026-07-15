@@ -46,6 +46,23 @@ export interface MemoryUpdateInput {
   expiresAt?: string | null;
 }
 
+export const EMPTY_MEMORY_UPDATE_RESULT =
+  "Memory update requires content, category, or expires_at.";
+
+export function memoryUpdatePatch(args: Record<string, unknown>): MemoryUpdateInput | null {
+  const category = MEMORY_CATEGORIES.includes(args.category as MemoryCategory)
+    ? (args.category as MemoryCategory)
+    : undefined;
+  const patch: MemoryUpdateInput = {
+    ...(typeof args.content === "string" ? { content: args.content } : {}),
+    ...(category ? { category } : {}),
+    ...(args.expires_at === null || typeof args.expires_at === "string"
+      ? { expiresAt: args.expires_at }
+      : {}),
+  };
+  return Object.keys(patch).length > 0 ? patch : null;
+}
+
 interface MemoryRow {
   id: string;
   content: string;
@@ -319,13 +336,16 @@ export async function updateMemory(
   id: string,
   patch: MemoryUpdateInput
 ): Promise<MemoryEntry | null> {
+  const now = new Date();
+  const updatedAt = now.toISOString();
+  archiveExpiredMemories(chatId, updatedAt);
   const existing = getDb()
-    .prepare<[number, string], MemoryRow>(
+    .prepare<[number, string, string], MemoryRow>(
       `SELECT ${SELECT_COLUMNS} FROM memories
        WHERE chat_id = ? AND id = ? AND archived_at IS NULL
-         AND (expires_at IS NULL OR expires_at > datetime('now'))`
+         AND (expires_at IS NULL OR expires_at > ?)`
     )
-    .get(chatId, id);
+    .get(chatId, id, updatedAt);
   if (!existing) return null;
   if (
     patch.content === undefined &&
@@ -335,7 +355,6 @@ export async function updateMemory(
     throw new Error("Memory update must change content, category, or expiration");
   }
 
-  const now = new Date();
   const category =
     patch.category === undefined ? categoryOf(existing.category) : categoryOf(patch.category);
   const content = patch.content === undefined ? existing.content : normalizeContent(patch.content);
@@ -345,7 +364,6 @@ export async function updateMemory(
       : patch.category !== undefined && category !== categoryOf(existing.category)
         ? expiryFor(category, now)
         : existing.expiresAt;
-  const updatedAt = now.toISOString();
   getDb()
     .prepare(
       `UPDATE memories SET content = ?, category = ?, expires_at = ?, updated_at = ?
@@ -445,16 +463,9 @@ export async function executeMemoryTool(
         : "No matching memories found.";
     }
     case "update_memory": {
-      const category = MEMORY_CATEGORIES.includes(args.category as MemoryCategory)
-        ? (args.category as MemoryCategory)
-        : undefined;
-      const entry = await updateMemory(chatId, String(args.memory_id ?? ""), {
-        ...(typeof args.content === "string" ? { content: args.content } : {}),
-        ...(category ? { category } : {}),
-        ...(args.expires_at === null || typeof args.expires_at === "string"
-          ? { expiresAt: args.expires_at }
-          : {}),
-      });
+      const patch = memoryUpdatePatch(args);
+      if (!patch) return EMPTY_MEMORY_UPDATE_RESULT;
+      const entry = await updateMemory(chatId, String(args.memory_id ?? ""), patch);
       return entry ? `Memory ${entry.id} updated.` : `Memory ${args.memory_id} not found.`;
     }
     case "delete_memory": {
