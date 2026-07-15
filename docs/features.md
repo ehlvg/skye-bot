@@ -92,9 +92,9 @@ Memories are stored per chat. Use `/forget` to wipe all memories for the current
 
 ## Reminders
 
-Ask Skye in natural language to create a one-time or repeating reminder. Use `/reminders` to view the active reminders in the current chat. The list shows explicit UTC times and provides inline controls to postpone an item by one hour or cancel it without another model request.
+Ask Skye in natural language to create a one-time or repeating reminder. Use `/reminders` to view the numbered active reminders in the current chat with explicit UTC times. The list stays compact even when a chat has many reminders and does not add inline buttons.
 
-Reminder controls are scoped to the current chat. When a reminder has an owner, only the user who created it can use its buttons; this prevents another group member from changing it. Older ownerless reminders remain manageable by members of their chat for backward compatibility.
+Use `/postpone <number> <duration>` to move a reminder (`/postpone 1 35m`, `/postpone 2 2h`) and `/delete_reminder <number>` to delete one. Durations support minutes (`m`), hours (`h`), days (`d`), and weeks (`w`), up to 365 days. Commands are scoped to the current chat. When a reminder has an owner, only its creator can change it; older ownerless reminders remain manageable by members of their chat for backward compatibility.
 
 ## Group chat features
 

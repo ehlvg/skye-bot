@@ -2,8 +2,8 @@ import { test, expect, describe, beforeEach } from "vitest";
 import { resetDbForTesting, getDb, runMigrations } from "../../../core/db.js";
 import { remindersModule } from "../index.js";
 import { remindersService } from "../service.js";
-import { applyReminderControl, REMINDER_SNOOZE_MS } from "../controls.js";
-import { formatReminderTime, reminderListKeyboard, reminderListMarkdown } from "../presentation.js";
+import { applyReminderControl, MAX_POSTPONE_MS, parseReminderDuration } from "../controls.js";
+import { formatReminderTime, reminderListMarkdown } from "../presentation.js";
 
 beforeEach(() => {
   resetDbForTesting();
@@ -126,13 +126,13 @@ describe("reminders service", () => {
     expect(r.userId).toBe(999);
   });
 
-  test("only the reminder owner can use inline controls", () => {
+  test("only the reminder owner can use management commands", () => {
     const reminder = remindersService.create(CHAT, "Owner only", new Date(Date.now() + 60_000), {
       userId: 42,
     });
     const result = applyReminderControl(remindersService, {
-      action: "cancel",
-      id: reminder.id,
+      action: "delete",
+      number: 1,
       chatId: CHAT,
       userId: 43,
     });
@@ -141,11 +141,11 @@ describe("reminders service", () => {
     expect(remindersService.get(reminder.id, CHAT)).not.toBeNull();
   });
 
-  test("inline controls stay isolated to the current chat", () => {
+  test("management commands stay isolated to the current chat", () => {
     const reminder = remindersService.create(CHAT, "Private", new Date(Date.now() + 60_000));
     const result = applyReminderControl(remindersService, {
-      action: "cancel",
-      id: reminder.id,
+      action: "delete",
+      number: 1,
       chatId: CHAT + 1,
       userId: 42,
     });
@@ -154,36 +154,66 @@ describe("reminders service", () => {
     expect(remindersService.get(reminder.id, CHAT)).not.toBeNull();
   });
 
-  test("snoozes an active reminder by one hour", () => {
-    const reminder = remindersService.create(CHAT, "Later", new Date(Date.now() + 60_000), {
+  test("postpones a numbered reminder by the requested duration", () => {
+    const now = new Date("2030-01-01T10:00:00.000Z");
+    const reminder = remindersService.create(CHAT, "Later", new Date(now.getTime() + 60_000), {
       userId: 42,
     });
-    const now = new Date("2030-01-01T10:00:00.000Z");
     const result = applyReminderControl(remindersService, {
-      action: "snooze",
-      id: reminder.id,
+      action: "postpone",
+      number: 1,
       chatId: CHAT,
       userId: 42,
+      durationMs: 35 * 60_000,
       now,
     });
 
-    expect(result.status).toBe("snoozed");
+    expect(result.status).toBe("postponed");
     expect(new Date(remindersService.get(reminder.id, CHAT)!.fireAt).getTime()).toBe(
-      now.getTime() + REMINDER_SNOOZE_MS
+      now.getTime() + 36 * 60_000
     );
   });
 
-  test("renders explicit UTC times and valid Telegram callback data", () => {
-    const reminder = remindersService.create(CHAT, "Review | release\nnotes", new Date(), {
+  test("deletes the selected reminder by its current list number", () => {
+    const first = remindersService.create(CHAT, "Keep", new Date(Date.now() + 60_000));
+    const second = remindersService.create(CHAT, "Delete", new Date(Date.now() + 120_000));
+    const result = applyReminderControl(remindersService, {
+      action: "delete",
+      number: 2,
+      chatId: CHAT,
       userId: 42,
     });
-    const markdown = reminderListMarkdown([reminder]);
-    const keyboard = reminderListKeyboard([reminder]);
+
+    expect(result.status).toBe("deleted");
+    expect(remindersService.get(first.id, CHAT)).not.toBeNull();
+    expect(remindersService.get(second.id, CHAT)).toBeNull();
+  });
+
+  test("parses bounded reminder durations", () => {
+    expect(parseReminderDuration("35m")).toBe(35 * 60_000);
+    expect(parseReminderDuration("2 h")).toBe(2 * 60 * 60_000);
+    expect(parseReminderDuration("1w")).toBe(7 * 24 * 60 * 60_000);
+    expect(parseReminderDuration("0m")).toBeNull();
+    expect(parseReminderDuration("366d")).toBeNull();
+    expect(parseReminderDuration("tomorrow")).toBeNull();
+    expect(parseReminderDuration("365d")).toBe(MAX_POSTPONE_MS);
+  });
+
+  test("renders a compact numbered list with command instructions", () => {
+    const reminders = Array.from({ length: 10 }, (_, index) =>
+      remindersService.create(
+        CHAT,
+        index === 0 ? "Review | release\nnotes" : `Reminder ${index + 1}`,
+        new Date(Date.now() + (index + 1) * 60_000),
+        { userId: 42 }
+      )
+    );
+    const markdown = reminderListMarkdown(reminders);
 
     expect(formatReminderTime("2030-01-02T03:04:00.000Z")).toContain("UTC");
     expect(markdown).toContain("Review \\| release notes");
-    for (const button of keyboard.inline_keyboard.flat()) {
-      if ("callback_data" in button) expect(button.callback_data.length).toBeLessThanOrEqual(64);
-    }
+    expect(markdown).toContain("| 10 |");
+    expect(markdown).toContain("/postpone 1 35m");
+    expect(markdown).toContain("/delete_reminder 1");
   });
 });

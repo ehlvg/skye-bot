@@ -1,7 +1,4 @@
-import { InlineKeyboard } from "grammy";
 import type { Reminder } from "./service.js";
-
-export const REMINDER_CALLBACK_PATTERN = /^reminder:(cancel|snooze):(rem_[0-9a-f-]+)$/;
 
 export function formatReminderTime(fireAt: string | Date): string {
   const date = typeof fireAt === "string" ? new Date(fireAt) : fireAt;
@@ -26,18 +23,10 @@ export function reminderListMarkdown(reminders: Reminder[]): string {
     "|---|---|---|",
     ...rows,
     "",
-    "Use the buttons below to postpone a reminder by one hour or cancel it.",
+    "Commands:",
+    "- `/postpone <number> <duration>` — move a reminder, for example `/postpone 1 35m` or `/postpone 2 2h`.",
+    "- `/delete_reminder <number>` — delete a reminder, for example `/delete_reminder 1`.",
+    "",
+    "Supported duration units: `m` (minutes), `h` (hours), `d` (days), `w` (weeks).",
   ].join("\n");
-}
-
-export function reminderListKeyboard(reminders: Reminder[]): InlineKeyboard {
-  const keyboard = new InlineKeyboard();
-  reminders.forEach((reminder, index) => {
-    const number = index + 1;
-    keyboard
-      .text(`#${number} +1 hour`, `reminder:snooze:${reminder.id}`)
-      .text(`#${number} Cancel`, `reminder:cancel:${reminder.id}`)
-      .row();
-  });
-  return keyboard;
 }
