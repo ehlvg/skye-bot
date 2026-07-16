@@ -12,6 +12,7 @@ const DEFAULT_EXPIRY_DAYS: Record<MemoryCategory, number | null> = {
 };
 const MAX_CONTENT_LENGTH = 2_000;
 const MAX_SEARCH_RESULTS = 50;
+const CONTEXT_PREFERENCE_LIMIT = 4;
 
 export interface MemoryEntry {
   id: string;
@@ -37,6 +38,29 @@ export interface MemoryInput {
 export interface MemorySearchOptions {
   category?: MemoryCategory;
   limit?: number;
+}
+
+export interface MemoryUpdateInput {
+  content?: string;
+  category?: MemoryCategory;
+  expiresAt?: string | null;
+}
+
+export const EMPTY_MEMORY_UPDATE_RESULT =
+  "Memory update requires content, category, or expires_at.";
+
+export function memoryUpdatePatch(args: Record<string, unknown>): MemoryUpdateInput | null {
+  const category = MEMORY_CATEGORIES.includes(args.category as MemoryCategory)
+    ? (args.category as MemoryCategory)
+    : undefined;
+  const patch: MemoryUpdateInput = {
+    ...(typeof args.content === "string" ? { content: args.content } : {}),
+    ...(category ? { category } : {}),
+    ...(args.expires_at === null || typeof args.expires_at === "string"
+      ? { expiresAt: args.expires_at }
+      : {}),
+  };
+  return Object.keys(patch).length > 0 ? patch : null;
 }
 
 interface MemoryRow {
@@ -186,6 +210,15 @@ function rowContainsPhrase(query: string, content: string): boolean {
   return content.toLocaleLowerCase().includes(query.toLocaleLowerCase());
 }
 
+function mergedContent(existing: string, incoming: string): string {
+  if (existing.toLocaleLowerCase() === incoming.toLocaleLowerCase()) return existing;
+  if (rowContainsPhrase(existing, incoming)) return incoming;
+  if (rowContainsPhrase(incoming, existing)) return existing;
+  // Highly similar, equally specific statements usually represent a correction
+  // (for example, "favorite color is blue" -> "favorite color is green").
+  return incoming;
+}
+
 function addMemorySync(
   chatId: number,
   rawContent: string,
@@ -213,18 +246,18 @@ function addMemorySync(
     );
 
   if (existing) {
-    const mergedContent = existing.content.length >= content.length ? existing.content : content;
+    const contentAfterMerge = mergedContent(existing.content, content);
     const mergedExpiry =
       expiresAt === undefined ? existing.expiresAt : expiryFor(validCategory, now, expiresAt);
     getDb()
       .prepare(
         "UPDATE memories SET content = ?, updated_at = ?, last_used_at = ?, expires_at = ? WHERE chat_id = ? AND id = ?"
       )
-      .run(mergedContent, createdAt, createdAt, mergedExpiry, chatId, existing.id);
+      .run(contentAfterMerge, createdAt, createdAt, mergedExpiry, chatId, existing.id);
     return {
       ...toEntry({
         ...existing,
-        content: mergedContent,
+        content: contentAfterMerge,
         updatedAt: createdAt,
         lastUsedAt: createdAt,
         expiresAt: mergedExpiry,
@@ -257,6 +290,87 @@ function addMemorySync(
       entry.expiresAt
     );
   return entry;
+}
+
+export function contextMemories(chatId: number, query: string, limit = 12): MemoryEntry[] {
+  const safeLimit = Math.min(Math.max(limit, 1), MAX_SEARCH_RESULTS);
+  const relevant = searchMemories(chatId, query, { limit: safeLimit });
+  const preferences = getDb()
+    .prepare<[number, number], MemoryRow>(
+      `SELECT ${SELECT_COLUMNS} FROM memories
+       WHERE chat_id = ? AND category = 'preference' AND archived_at IS NULL
+         AND (expires_at IS NULL OR expires_at > datetime('now'))
+       ORDER BY updated_at DESC
+       LIMIT ?`
+    )
+    .all(chatId, Math.min(CONTEXT_PREFERENCE_LIMIT, safeLimit))
+    .map(toEntry);
+  const seen = new Set<string>();
+  const result = [...preferences, ...relevant].filter((entry) => {
+    if (seen.has(entry.id)) return false;
+    seen.add(entry.id);
+    return true;
+  });
+  const selected = result.slice(0, safeLimit);
+  if (preferences.length > 0) {
+    const now = new Date().toISOString();
+    const selectedPreferenceIds = selected
+      .filter((entry) => entry.category === "preference")
+      .map((entry) => entry.id);
+    if (selectedPreferenceIds.length > 0) {
+      getDb()
+        .prepare(
+          `UPDATE memories SET last_used_at = ? WHERE chat_id = ? AND id IN (${selectedPreferenceIds.map(() => "?").join(",")})`
+        )
+        .run(now, chatId, ...selectedPreferenceIds);
+      for (const entry of selected) {
+        if (selectedPreferenceIds.includes(entry.id)) entry.lastUsedAt = now;
+      }
+    }
+  }
+  return selected;
+}
+
+export async function updateMemory(
+  chatId: number,
+  id: string,
+  patch: MemoryUpdateInput
+): Promise<MemoryEntry | null> {
+  const now = new Date();
+  const updatedAt = now.toISOString();
+  archiveExpiredMemories(chatId, updatedAt);
+  const existing = getDb()
+    .prepare<[number, string, string], MemoryRow>(
+      `SELECT ${SELECT_COLUMNS} FROM memories
+       WHERE chat_id = ? AND id = ? AND archived_at IS NULL
+         AND (expires_at IS NULL OR expires_at > ?)`
+    )
+    .get(chatId, id, updatedAt);
+  if (!existing) return null;
+  if (
+    patch.content === undefined &&
+    patch.category === undefined &&
+    patch.expiresAt === undefined
+  ) {
+    throw new Error("Memory update must change content, category, or expiration");
+  }
+
+  const category =
+    patch.category === undefined ? categoryOf(existing.category) : categoryOf(patch.category);
+  const content = patch.content === undefined ? existing.content : normalizeContent(patch.content);
+  const expiresAt =
+    patch.expiresAt !== undefined
+      ? expiryFor(category, now, patch.expiresAt)
+      : patch.category !== undefined && category !== categoryOf(existing.category)
+        ? expiryFor(category, now)
+        : existing.expiresAt;
+  getDb()
+    .prepare(
+      `UPDATE memories SET content = ?, category = ?, expires_at = ?, updated_at = ?
+       WHERE chat_id = ? AND id = ?`
+    )
+    .run(content, category, expiresAt, updatedAt, chatId, id);
+  return toEntry({ ...existing, content, category, expiresAt, updatedAt });
 }
 
 export async function addMemory(
@@ -348,6 +462,12 @@ export async function executeMemoryTool(
         ? results.map((entry) => `[${entry.id}] (${entry.category}) ${entry.content}`).join("\n")
         : "No matching memories found.";
     }
+    case "update_memory": {
+      const patch = memoryUpdatePatch(args);
+      if (!patch) return EMPTY_MEMORY_UPDATE_RESULT;
+      const entry = await updateMemory(chatId, String(args.memory_id ?? ""), patch);
+      return entry ? `Memory ${entry.id} updated.` : `Memory ${args.memory_id} not found.`;
+    }
     case "delete_memory": {
       const ok = await deleteMemory(chatId, String(args.memory_id ?? ""));
       return ok ? `Memory ${args.memory_id} deleted.` : `Memory ${args.memory_id} not found.`;
@@ -360,6 +480,7 @@ export async function executeMemoryTool(
 export interface MemoryService {
   list(chatId: number): MemoryEntry[];
   search(chatId: number, query: string, options?: MemorySearchOptions): MemoryEntry[];
+  context(chatId: number, query: string, limit?: number): MemoryEntry[];
   add(
     chatId: number,
     content: string,
@@ -368,6 +489,7 @@ export interface MemoryService {
   ): Promise<MemoryEntry>;
   import(chatId: number, records: MemoryInput[]): Promise<{ imported: number; merged: number }>;
   export(chatId: number, includeArchived?: boolean): MemoryEntry[];
+  update(chatId: number, id: string, patch: MemoryUpdateInput): Promise<MemoryEntry | null>;
   delete(chatId: number, id: string): Promise<boolean>;
   clear(chatId: number): Promise<void>;
 }
@@ -375,9 +497,11 @@ export interface MemoryService {
 export const memoryService: MemoryService = {
   list: getMemories,
   search: searchMemories,
+  context: contextMemories,
   add: addMemory,
   import: importMemories,
   export: exportMemories,
+  update: updateMemory,
   delete: deleteMemory,
   clear: clearMemories,
 };

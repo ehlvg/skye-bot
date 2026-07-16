@@ -10,6 +10,9 @@ import {
   memoryService,
   type MemoryService,
   searchMemories,
+  updateMemory,
+  memoryUpdatePatch,
+  EMPTY_MEMORY_UPDATE_RESULT,
   MEMORY_CATEGORIES,
   type MemoryCategory,
 } from "./service.js";
@@ -80,6 +83,30 @@ const memoryTools: ToolDefinition[] = [
       return results.length
         ? results.map((entry) => `[${entry.id}] (${entry.category}) ${entry.content}`).join("\n")
         : "No matching memories found.";
+    },
+  },
+  {
+    name: "update_memory",
+    description:
+      "Correct an existing memory by ID. Use this instead of saving a duplicate when remembered information changes.",
+    parameters: {
+      type: "object",
+      properties: {
+        memory_id: { type: "string", description: "ID of the memory to update." },
+        content: { type: "string", description: "Corrected memory content." },
+        category: { type: "string", enum: [...MEMORY_CATEGORIES] },
+        expires_at: {
+          type: ["string", "null"],
+          description: "New ISO 8601 expiration date, or null to make the memory permanent.",
+        },
+      },
+      required: ["memory_id"],
+    },
+    execute: async (args, tenant) => {
+      const patch = memoryUpdatePatch(args);
+      if (!patch) return EMPTY_MEMORY_UPDATE_RESULT;
+      const entry = await updateMemory(tenant.chatId, String(args.memory_id ?? ""), patch);
+      return entry ? `Memory ${entry.id} updated.` : `Memory ${args.memory_id} not found.`;
     },
   },
   {

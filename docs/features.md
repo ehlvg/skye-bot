@@ -80,12 +80,15 @@ Skye can remember things across conversations. Memory is scoped to a chat and us
 
 The memory service searches relevant records for the current request and sends only those results to the model. The model can also call `search_memory` explicitly. Expired records are archived automatically when the chat uses memory, and are excluded from normal lists and searches.
 
+Up to four recent preferences are always included in the model context even when the current request uses different words. This keeps stable instructions such as language or answer-style preferences effective without loading the complete memory table.
+
 When a new memory is sufficiently similar to an existing active memory in the same category, Skye updates the existing record instead of creating a duplicate.
 
-Three built-in tools are available to the LLM:
+Four built-in tools are available to the LLM:
 
 - **`save_memory`** — Stores a fact, preference, or note. Skye uses this automatically when you tell it something worth remembering, or you can ask it directly: "Remember that my favorite color is blue."
 - **`search_memory`** — Searches relevant memories by keywords and can filter by category.
+- **`update_memory`** — Corrects the content, category, or expiration of an existing memory by ID.
 - **`delete_memory`** — Removes a specific memory by its ID.
 
 Memories are stored per chat. Use `/forget` to wipe all memories for the current chat. You can view, delete, and import/export memories from the Settings panel. Imports are limited to authorized chats and pass through the same validation and duplicate-merging rules as normal saves.
