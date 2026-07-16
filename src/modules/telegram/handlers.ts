@@ -17,6 +17,8 @@ import type { AuditService } from "../audit/service.js";
 import type { SandboxService } from "../sandbox/service.js";
 import type { ProactiveService } from "../proactive/service.js";
 import type { RemindersService, Reminder } from "../reminders/service.js";
+import { applyReminderControl, parseReminderDuration } from "../reminders/controls.js";
+import { formatReminderTime, reminderListMarkdown } from "../reminders/presentation.js";
 import type { ChannelService } from "../channel/service.js";
 import type { EventBus } from "../../core/events.js";
 import type { Contributions, TelegramCommand, ToolDefinition } from "../../core/module.js";
@@ -978,26 +980,82 @@ export function installTelegram(bot: Bot, deps: TelegramDeps, contributions: Con
           return;
         }
         const reminders = deps.reminders.list(tenant.chatId);
-        if (reminders.length === 0) {
-          await sendRichReply(ctx, "_No active reminders in this chat._");
+        await sendRichReply(ctx, reminderListMarkdown(reminders));
+      },
+    },
+    {
+      name: "postpone",
+      description: "Postpone a reminder: /postpone 1 35m",
+      public: true,
+      handler: async (ctx, tenant) => {
+        if (!deps.reminders) {
+          await sendRichReply(ctx, "_Reminders are not available._");
           return;
         }
-        const rows = reminders.map((r) => {
-          const local = new Date(r.fireAt).toLocaleString("en-US", {
-            dateStyle: "medium",
-            timeStyle: "short",
-          });
-          const repeat = r.repeat !== "none" ? ` · ${r.repeat}` : "";
-          return `| \`${r.id}\` | ${local}${repeat} | ${r.prompt.slice(0, 60).replace(/\|/g, "\\|")} |`;
+        const args = ctx.match?.toString().trim() ?? "";
+        const match = args.match(/^(\d+)\s+(.+)$/);
+        const number = match ? Number(match[1]) : 0;
+        const durationMs = match ? parseReminderDuration(match[2]) : null;
+        if (!Number.isSafeInteger(number) || number < 1 || durationMs == null) {
+          await sendRichReply(
+            ctx,
+            "Usage: `/postpone <number> <duration>`, for example `/postpone 1 35m` or `/postpone 2 2h`. Maximum duration: 365 days."
+          );
+          return;
+        }
+
+        const result = applyReminderControl(deps.reminders, {
+          action: "postpone",
+          number,
+          durationMs,
+          chatId: tenant.chatId,
+          ...(tenant.userId != null ? { userId: tenant.userId } : {}),
         });
-        const md = [
-          `## Reminders (${reminders.length})`,
-          "",
-          "| ID | When | Prompt |",
-          "|---|---|---|",
-          ...rows,
-        ].join("\n");
-        await sendRichReply(ctx, md);
+        if (result.status === "not_found") {
+          await sendRichReply(ctx, `Reminder #${number} was not found. Use /reminders to refresh the list.`);
+          return;
+        }
+        if (result.status === "forbidden") {
+          await sendRichReply(ctx, "Only the reminder creator can change it.");
+          return;
+        }
+        await sendRichReply(
+          ctx,
+          `Reminder #${number} postponed until ${formatReminderTime(result.reminder.fireAt)}.`
+        );
+      },
+    },
+    {
+      name: "delete_reminder",
+      description: "Delete a reminder: /delete_reminder 1",
+      public: true,
+      handler: async (ctx, tenant) => {
+        if (!deps.reminders) {
+          await sendRichReply(ctx, "_Reminders are not available._");
+          return;
+        }
+        const rawNumber = ctx.match?.toString().trim() ?? "";
+        const number = /^\d+$/.test(rawNumber) ? Number(rawNumber) : 0;
+        if (!Number.isSafeInteger(number) || number < 1) {
+          await sendRichReply(ctx, "Usage: `/delete_reminder <number>`, for example `/delete_reminder 1`.");
+          return;
+        }
+
+        const result = applyReminderControl(deps.reminders, {
+          action: "delete",
+          number,
+          chatId: tenant.chatId,
+          ...(tenant.userId != null ? { userId: tenant.userId } : {}),
+        });
+        if (result.status === "not_found") {
+          await sendRichReply(ctx, `Reminder #${number} was not found. Use /reminders to refresh the list.`);
+          return;
+        }
+        if (result.status === "forbidden") {
+          await sendRichReply(ctx, "Only the reminder creator can delete it.");
+          return;
+        }
+        await sendRichReply(ctx, `Reminder #${number} deleted.`);
       },
     },
   ];
