@@ -79,17 +79,16 @@ export class ThreadWorkQueue {
         }, this.timeoutMs);
         timer.unref();
 
-        let rejectOnAbort: (() => void) | undefined;
-        const aborted = new Promise<never>((_resolve, reject) => {
-          rejectOnAbort = () => reject(controller.signal.reason ?? new Error("Queue job aborted"));
-          controller.signal.addEventListener("abort", rejectOnAbort, { once: true });
-        });
-
         try {
-          await Promise.race([job(controller.signal), aborted]);
+          try {
+            await job(controller.signal);
+          } catch (error) {
+            if (controller.signal.aborted) throw controller.signal.reason;
+            throw error;
+          }
+          if (controller.signal.aborted) throw controller.signal.reason;
         } finally {
           clearTimeout(timer);
-          if (rejectOnAbort) controller.signal.removeEventListener("abort", rejectOnAbort);
           if (this.active.get(key)?.controller === controller) this.active.delete(key);
         }
       })

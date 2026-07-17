@@ -27,15 +27,26 @@ describe("ThreadWorkQueue", () => {
     expect(queue.diagnostics()).toMatchObject({ pendingJobs: 0, activeJobs: 0 });
   });
 
-  it("releases a thread after a timed-out job", async () => {
+  it("does not overlap a successor while a timed-out job is still settling", async () => {
     const queue = new ThreadWorkQueue(15);
     const events: string[] = [];
+    let finishFirst!: () => void;
 
-    queue.enqueue("chat:1", 1, async (signal) => abortableWait(signal));
+    queue.enqueue(
+      "chat:1",
+      1,
+      async () =>
+        new Promise<void>((resolve) => {
+          finishFirst = resolve;
+        })
+    );
     queue.enqueue("chat:1", 1, async () => {
       events.push("continued");
     });
 
+    await new Promise((resolve) => setTimeout(resolve, 30));
+    expect(events).toEqual([]);
+    finishFirst();
     await queue.whenIdle();
     expect(events).toEqual(["continued"]);
     expect(queue.diagnostics().timedOutTotal).toBe(1);
@@ -97,6 +108,33 @@ describe("TelegramReliabilityService", () => {
     await service.processUpdate(9, undefined, async () => undefined);
 
     expect(service.diagnostics()).toMatchObject({ processedUpdates: 1, failedUpdates: 1 });
+    db.close();
+  });
+
+  it("persists an update only after its queued work succeeds", async () => {
+    const { db, service } = createService();
+    let finishWork!: () => void;
+
+    const processing = service.processUpdate(10, 7, async () => {
+      await service.queue.enqueueAndWait(
+        "chat:7",
+        7,
+        async () =>
+          new Promise<void>((resolve) => {
+            finishWork = resolve;
+          })
+      );
+    });
+
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(
+      db.prepare("SELECT update_id FROM telegram_processed_updates WHERE update_id = 10").get()
+    ).toBeUndefined();
+    finishWork();
+    await processing;
+    expect(
+      db.prepare("SELECT update_id FROM telegram_processed_updates WHERE update_id = 10").get()
+    ).toEqual({ update_id: 10 });
     db.close();
   });
 

@@ -120,6 +120,7 @@ export function installTelegram(bot: Bot, deps: TelegramDeps, contributions: Con
       tenant: ReturnType<typeof tenantFromGrammy>;
       ctxs: GrammyContext[];
       timer: NodeJS.Timeout;
+      completion: Promise<void>;
     }
   >();
   const MEDIA_GROUP_GRACE_MS = 700;
@@ -372,7 +373,7 @@ export function installTelegram(bot: Bot, deps: TelegramDeps, contributions: Con
 
   const enqueue = (key: string, job: (signal: AbortSignal) => Promise<void>) => {
     const chatId = Number(key.split(":", 1)[0]);
-    deps.reliability.queue.enqueue(key, chatId, job);
+    return deps.reliability.queue.enqueueAndWait(key, chatId, job);
   };
 
   const withBillingLock = async <T>(
@@ -1503,7 +1504,7 @@ export function installTelegram(bot: Bot, deps: TelegramDeps, contributions: Con
     if (refs.length > 0) threadReferenceImages.set(tk, refs);
 
     const text = ctx.message.text || "";
-    enqueue(tk, async (signal) => {
+    await enqueue(tk, async (signal) => {
       const content = `${replyContext(ctx)}${replyImageContextNote(ctx)}${senderTag(ctx)}${text}`;
       const userItem: ResponseInputItem = {
         type: "message",
@@ -1528,17 +1529,29 @@ export function installTelegram(bot: Bot, deps: TelegramDeps, contributions: Con
       const existing = mediaGroups.get(mediaGroupId);
       if (existing) {
         existing.ctxs.push(ctx);
+        await existing.completion;
       } else {
+        let resolveCompletion!: () => void;
+        let rejectCompletion!: (error: unknown) => void;
+        const completion = new Promise<void>((resolve, reject) => {
+          resolveCompletion = resolve;
+          rejectCompletion = reject;
+        });
         const entry = {
           tenant,
           ctxs: [ctx],
           timer: undefined as unknown as NodeJS.Timeout,
+          completion,
         };
         entry.timer = setTimeout(() => {
           mediaGroups.delete(mediaGroupId);
-          void processMediaGroup(entry.tenant, entry.ctxs);
+          void processMediaGroup(entry.tenant, entry.ctxs).then(
+            resolveCompletion,
+            rejectCompletion
+          );
         }, MEDIA_GROUP_GRACE_MS);
         mediaGroups.set(mediaGroupId, entry);
+        await completion;
       }
       return;
     }
@@ -1552,7 +1565,7 @@ export function installTelegram(bot: Bot, deps: TelegramDeps, contributions: Con
         });
         return;
       }
-      void runImageEditCommand(ctx, tenant, prompt);
+      await runImageEditCommand(ctx, tenant, prompt);
       return;
     }
 
@@ -1567,7 +1580,7 @@ export function installTelegram(bot: Bot, deps: TelegramDeps, contributions: Con
     }
     const replyRefs = await collectReferenceImages(ctx);
     if (replyRefs.length > 0) threadReferenceImages.set(tk, replyRefs);
-    enqueue(tk, async (signal) => {
+    await enqueue(tk, async (signal) => {
       try {
         const file = await ctx.api.getFile(ctx.message.photo.pop()!.file_id);
         const telegramUrl = `https://api.telegram.org/file/bot${deps.botToken}/${file.file_path}`;
@@ -1642,7 +1655,7 @@ export function installTelegram(bot: Bot, deps: TelegramDeps, contributions: Con
     const allRefs = [...replyRefs, ...photoUrls];
     if (allRefs.length > 0) threadReferenceImages.set(tk, allRefs);
 
-    enqueue(tk, async (signal) => {
+    await enqueue(tk, async (signal) => {
       try {
         const tag = senderTag(captionCtx ?? ctxs[0]);
         const contentParts: { type: string; text?: string; image_url?: string }[] = [];
@@ -1785,7 +1798,7 @@ export function installTelegram(bot: Bot, deps: TelegramDeps, contributions: Con
 
     const tenant = tenantFromGrammy(ctx);
     const tk = threadKey(tenant);
-    enqueue(tk, async (signal) => {
+    await enqueue(tk, async (signal) => {
       try {
         await ctx.api.sendChatAction(tenant.chatId, "typing");
         const file = await ctx.api.getFile(ctx.message.voice.file_id);
@@ -1843,7 +1856,7 @@ export function installTelegram(bot: Bot, deps: TelegramDeps, contributions: Con
     const tenant = tenantFromGrammy(ctx);
     const tk = threadKey(tenant);
 
-    enqueue(tk, async (signal) => {
+    await enqueue(tk, async (signal) => {
       try {
         await ctx.api.sendChatAction(tenant.chatId, "upload_document");
 
@@ -1933,7 +1946,7 @@ export function installTelegram(bot: Bot, deps: TelegramDeps, contributions: Con
 
     const tenant = tenantFromGrammy(ctx);
     const tk = threadKey(tenant);
-    enqueue(tk, async (signal) => {
+    await enqueue(tk, async (signal) => {
       if (!deps.speech.isSttAvailable()) {
         await ctx.reply("Audio recognition is not configured.", {
           reply_to_message_id: ctx.message.message_id,
@@ -1969,7 +1982,7 @@ export function installTelegram(bot: Bot, deps: TelegramDeps, contributions: Con
 
     const tenant = tenantFromGrammy(ctx);
     const tk = threadKey(tenant);
-    enqueue(tk, async (signal) => {
+    await enqueue(tk, async (signal) => {
       if (!deps.speech.isSttAvailable()) {
         await ctx.reply("Video-note transcription is not configured.", {
           reply_to_message_id: ctx.message.message_id,
@@ -2039,7 +2052,7 @@ export function installTelegram(bot: Bot, deps: TelegramDeps, contributions: Con
 
     const action = ctx.match[1];
     await ctx.answerCallbackQuery("Working on it");
-    enqueue(threadKey(tenant), async (signal) => {
+    await enqueue(threadKey(tenant), async (signal) => {
       try {
         signal.throwIfAborted();
         await ctx.api.sendChatAction(tenant.chatId, "upload_photo");
