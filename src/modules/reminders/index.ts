@@ -12,12 +12,6 @@ declare module "../../core/module.js" {
   }
 }
 
-declare module "../../core/events.js" {
-  interface SkyeEvents {
-    "reminders.fired": { reminder: import("./service.js").Reminder };
-  }
-}
-
 let schedulerRef: ReminderScheduler | null = null;
 
 export const remindersModule: SkyeModule = {
@@ -29,7 +23,7 @@ export const remindersModule: SkyeModule = {
 
     const cfg = ctx.config as RemindersEnv;
     const scheduler = new ReminderScheduler(
-      { service: remindersService, events: ctx.events },
+      { service: remindersService, jobs: ctx.services.get("jobs") },
       {
         enabled: cfg.REMINDERS_ENABLED,
         checkIntervalSec: cfg.REMINDERS_CHECK_INTERVAL_SEC,

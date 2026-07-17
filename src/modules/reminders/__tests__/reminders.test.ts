@@ -2,13 +2,16 @@ import { test, expect, describe, beforeEach } from "vitest";
 import { resetDbForTesting, getDb, runMigrations } from "../../../core/db.js";
 import { remindersModule } from "../index.js";
 import { remindersService } from "../service.js";
+import { jobsModule } from "../../jobs/index.js";
+import { SqliteBackgroundJobs } from "../../jobs/service.js";
+import { ReminderScheduler, reminderDeliveryJobId } from "../scheduler.js";
 import { applyReminderControl, MAX_POSTPONE_MS, parseReminderDuration } from "../controls.js";
 import { formatReminderTime, reminderListMarkdown } from "../presentation.js";
 
 beforeEach(() => {
   resetDbForTesting();
   process.env.DB_PATH = ":memory:";
-  runMigrations(getDb(), [remindersModule]);
+  runMigrations(getDb(), [jobsModule, remindersModule]);
 });
 
 describe("reminders service", () => {
@@ -124,6 +127,51 @@ describe("reminders service", () => {
     });
     expect(r.threadId).toBe(42);
     expect(r.userId).toBe(999);
+  });
+
+  test("queues due reminder delivery once with a deterministic id", () => {
+    const jobs = new SqliteBackgroundJobs(getDb(), {
+      enabled: true,
+      pollIntervalMs: 1000,
+      leaseSec: 30,
+      retentionDays: 7,
+    });
+    const scheduler = new ReminderScheduler(
+      { service: remindersService, jobs },
+      { enabled: true, checkIntervalSec: 30, graceSec: 300 }
+    );
+    const reminder = remindersService.create(CHAT, "Persistent", new Date(Date.now() - 1000));
+
+    scheduler.tick();
+    scheduler.tick();
+
+    const job = jobs.get(reminderDeliveryJobId(reminder));
+    expect(job).toMatchObject({
+      kind: "reminders.deliver",
+      status: "queued",
+      attempts: 0,
+    });
+    expect(job?.payload).toEqual({ reminder });
+    expect(jobs.diagnostics().queued).toBe(1);
+  });
+
+  test("completes stale reminder without unexpectedly delivering it after an upgrade", () => {
+    const jobs = new SqliteBackgroundJobs(getDb(), {
+      enabled: true,
+      pollIntervalMs: 1000,
+      leaseSec: 30,
+      retentionDays: 7,
+    });
+    const scheduler = new ReminderScheduler(
+      { service: remindersService, jobs },
+      { enabled: true, checkIntervalSec: 30, graceSec: 300 }
+    );
+    const reminder = remindersService.create(CHAT, "Stale", new Date("2026-01-01T00:00:00Z"));
+
+    scheduler.tick(new Date("2026-01-01T01:00:00Z"));
+
+    expect(jobs.get(reminderDeliveryJobId(reminder))).toBeNull();
+    expect(remindersService.get(reminder.id, CHAT)).toBeNull();
   });
 
   test("only the reminder owner can use management commands", () => {

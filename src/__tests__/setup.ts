@@ -15,6 +15,7 @@ import { billingModule } from "../modules/billing/index.js";
 import { chatConfigModule } from "../modules/chatConfig/index.js";
 import { chatLogModule } from "../modules/chatLog/index.js";
 import { legalModule } from "../modules/legal/index.js";
+import { jobsModule } from "../modules/jobs/index.js";
 import { memoryModule } from "../modules/memory/index.js";
 import { remindersModule } from "../modules/reminders/index.js";
 import { userConfigModule } from "../modules/userConfig/index.js";
@@ -25,6 +26,7 @@ runMigrations(getDb(), [
   chatLogModule,
   auditModule,
   userConfigModule,
+  jobsModule,
   remindersModule,
   adminModule,
   billingModule,

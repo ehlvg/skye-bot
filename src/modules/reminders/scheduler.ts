@@ -1,29 +1,22 @@
+import type { BackgroundJobsService } from "../jobs/service.js";
 import type { RemindersService, Reminder } from "./service.js";
-import type { EventBus } from "../../core/events.js";
 import { log } from "../../utils/log.js";
 
-export interface ReminderFiredPayload {
-  reminder: Reminder;
-}
+export const REMINDER_DELIVERY_JOB = "reminders.deliver";
 
-declare module "../../core/events.js" {
-  interface SkyeEvents {
-    "reminders.fired": ReminderFiredPayload;
-    "reminders.delivered": ReminderFiredPayload;
-    "reminders.failed": ReminderFiredPayload & { error?: string };
-  }
+export interface ReminderDeliveryPayload {
+  reminder: Reminder;
 }
 
 export class ReminderScheduler {
   private timer: NodeJS.Timeout | null = null;
-  private firing = new Set<string>();
   private lastTickAt: string | undefined;
   private lastError: string | undefined;
 
   constructor(
     private readonly deps: {
       service: RemindersService;
-      events: EventBus;
+      jobs: BackgroundJobsService;
     },
     private readonly settings: {
       enabled: boolean;
@@ -33,72 +26,55 @@ export class ReminderScheduler {
   ) {}
 
   start(): void {
-    if (!this.settings.enabled) return;
-    if (this.timer) return;
-    this.deps.events.on("reminders.delivered", ({ reminder }) => {
-      this.complete(reminder);
-      this.firing.delete(reminder.id);
-    });
-    this.deps.events.on("reminders.failed", ({ reminder, error }) => {
-      const retryAt = new Date(Date.now() + 60_000);
-      this.deps.service.reschedule(reminder.id, retryAt);
-      this.firing.delete(reminder.id);
-      log.warn(
-        { id: reminder.id, retryAt: retryAt.toISOString(), error },
-        "Reminder delivery scheduled for retry"
-      );
-    });
-    this.timer = setInterval(() => void this.tick(), this.settings.checkIntervalSec * 1000);
+    if (!this.settings.enabled || this.timer) return;
+    this.timer = setInterval(() => this.tick(), this.settings.checkIntervalSec * 1000);
     this.timer.unref();
-    log.info({ intervalSec: this.settings.checkIntervalSec }, "Reminder scheduler started");
+    this.tick();
+    log.info(
+      { intervalSec: this.settings.checkIntervalSec },
+      "Reminder scheduler started with persistent delivery"
+    );
   }
 
   stop(): void {
-    if (this.timer) {
-      clearInterval(this.timer);
-      this.timer = null;
-    }
+    if (this.timer) clearInterval(this.timer);
+    this.timer = null;
   }
 
-  async tick(): Promise<void> {
-    this.lastTickAt = new Date().toISOString();
-    const now = new Date();
+  tick(now: Date = new Date()): void {
+    this.lastTickAt = now.toISOString();
     let due: Reminder[];
     try {
       due = this.deps.service.due(now);
-    } catch (e) {
-      this.lastError = e instanceof Error ? e.message : String(e);
-      log.error({ err: e }, "Reminder scheduler: failed to query due reminders");
+      this.lastError = undefined;
+    } catch (error) {
+      this.lastError = error instanceof Error ? error.message : String(error);
+      log.error({ error }, "Reminder scheduler failed to query due reminders");
       return;
     }
-    this.lastError = undefined;
-    if (due.length === 0) return;
 
     for (const reminder of due) {
-      if (this.firing.has(reminder.id)) continue;
-      this.firing.add(reminder.id);
-
-      void (async () => {
-        try {
-          const fireAge = now.getTime() - new Date(reminder.fireAt).getTime();
-          const isStale = fireAge > this.settings.graceSec * 1000;
-
-          if (isStale) {
-            log.info(
-              { id: reminder.id, fireAgeSec: Math.round(fireAge / 1000) },
-              "Reminder is stale (past grace), rescheduling/deactivating without firing"
-            );
-          } else {
-            log.info({ id: reminder.id, chatId: reminder.chatId }, "Firing reminder");
-            this.deps.events.emit("reminders.fired", { reminder });
-            return;
-          }
-          this.complete(reminder);
-        } catch (e) {
-          log.error({ err: e, id: reminder.id }, "Failed to process fired reminder");
-          this.firing.delete(reminder.id);
-        }
-      })();
+      const ageMs = now.getTime() - new Date(reminder.fireAt).getTime();
+      if (ageMs > this.settings.graceSec * 1000) {
+        this.deps.service.complete(reminder);
+        log.info(
+          { reminderId: reminder.id, ageSec: Math.round(ageMs / 1000) },
+          "Skipped stale reminder delivery"
+        );
+        continue;
+      }
+      const result = this.deps.jobs.enqueue({
+        id: reminderDeliveryJobId(reminder),
+        kind: REMINDER_DELIVERY_JOB,
+        payload: { reminder } satisfies ReminderDeliveryPayload,
+        maxAttempts: 5,
+      });
+      if (result.inserted) {
+        log.info(
+          { reminderId: reminder.id, jobId: result.job.id, chatId: reminder.chatId },
+          "Reminder delivery queued"
+        );
+      }
     }
   }
 
@@ -112,19 +88,13 @@ export class ReminderScheduler {
     return {
       enabled: this.settings.enabled,
       running: this.timer != null,
-      inFlight: this.firing.size,
+      inFlight: this.deps.jobs.diagnostics().running,
       ...(this.lastTickAt ? { lastTickAt: this.lastTickAt } : {}),
       ...(this.lastError ? { lastError: this.lastError } : {}),
     };
   }
+}
 
-  private complete(reminder: Reminder): void {
-    if (reminder.repeat === "none") {
-      this.deps.service.deactivate(reminder.id);
-      return;
-    }
-    const next = this.deps.service.advanceRepeating(reminder);
-    if (next) this.deps.service.reschedule(reminder.id, next);
-    else this.deps.service.deactivate(reminder.id);
-  }
+export function reminderDeliveryJobId(reminder: Pick<Reminder, "id" | "fireAt">): string {
+  return `reminder:${reminder.id}:${reminder.fireAt}`;
 }

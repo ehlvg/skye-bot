@@ -109,6 +109,23 @@ Voice features are **optional**. Leave the relevant keys empty to disable voice.
 | `audit.retention_days` | Auto-delete audit logs older than N days. Default: `90`.                             |
 | `audit.max_rows`       | Maximum audit log rows to keep. Default: `100000`.                                   |
 
+### Background jobs
+
+Long-running asynchronous work is stored in SQLite before execution. The first
+consumer is reminder delivery: a restart no longer loses the handoff between
+the reminder scheduler and Telegram.
+
+| Key                                | Purpose                                                                         |
+| ---------------------------------- | ------------------------------------------------------------------------------- |
+| `background_jobs.enabled`          | Run the background worker. Default: `true`.                                     |
+| `background_jobs.poll_interval_ms` | How often to poll for due work (100–60000 ms). Default: `1000`.                 |
+| `background_jobs.lease_sec`        | Time after which an interrupted `running` job may be reclaimed. Default: `300`. |
+| `background_jobs.retention_days`   | Retain successful and cancelled job records for diagnostics. Default: `7`.      |
+
+Failed jobs use bounded exponential backoff and stop after their configured
+attempt limit. Their error and attempt count remain in `background_jobs` for
+diagnostics; `BackgroundJobsService.retry()` can explicitly requeue one.
+
 ### MCP
 
 | Key               | Purpose                                             |

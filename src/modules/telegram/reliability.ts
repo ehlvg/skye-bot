@@ -45,15 +45,30 @@ export class ThreadWorkQueue {
   constructor(private readonly timeoutMs: number) {}
 
   enqueue(key: string, chatId: number, job: QueueJob): void {
+    void this.schedule(key, chatId, job, false);
+  }
+
+  enqueueAndWait(key: string, chatId: number, job: QueueJob): Promise<void> {
+    return this.schedule(key, chatId, job, true);
+  }
+
+  private schedule(
+    key: string,
+    chatId: number,
+    job: QueueJob,
+    propagateError: boolean
+  ): Promise<void> {
     const generation = this.generations.get(chatId) ?? 0;
     this.pending.set(key, (this.pending.get(key) ?? 0) + 1);
 
     const previous = this.tails.get(key) ?? Promise.resolve();
-    const next = previous
+    const execution = previous
       .catch(() => undefined)
       .then(async () => {
         this.decrementPending(key);
-        if ((this.generations.get(chatId) ?? 0) !== generation) return;
+        if ((this.generations.get(chatId) ?? 0) !== generation) {
+          throw new QueueCancelledError(chatId);
+        }
 
         const controller = new AbortController();
         this.active.set(key, { chatId, controller, startedAt: Date.now() });
@@ -81,19 +96,21 @@ export class ThreadWorkQueue {
       .catch((error: unknown) => {
         if (error instanceof QueueCancelledError) {
           log.info({ chatId, key }, "Telegram queue job cancelled");
-          return;
-        }
-        if (error instanceof QueueTimeoutError) {
+        } else if (error instanceof QueueTimeoutError) {
           log.warn({ chatId, key, timeoutMs: error.timeoutMs }, "Telegram queue job timed out");
-          return;
+        } else {
+          log.error({ err: error, chatId, key }, "Telegram queue job failed");
         }
-        log.error({ err: error, chatId, key }, "Telegram queue job failed");
-      })
+        if (propagateError) throw error;
+      });
+    const next = execution
+      .catch(() => undefined)
       .finally(() => {
         if (this.tails.get(key) === next) this.tails.delete(key);
       });
 
     this.tails.set(key, next);
+    return execution;
   }
 
   cancelChat(chatId: number): void {

@@ -18,6 +18,7 @@ import { channelModule } from "./modules/channel/index.js";
 import { chatConfigModule } from "./modules/chatConfig/index.js";
 import { chatLogModule } from "./modules/chatLog/index.js";
 import { legalModule } from "./modules/legal/index.js";
+import { jobsModule } from "./modules/jobs/index.js";
 import { llmModule } from "./modules/llm/index.js";
 import { mcpModule } from "./modules/mcp/index.js";
 import { memoryModule } from "./modules/memory/index.js";
@@ -52,6 +53,7 @@ const modules: readonly SkyeModule[] = [
   speechModule,
   auditModule,
   monitoringModule,
+  jobsModule,
   mcpModule,
   sandboxModule,
   proactiveModule,

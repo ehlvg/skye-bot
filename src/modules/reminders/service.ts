@@ -238,6 +238,16 @@ export function rescheduleReminder(id: string, newFireAt: Date): void {
   getDb().prepare("UPDATE reminders SET fire_at = ? WHERE id = ?").run(newFireAt.toISOString(), id);
 }
 
+export function completeReminder(reminder: Reminder): void {
+  if (reminder.repeat === "none") {
+    deactivateReminder(reminder.id);
+    return;
+  }
+  const next = advanceRepeatingReminder(reminder);
+  if (next) rescheduleReminder(reminder.id, next);
+  else deactivateReminder(reminder.id);
+}
+
 export interface RemindersService {
   create(
     chatId: number,
@@ -257,6 +267,7 @@ export interface RemindersService {
   advanceRepeating(reminder: Reminder): Date | null;
   deactivate(id: string): void;
   reschedule(id: string, newFireAt: Date): void;
+  complete(reminder: Reminder): void;
   countActiveByUser(userId: number): number;
 }
 
@@ -270,5 +281,6 @@ export const remindersService: RemindersService = {
   advanceRepeating: advanceRepeatingReminder,
   deactivate: deactivateReminder,
   reschedule: rescheduleReminder,
+  complete: completeReminder,
   countActiveByUser: countActiveRemindersByUser,
 };

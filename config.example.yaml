@@ -195,6 +195,14 @@ audit:
   # Keep at most this many rows total (default: 100 000 ≈ ~20 MB)
   max_rows: 100000
 
+# Durable SQLite queue for asynchronous work. Reminder delivery is persisted
+# here before any LLM or Telegram request starts, so restarts are recoverable.
+background_jobs:
+  enabled: true
+  poll_interval_ms: 1000
+  lease_sec: 300
+  retention_days: 7
+
 # MCP (Model Context Protocol) — path to mcp.json config file
 # Defaults to ./mcp.json in the project root
 # mcp:
