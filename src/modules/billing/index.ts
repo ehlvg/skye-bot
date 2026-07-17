@@ -1,5 +1,5 @@
 import type { SkyeModule } from "../../core/module.js";
-import { billingEnvSchema, type BillingEnv, type TokenPack } from "./env.js";
+import { billingConfigSchema, type TokenPack } from "./config.js";
 import { migrations } from "./migrations.js";
 import { BillingService } from "./service.js";
 import { buildBilling, type BillingDeps } from "./tele.js";
@@ -19,14 +19,14 @@ declare module "../../core/module.js" {
 
 export const billingModule: SkyeModule = {
   name: "billing",
-  envSchema: billingEnvSchema,
+  configSchema: billingConfigSchema,
   migrations,
   init(ctx) {
-    const cfg = ctx.config as BillingEnv;
+    const c = ctx.config;
     const llm = ctx.services.get("llm");
     const billingConfig: BillingConfig = {
-      baseQuotaTokens: cfg.BILLING_BASE_QUOTA_TOKENS,
-      periodSeconds: cfg.BILLING_SUBSCRIPTION_PERIOD_SECONDS,
+      baseQuotaTokens: c.billing.base_quota_tokens,
+      periodSeconds: c.billing.subscription_period_seconds,
     };
     const billing = new BillingService(billingConfig, llm.defaultModelId);
     ctx.services.set("billing", billing);
@@ -35,8 +35,8 @@ export const billingModule: SkyeModule = {
       billing,
       llm,
       cfg: decodeInvoiceConfig(ctx.config),
-      packs: cfg.BILLING_TOKEN_PACKS as TokenPack[],
-      webappUrl: String(ctx.config.PANEL_WEBAPP_URL ?? ""),
+      packs: c.billing.token_packs as TokenPack[],
+      webappUrl: ctx.config.panel.webapp_url,
     };
     const { commands, handlers } = buildBilling(deps);
 

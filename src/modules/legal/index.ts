@@ -1,5 +1,5 @@
 import type { SkyeModule } from "../../core/module.js";
-import { legalEnvSchema, type LegalEnv } from "./env.js";
+import { legalConfigSchema } from "./config.js";
 import { legalService, type LegalService } from "./service.js";
 import { buildLegalCommands, buildLegalHandlers } from "./tele.js";
 
@@ -11,11 +11,11 @@ declare module "../../core/module.js" {
 
 export const legalModule: SkyeModule = {
   name: "legal",
-  envSchema: legalEnvSchema,
+  configSchema: legalConfigSchema,
   init(ctx) {
-    const cfg = ctx.config as LegalEnv;
     ctx.services.set("legal", legalService);
 
+    const cfg = ctx.config.legal;
     const { commands, handlers } = {
       commands: buildLegalCommands({ legal: legalService, cfg }),
       handlers: buildLegalHandlers({ legal: legalService, cfg }),

@@ -1,10 +1,16 @@
 import { z } from "zod";
 
-export const adminEnvSchema = z.object({
-  ADMIN_IDS: z.string().default(""),
+export const adminConfigSchema = z.object({
+  admin_ids: z.string().default(""),
 });
 
-export type AdminEnv = z.infer<typeof adminEnvSchema>;
+export type AdminConfig = z.infer<typeof adminConfigSchema>;
+
+declare module "../../core/config.js" {
+  interface SkyeConfig {
+    admin_ids: string;
+  }
+}
 
 export function parseAdminIds(raw: string): Set<number> {
   return new Set(

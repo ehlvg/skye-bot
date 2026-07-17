@@ -11,7 +11,7 @@ import {
 } from "fs";
 import { dirname, join } from "path";
 import type { SkyeModule } from "../../core/module.js";
-import { telegramEnvSchema } from "./env.js";
+import { telegramConfigSchema } from "./config.js";
 import { installTelegram } from "./handlers.js";
 import { migrations } from "./migrations.js";
 import { TelegramReliabilityService } from "./reliability.js";
@@ -30,24 +30,20 @@ declare module "../../core/module.js" {
 
 export const telegramModule: SkyeModule = {
   name: "telegram",
-  envSchema: telegramEnvSchema,
+  configSchema: telegramConfigSchema,
   migrations,
   async init(ctx) {
-    const token = String(ctx.config.BOT_TOKEN);
+    const c = ctx.config;
+    const token = c.bot_token;
     const bot = new Bot(token);
     botRef = bot;
-    // Register under the declared SkyeServices key so `ctx.services.get("telegramBot")`
-    // resolves in other modules (billing routes, channel tools, panel, etc.).
-    // Returning { service } would instead key it as "telegram" (the module name).
     ctx.services.set("telegramBot", bot);
-    const reliability = new TelegramReliabilityService(
-      ctx.db,
-      Number(ctx.config.TELEGRAM_JOB_TIMEOUT_MS)
-    );
+    const reliability = new TelegramReliabilityService(ctx.db, c.telegram_job_timeout_ms);
     reliabilityRef = reliability;
     ctx.services.set("telegramReliability", reliability);
   },
   async start(ctx, contributions, extra) {
+    const c = ctx.config;
     const bot = botRef!;
     const reliability = reliabilityRef!;
     extra.bot = bot;
@@ -81,13 +77,13 @@ export const telegramModule: SkyeModule = {
         events: ctx.events,
         billing: ctx.services.get("billing"),
         admin: ctx.services.get("admin"),
-        botToken: String(ctx.config.BOT_TOKEN),
-        maxAttachmentBytes: Number(ctx.config.TELEGRAM_MAX_ATTACHMENT_BYTES),
-        webappUrl: String(ctx.config.PANEL_WEBAPP_URL),
-        defaultModelId: String(ctx.config.DEFAULT_MODEL_ID ?? "sydney"),
+        botToken: c.bot_token,
+        maxAttachmentBytes: c.telegram_max_attachment_bytes,
+        webappUrl: ctx.config.panel.webapp_url,
+        defaultModelId: ctx.config.default_model_id,
         reliability,
-        ...(String(ctx.config.OWNER_NAME ?? "") || String(ctx.config.OWNER_TAG ?? "")
-          ? { owner: { name: String(ctx.config.OWNER_NAME), tag: String(ctx.config.OWNER_TAG) } }
+        ...(c.owner.name || c.owner.tag
+          ? { owner: { name: c.owner.name, tag: c.owner.tag } }
           : {}),
       },
       contributions
@@ -98,17 +94,17 @@ export const telegramModule: SkyeModule = {
         menu_button: {
           type: "web_app",
           text: "Settings",
-          web_app: { url: String(ctx.config.PANEL_WEBAPP_URL) },
+          web_app: { url: ctx.config.panel.webapp_url },
         },
       })
       .catch((e) => log.warn({ err: e }, "Failed to set menu button"));
 
-    if (String(ctx.config.TELEGRAM_POLLING_LOCK ?? "1") !== "0") {
-      releasePollingLock = acquirePollingLock(String(ctx.config.BOT_TOKEN));
+    if (c.telegram_polling_lock !== "0") {
+      releasePollingLock = acquirePollingLock(c.bot_token, String(c.db_path));
     }
 
     reliability.markPolling();
-    const dropPendingUpdates = String(ctx.config.TELEGRAM_DROP_PENDING_UPDATES ?? "0") === "1";
+    const dropPendingUpdates = c.telegram_drop_pending_updates === "1";
     void bot.start({ drop_pending_updates: dropPendingUpdates }).catch((e) => {
       reliability.markStopped();
       releasePollingLock?.();
@@ -139,15 +135,14 @@ export const telegramModule: SkyeModule = {
   },
 };
 
-function pollingLockPath(token: string): string {
+function pollingLockPath(token: string, dbPath: string): string {
   const hash = createHash("sha256").update(token).digest("hex").slice(0, 12);
-  const dbPath = process.env.DB_PATH;
   const dir = dbPath && dbPath !== ":memory:" ? dirname(dbPath) : join(process.cwd(), "data");
   return join(dir, `skye-${hash}.polling.lock`);
 }
 
-function acquirePollingLock(token: string): () => void {
-  const path = pollingLockPath(token);
+function acquirePollingLock(token: string, dbPath: string): () => void {
+  const path = pollingLockPath(token, dbPath);
   mkdirSync(dirname(path), { recursive: true });
 
   const tryAcquire = () => {

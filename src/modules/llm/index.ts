@@ -1,6 +1,6 @@
 import type { SkyeModule } from "../../core/module.js";
 import { LlmClient } from "./client.js";
-import { llmEnvSchema } from "./env.js";
+import { llmConfigSchema, type ModelEntry } from "./config.js";
 
 declare module "../../core/module.js" {
   interface SkyeServices {
@@ -10,24 +10,23 @@ declare module "../../core/module.js" {
 
 export const llmModule: SkyeModule = {
   name: "llm",
-  envSchema: llmEnvSchema,
+  configSchema: llmConfigSchema,
   init(ctx) {
+    const c = ctx.config;
     const client = new LlmClient({
-      apiKey: String(ctx.config.OPENAI_KEY),
-      baseUrl: String(ctx.config.BASE_URL),
-      models: ctx.config.MODELS as readonly import("./env.js").ModelEntry[],
-      defaultModelId: String(ctx.config.DEFAULT_MODEL_ID),
-      maxCompletionTokens: Number(ctx.config.MAX_COMPLETION_TOKENS),
-      useChatCompletions: Boolean(ctx.config.USE_CHAT_COMPLETIONS),
-      imageApiKey: String(ctx.config.IMAGE_API_KEY ?? ""),
-      imageBaseUrl: String(ctx.config.IMAGE_BASE_URL ?? ""),
-      imageModel: String(ctx.config.IMAGE_MODEL ?? ""),
-      pdfEngine: String(ctx.config.PDF_ENGINE ?? ""),
-      pdfMaxBytes: Number(ctx.config.PDF_MAX_BYTES ?? 25 * 1024 * 1024),
-      perplexityApiKey: ctx.config.PERPLEXITY_API_KEY
-        ? String(ctx.config.PERPLEXITY_API_KEY)
-        : undefined,
-      perplexityBaseUrl: String(ctx.config.PERPLEXITY_BASE_URL),
+      apiKey: c.openai_key,
+      baseUrl: c.base_url,
+      models: c.models as readonly ModelEntry[],
+      defaultModelId: c.default_model_id,
+      maxCompletionTokens: c.max_completion_tokens,
+      useChatCompletions: c.use_chat_completions,
+      imageApiKey: c.image.api_key,
+      imageBaseUrl: c.image.base_url,
+      imageModel: c.image.model,
+      pdfEngine: c.pdf_engine,
+      pdfMaxBytes: c.pdf_max_bytes,
+      perplexityApiKey: c.perplexity_api_key,
+      perplexityBaseUrl: c.perplexity_base_url,
     });
     return { service: client };
   },

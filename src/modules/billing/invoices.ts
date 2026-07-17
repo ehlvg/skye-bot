@@ -1,10 +1,9 @@
 import type { LabeledPrice } from "grammy/types";
-import type { TokenPack } from "./env.js";
+import type { TokenPack } from "./config.js";
 import type { IssuedInvoice } from "./service.js";
+import type { SkyeConfig } from "../../core/config.js";
 
-type ReadOnlyRecord = Readonly<Record<string, unknown>>;
-
-/** Minimal subset of grammy's Api needed to create invoice links. */
+type ReadOnlyRecord = SkyeConfig;
 export interface InvoiceApi {
   createInvoiceLink: (
     title: string,
@@ -102,13 +101,14 @@ export function decodePayload(
   return null;
 }
 
-/** Build an InvoiceConfig from the parsed environment. */
+/** Build an InvoiceConfig from the parsed config. */
 export function decodeInvoiceConfig(config: ReadOnlyRecord): InvoiceConfig {
+  const b = (config as SkyeConfig).billing;
   return {
-    currency: String(config.BILLING_CURRENCY ?? "XTR"),
-    title: String(config.BILLING_TITLE ?? "Skye Plus"),
-    description: String(config.BILLING_DESCRIPTION ?? ""),
-    subscriptionStars: Number(config.BILLING_SUBSCRIPTION_STARS ?? 1899),
-    subscriptionPeriodSeconds: Number(config.BILLING_SUBSCRIPTION_PERIOD_SECONDS ?? 2_592_000),
+    currency: b.currency,
+    title: b.title,
+    description: b.description,
+    subscriptionStars: b.subscription_stars,
+    subscriptionPeriodSeconds: b.subscription_period_seconds,
   };
 }

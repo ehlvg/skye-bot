@@ -10,8 +10,7 @@ import { formatReminderTime, reminderListMarkdown } from "../presentation.js";
 
 beforeEach(() => {
   resetDbForTesting();
-  process.env.DB_PATH = ":memory:";
-  runMigrations(getDb(), [jobsModule, remindersModule]);
+  runMigrations(getDb(":memory:"), [jobsModule, remindersModule]);
 });
 
 describe("reminders service", () => {

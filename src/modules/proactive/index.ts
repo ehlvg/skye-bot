@@ -1,5 +1,5 @@
 import type { SkyeModule } from "../../core/module.js";
-import { proactiveEnvSchema, type ProactiveEnv } from "./env.js";
+import { proactiveConfigSchema } from "./config.js";
 import { ProactiveService, type ProactiveSettings } from "./service.js";
 
 declare module "../../core/module.js" {
@@ -10,15 +10,15 @@ declare module "../../core/module.js" {
 
 export const proactiveModule: SkyeModule = {
   name: "proactive",
-  envSchema: proactiveEnvSchema,
+  configSchema: proactiveConfigSchema,
   init(ctx) {
-    const cfg = ctx.config as ProactiveEnv;
+    const c = ctx.config.proactive;
     const settings: ProactiveSettings = {
-      enabled: cfg.PROACTIVE_ENABLED,
-      probability: cfg.PROACTIVE_PROBABILITY,
-      warmup: cfg.PROACTIVE_WARMUP,
-      minIntervalSec: cfg.PROACTIVE_MIN_INTERVAL_SEC,
-      contextSize: cfg.PROACTIVE_CONTEXT_SIZE,
+      enabled: c.enabled,
+      probability: c.probability,
+      warmup: c.warmup,
+      minIntervalSec: c.min_interval_sec,
+      contextSize: c.context_size,
     };
     const service = new ProactiveService(
       {

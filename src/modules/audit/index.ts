@@ -1,4 +1,5 @@
 import type { SkyeModule } from "../../core/module.js";
+import { auditConfigSchema } from "./config.js";
 import { migrations } from "./migrations.js";
 import { buildRoutes } from "./routes.js";
 import {
@@ -17,9 +18,11 @@ declare module "../../core/module.js" {
 
 export const auditModule: SkyeModule = {
   name: "audit",
+  configSchema: auditConfigSchema,
   migrations,
   init(ctx) {
-    const model = String(ctx.config.MODEL ?? "");
+    const c = ctx.config.audit;
+    const model = ctx.config.default_model_id;
     const service: AuditService = {
       log(entry: AuditEntry) {
         logRequest(entry, model);
@@ -29,7 +32,7 @@ export const auditModule: SkyeModule = {
       },
     };
     ctx.services.set("audit", service);
-    scheduleAuditPruning();
+    scheduleAuditPruning(c.retention_days, c.max_rows);
     return { service, panelRoutes: buildRoutes(ctx) };
   },
 };

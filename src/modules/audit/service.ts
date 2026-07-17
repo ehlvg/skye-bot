@@ -38,9 +38,6 @@ export interface AuditActivity {
   details?: Record<string, unknown>;
 }
 
-const RETENTION_DAYS = Number(process.env.AUDIT_RETENTION_DAYS ?? "90");
-const MAX_ROWS = Number(process.env.AUDIT_MAX_ROWS ?? "100000");
-
 export function logRequest(entry: AuditEntry, defaultModel: string): void {
   try {
     getDb()
@@ -95,32 +92,32 @@ export function logActivity(entry: AuditActivity): void {
   }
 }
 
-export function pruneAuditLog(): { byAge: number; byCount: number } {
+export function pruneAuditLog(retentionDays: number, maxRows: number): { byAge: number; byCount: number } {
   const db = getDb();
   const byAge = db
-    .prepare(`DELETE FROM request_logs WHERE ts < datetime('now', '-${RETENTION_DAYS} days')`)
+    .prepare(`DELETE FROM request_logs WHERE ts < datetime('now', '-${retentionDays} days')`)
     .run();
   const byCount = db
     .prepare(
       `DELETE FROM request_logs
-       WHERE id NOT IN (SELECT id FROM request_logs ORDER BY id DESC LIMIT ${MAX_ROWS})`
+       WHERE id NOT IN (SELECT id FROM request_logs ORDER BY id DESC LIMIT ${maxRows})`
     )
     .run();
   const eventsByAge = db
-    .prepare(`DELETE FROM audit_events WHERE ts < datetime('now', '-${RETENTION_DAYS} days')`)
+    .prepare(`DELETE FROM audit_events WHERE ts < datetime('now', '-${retentionDays} days')`)
     .run();
   const eventsByCount = db
     .prepare(
       `DELETE FROM audit_events
-       WHERE id NOT IN (SELECT id FROM audit_events ORDER BY id DESC LIMIT ${MAX_ROWS})`
+       WHERE id NOT IN (SELECT id FROM audit_events ORDER BY id DESC LIMIT ${maxRows})`
     )
     .run();
   return { byAge: byAge.changes + eventsByAge.changes, byCount: byCount.changes + eventsByCount.changes };
 }
 
-export function scheduleAuditPruning(): void {
+export function scheduleAuditPruning(retentionDays: number, maxRows: number): void {
   const run = () => {
-    const { byAge, byCount } = pruneAuditLog();
+    const { byAge, byCount } = pruneAuditLog(retentionDays, maxRows);
     const total = byAge + byCount;
     if (total > 0) {
       log.info({ byAge, byCount }, `Audit log: pruned ${total} rows`);

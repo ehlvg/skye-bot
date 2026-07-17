@@ -1,5 +1,5 @@
 import type { SkyeModule } from "../../core/module.js";
-import { adminEnvSchema, type AdminEnv, parseAdminIds } from "./env.js";
+import { adminConfigSchema, parseAdminIds } from "./config.js";
 import { migrations } from "./migrations.js";
 import { AdminService } from "./service.js";
 import { buildAdminCommands } from "./tele.js";
@@ -12,16 +12,16 @@ declare module "../../core/module.js" {
 
 export const adminModule: SkyeModule = {
   name: "admin",
-  envSchema: adminEnvSchema,
+  configSchema: adminConfigSchema,
   migrations,
   init(ctx) {
-    const cfg = ctx.config as AdminEnv;
-    const admin = new AdminService(parseAdminIds(String(cfg.ADMIN_IDS ?? "")));
+    const c = ctx.config;
+    const admin = new AdminService(parseAdminIds(c.admin_ids));
     ctx.services.set("admin", admin);
 
-    // One-time seed of the allowlist from the legacy ALLOWED_IDS config value,
+    // One-time seed of the allowlist from the legacy allowed_ids config value,
     // so existing SaaS/self-host operators don't lose access on upgrade.
-    const legacy = String((ctx.config as { ALLOWED_IDS?: string }).ALLOWED_IDS ?? "");
+    const legacy = c.allowed_ids;
     if (legacy.trim()) {
       const ids = parseAdminIds(legacy);
       if (ids.size > 0) admin.seedAllowlist([...ids]);

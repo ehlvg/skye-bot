@@ -12,13 +12,13 @@ Everything is a `SkyeModule` (see `src/core/module.ts`). Modules are declared in
 
 Each module optionally provides:
 
-- `envSchema`: Zod object merged into one combined schema parsed at startup.
+- `configSchema`: Zod object for the module's YAML config section (native YAML keys, snake_case).
 - `migrations[]`: Idempotent schema migrations keyed `${module.name}:${migration.id}`, tracked in a `migrations` table.
 - `init(ctx)`: Returns `{ service, tools, commands, telegramHandlers, panelRoutes }`.
 - `start(ctx, contributions, extra)`: Second phase; `telegram` and `panel` consume the aggregated bot/Express app.
 - `shutdown()`: Cleanup in reverse order.
 
-Services register into `ServiceRegistry` and are typed via `declare module "../../core/module.js"` augmentation of `SkyeServices`. Cross-module events use `EventBus` with `SkyeEvents` augmentation.
+Config is loaded once from `config.yaml`, validated against the composed Zod schema, and passed as a typed `SkyeConfig` via `ctx.config`. No environment variables are involved (except `SKYE_CONFIG` to point at a non-default config path). Each module augments `SkyeConfig` via `declare module` to add its typed section.
 
 New domains go in `src/modules/<name>/` exporting a `SkyeModule`, register their service type, and add themselves to the array in `src/index.ts`.
 
@@ -33,6 +33,8 @@ Package manager is **pnpm** (workspace includes `web/`). Node 22+.
 - `pnpm run format` / `pnpm run format:check`: Prettier.
 - `pnpm run test` / `pnpm run test:watch`: Vitest.
 - `pnpm --filter skye-panel build`: Build the web panel only.
+- `pnpm validate-config`: Validate `config.yaml` against the composed module config schemas (run before booting if you changed config).
+- `pnpm config:schema`: Regenerate `docs/configuration-schema.md` from the module Zod schemas (run after adding/changing a module's `configSchema`).
 
 Local dev runs TypeScript directly via `tsx`; production runs `node dist/index.js`.
 
@@ -62,9 +64,7 @@ Run `pnpm run typecheck`, `pnpm run lint`, and `pnpm run test` before submitting
 
 ## Configuration & Secrets
 
-Create a `config.yaml` based on `config.example.yaml`. Required: `bot_token`, `openai_key`. Everything else has sensible defaults (OpenRouter). Never commit real secrets (`config.yaml` is gitignored). Full variable reference lives in `config.example.yaml` and `docs/configuration.md`.
-
-Real environment variables override YAML values — useful for platform-injected secrets (e.g. `VERCEL_OIDC_TOKEN` on Vercel hosting) or PaaS dashboards that don't allow mounting config files.
+Create a `config.yaml` based on `config.example.yaml`. Required: `bot_token`, `openai_key`. Everything else has sensible defaults (OpenRouter). Never commit real secrets (`config.yaml` is gitignored). Full variable reference lives in `config.example.yaml`, `docs/configuration.md`, and the auto-generated `docs/configuration-schema.md` (regenerate with `pnpm config:schema`). Validate before booting with `pnpm validate-config`.
 
 Credential precedence for LLM calls: per-user key → per-chat key → global `openai_key`.
 

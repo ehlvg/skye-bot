@@ -2,12 +2,10 @@ import { describe, it, expect } from "vitest";
 import { spawn } from "child_process";
 import ffmpegPath from "ffmpeg-static";
 import { transcodeAudio } from "../transcode.js";
-import {
-  buildProvider,
-  speechModule,
-} from "../index.js";
+import { buildProvider, speechModule } from "../index.js";
 import { YandexSpeechProvider } from "../providers/yandex.js";
 import { OpenRouterSpeechProvider } from "../providers/openrouter.js";
+import type { SkyeConfig } from "../../../core/config.js";
 
 function ffmpegSineMp3(seconds = 0.4): Promise<Buffer> {
   return new Promise((resolve, reject) => {
@@ -38,7 +36,55 @@ function ffmpegSineMp3(seconds = 0.4): Promise<Buffer> {
   });
 }
 
-
+function makeConfig(overrides: Partial<SkyeConfig> = {}): SkyeConfig {
+  return {
+    openai_key: "",
+    base_url: "https://openrouter.ai/api/v1",
+    models: [],
+    default_model_id: "sydney",
+    max_completion_tokens: 500,
+    use_chat_completions: false,
+    image: { base_url: "", api_key: "", model: "" },
+    pdf_engine: "",
+    pdf_max_bytes: 25 * 1024 * 1024,
+    perplexity_base_url: "https://api.perplexity.ai/v1",
+    owner: { name: "", tag: "" },
+    voice: {
+      provider: "yandex",
+      yc_api_key: "",
+      yc_folder_id: "",
+      yc_tts_voice: "jane",
+      yc_tts_emotion: "neutral",
+      yc_tts_lang: "ru-RU",
+      yc_tts_speed: 1.0,
+      openrouter: {
+        api_key: "",
+        base_url: "https://openrouter.ai/api/v1",
+        stt_model: "nvidia/parakeet-tdt-0.6b-v3",
+        tts_model: "google/gemini-3.1-flash-tts-preview",
+        tts_voice: "Aoede",
+        tts_format: "mp3",
+        pcm_sample_rate: 48000,
+        pcm_channels: 1,
+        stt_format: "mp3",
+        stt_language: "",
+        referer: "",
+        title: "",
+      },
+      tinfoil: {
+        api_key: "",
+        base_url: "",
+        stt_model: "whisper-large-v3-turbo",
+        tts_model: "qwen3-tts",
+        tts_voice: "vivian",
+        tts_instruct: "",
+        stt_format: "mp3",
+        stt_language: "",
+      },
+    },
+    ...overrides,
+  } as SkyeConfig;
+}
 
 describe("speech transcodeAudio", () => {
   it("converts mp3 → ogg opus (OggS magic header)", async () => {
@@ -58,65 +104,96 @@ describe("speech transcodeAudio", () => {
 
 describe("speech module provider selection", () => {
   it("builds yandex provider by default", () => {
-    const p = buildProvider({
-      VOICE_PROVIDER: "yandex",
-      YC_API_KEY: "key",
-      YC_FOLDER_ID: "folder",
-      YC_TTS_VOICE: "jane",
-    });
+    const p = buildProvider(
+      makeConfig({
+        voice: {
+          ...makeConfig().voice,
+          yc_api_key: "key",
+          yc_folder_id: "folder",
+          yc_tts_voice: "jane",
+        },
+      })
+    );
     expect(p).toBeInstanceOf(YandexSpeechProvider);
     expect(p.isSttAvailable()).toBe(true);
     expect(p.isTtsAvailable()).toBe(true);
   });
 
   it("disables yandex when api key is empty", () => {
-    const p = buildProvider({ VOICE_PROVIDER: "yandex", YC_API_KEY: "" });
+    const p = buildProvider(makeConfig());
     expect(p.isSttAvailable()).toBe(false);
     expect(p.isTtsAvailable()).toBe(false);
   });
 
   it("builds openrouter provider with explicit key", () => {
-    const p = buildProvider({
-      VOICE_PROVIDER: "openrouter",
-      VOICE_OPENROUTER_API_KEY: "or-key",
-      VOICE_OPENROUTER_BASE_URL: "https://openrouter.ai/api/v1",
-      VOICE_OPENROUTER_STT_MODEL: "openai/whisper-1",
-      VOICE_OPENROUTER_TTS_MODEL: "openai/tts-1",
-    });
+    const p = buildProvider(
+      makeConfig({
+        openai_key: "",
+        voice: {
+          ...makeConfig().voice,
+          provider: "openrouter",
+          openrouter: {
+            ...makeConfig().voice.openrouter,
+            api_key: "or-key",
+            base_url: "https://openrouter.ai/api/v1",
+            stt_model: "openai/whisper-1",
+            tts_model: "openai/tts-1",
+          },
+        },
+      })
+    );
     expect(p).toBeInstanceOf(OpenRouterSpeechProvider);
     expect(p.isSttAvailable()).toBe(true);
     expect(p.isTtsAvailable()).toBe(true);
   });
 
-  it("openrouter falls back to OPENAI_KEY when voice key is empty", () => {
-    const p = buildProvider({
-      VOICE_PROVIDER: "openrouter",
-      VOICE_OPENROUTER_API_KEY: "",
-      OPENAI_KEY: "sk-fallback",
-      VOICE_OPENROUTER_STT_MODEL: "openai/whisper-1",
-      VOICE_OPENROUTER_TTS_MODEL: "openai/tts-1",
-    });
+  it("openrouter falls back to openai_key when voice key is empty", () => {
+    const p = buildProvider(
+      makeConfig({
+        openai_key: "sk-fallback",
+        voice: {
+          ...makeConfig().voice,
+          provider: "openrouter",
+          openrouter: {
+            ...makeConfig().voice.openrouter,
+            api_key: "",
+            stt_model: "openai/whisper-1",
+            tts_model: "openai/tts-1",
+          },
+        },
+      })
+    );
     expect(p).toBeInstanceOf(OpenRouterSpeechProvider);
     expect(p.isSttAvailable()).toBe(true);
   });
 
   it("openrouter disabled when no key and no model", () => {
-    const p = buildProvider({
-      VOICE_PROVIDER: "openrouter",
-      VOICE_OPENROUTER_API_KEY: "",
-      OPENAI_KEY: "",
-      VOICE_OPENROUTER_STT_MODEL: "",
-      VOICE_OPENROUTER_TTS_MODEL: "",
-    });
+    const p = buildProvider(
+      makeConfig({
+        openai_key: "",
+        voice: {
+          ...makeConfig().voice,
+          provider: "openrouter",
+          openrouter: {
+            ...makeConfig().voice.openrouter,
+            api_key: "",
+            stt_model: "",
+            tts_model: "",
+          },
+        },
+      })
+    );
     expect(p.isSttAvailable()).toBe(false);
     expect(p.isTtsAvailable()).toBe(false);
   });
 
   it("module init returns a SpeechService", () => {
     const ctx = {
-      config: { VOICE_PROVIDER: "yandex", YC_API_KEY: "k" },
+      config: makeConfig({ voice: { ...makeConfig().voice, yc_api_key: "k" } }),
     } as never;
-    const result = speechModule.init?.(ctx) as { service?: { isSttAvailable: () => boolean } } | undefined;
+    const result = speechModule.init?.(ctx) as {
+      service?: { isSttAvailable: () => boolean };
+    } | undefined;
     expect(result?.service).toBeDefined();
     expect(result?.service?.isSttAvailable()).toBe(true);
   });

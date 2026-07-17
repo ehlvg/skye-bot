@@ -1,5 +1,5 @@
 import type { SkyeModule } from "../../core/module.js";
-import { jobsEnvSchema, type JobsEnv } from "./env.js";
+import { jobsConfigSchema } from "./config.js";
 import { migrations } from "./migrations.js";
 import { SqliteBackgroundJobs, type BackgroundJobsService } from "./service.js";
 
@@ -13,17 +13,17 @@ let serviceRef: BackgroundJobsService | null = null;
 
 export const jobsModule: SkyeModule = {
   name: "jobs",
-  envSchema: jobsEnvSchema,
+  configSchema: jobsConfigSchema,
   migrations,
   init(ctx) {
-    const cfg = ctx.config as JobsEnv;
+    const c = ctx.config.background_jobs;
     const service = new SqliteBackgroundJobs(
       ctx.db,
       {
-        enabled: cfg.BACKGROUND_JOBS_ENABLED,
-        pollIntervalMs: cfg.BACKGROUND_JOBS_POLL_INTERVAL_MS,
-        leaseSec: cfg.BACKGROUND_JOBS_LEASE_SEC,
-        retentionDays: cfg.BACKGROUND_JOBS_RETENTION_DAYS,
+        enabled: c.enabled,
+        pollIntervalMs: c.poll_interval_ms,
+        leaseSec: c.lease_sec,
+        retentionDays: c.retention_days,
       },
       ctx.logger
     );

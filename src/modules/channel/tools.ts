@@ -3,7 +3,7 @@ import type { ToolDefinition } from "../../core/module.js";
 import type { TenantContext } from "../../core/tenant.js";
 import type { AdminService } from "../admin/service.js";
 import type { ChannelService } from "./service.js";
-import type { resolveChannelChatId } from "./env.js";
+import { resolveChannelChatId } from "./config.js";
 
 export interface ChannelToolDeps {
   service: ChannelService;

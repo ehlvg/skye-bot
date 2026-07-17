@@ -1,8 +1,8 @@
 import type { ModuleContext, PanelRoute } from "../../core/module.js";
 import type { PanelRequest } from "../panel/index.js";
 import type { BillingService } from "./service.js";
-import type { TokenPack } from "./env.js";
-import type { ModelEntry } from "../llm/env.js";
+import type { TokenPack } from "./config.js";
+import type { ModelEntry } from "../llm/config.js";
 import type { LlmClient } from "../llm/client.js";
 import {
   createPackInvoiceLink,
@@ -80,7 +80,7 @@ export function buildRoutes(ctx: ModuleContext): PanelRoute[] {
           subscriptionStars: cfg.subscriptionStars,
           subscriptionPeriodSeconds: cfg.subscriptionPeriodSeconds,
           baseQuotaTokens: billing.config.baseQuotaTokens,
-          packs: ctx.config.BILLING_TOKEN_PACKS as TokenPack[],
+          packs: ctx.config.billing.token_packs as TokenPack[],
         });
       },
     },
@@ -121,7 +121,7 @@ export function buildRoutes(ctx: ModuleContext): PanelRoute[] {
       handler: async (req, res) => {
         const userId = (req as PanelRequest).tenant.userId!;
         const { packId } = req.body as { packId?: string };
-        const packs = ctx.config.BILLING_TOKEN_PACKS as TokenPack[];
+        const packs = ctx.config.billing.token_packs as TokenPack[];
         const pack = packs.find((p) => p.id === packId);
         if (!pack) {
           res.status(400).json({ error: "Unknown pack" });

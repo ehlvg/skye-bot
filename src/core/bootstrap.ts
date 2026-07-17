@@ -1,4 +1,3 @@
-import { z, type ZodObject, type ZodRawShape } from "zod";
 import type { Bot } from "grammy";
 import type { Express } from "express";
 import { getDb, runMigrations } from "./db.js";
@@ -9,28 +8,8 @@ import {
   type SkyeModule,
   ServiceRegistry,
 } from "./module.js";
+import type { SkyeConfig } from "./config.js";
 import { log } from "../utils/log.js";
-
-/**
- * Compose env schemas from all modules and parse process.env once.
- * Throws if any required variable is missing or malformed.
- */
-export function composeAndParseEnv(
-  modules: readonly SkyeModule[]
-): Readonly<Record<string, unknown>> {
-  let shape: ZodRawShape = {};
-  for (const mod of modules) {
-    if (!mod.envSchema) continue;
-    shape = { ...shape, ...(mod.envSchema as ZodObject<ZodRawShape>).shape };
-  }
-  const schema = z.object(shape);
-  const result = schema.safeParse(process.env);
-  if (!result.success) {
-    const issues = result.error.issues.map((i) => `  ${i.path.join(".")}: ${i.message}`).join("\n");
-    throw new Error(`Invalid environment variables:\n${issues}`);
-  }
-  return Object.freeze(result.data);
-}
 
 /**
  * Initialize all modules in declared order. Collects their service objects
@@ -97,8 +76,8 @@ export async function shutdownModules(modules: readonly SkyeModule[]): Promise<v
   }
 }
 
-/** One-shot helper: build a ModuleContext from already-parsed env. */
-export function makeContext(config: Readonly<Record<string, unknown>>): ModuleContext {
+/** One-shot helper: build a ModuleContext from already-parsed config. */
+export function makeContext(config: SkyeConfig): ModuleContext {
   return {
     db: getDb(),
     events: new EventBus(),

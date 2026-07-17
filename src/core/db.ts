@@ -1,6 +1,6 @@
 import Database from "better-sqlite3";
 import { mkdirSync, existsSync } from "fs";
-import { join, dirname } from "path";
+import { dirname, join } from "path";
 import { fileURLToPath } from "url";
 import type { Logger } from "pino";
 import type { Migration, SkyeModule } from "./module.js";
@@ -11,12 +11,12 @@ let _db: Database.Database | null = null;
 
 /**
  * Open (or return cached) SQLite connection.
- * Honours DB_PATH (incl. ":memory:") with a sensible default of data/skye.db.
+ * Honours the given dbPath (incl. ":memory:") with a sensible default of data/skye.db.
  */
-export function getDb(): Database.Database {
+export function getDb(dbPath?: string): Database.Database {
   if (_db) return _db;
 
-  const path = process.env.DB_PATH ?? join(__dirname, "..", "..", "data", "skye.db");
+  const path = dbPath ?? join(__dirname, "..", "..", "data", "skye.db");
 
   if (path !== ":memory:") {
     const dir = dirname(path);

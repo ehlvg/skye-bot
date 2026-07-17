@@ -1,5 +1,5 @@
 import type { SkyeModule, TelegramHandler } from "../../core/module.js";
-import { channelEnvSchema, type ChannelEnv, resolveChannelChatId } from "./env.js";
+import { channelConfigSchema, resolveChannelChatId } from "./config.js";
 import { migrations } from "./migrations.js";
 import { channelService, type ChannelService } from "./service.js";
 import { channelTools } from "./tools.js";
@@ -13,25 +13,24 @@ declare module "../../core/module.js" {
 
 export const channelModule: SkyeModule = {
   name: "channel",
-  envSchema: channelEnvSchema,
+  configSchema: channelConfigSchema,
   migrations,
   init(ctx) {
     ctx.services.set("channel", channelService);
-    const cfg = ctx.config as ChannelEnv;
+    const c = ctx.config.channel;
 
-    if (cfg.CHANNEL_ENABLED && !cfg.CHANNEL_CHAT_ID.trim()) {
+    if (c.enabled && !c.chat_id.trim()) {
       log.warn(
-        "Channel module is enabled but CHANNEL_CHAT_ID is empty — set it in config.yaml under channel.chat_id"
+        "Channel module is enabled but channel.chat_id is empty — set it in config.yaml"
       );
     }
 
-    const channelChatId = resolveChannelChatId(cfg.CHANNEL_CHAT_ID);
+    const channelChatId = resolveChannelChatId(c.chat_id);
 
-    const captureHandlers: TelegramHandler[] = cfg.CHANNEL_ENABLED
+    const captureHandlers: TelegramHandler[] = c.enabled
       ? [
           {
             on: ["channel_post", "edited_channel_post"],
-            // Run before message handlers but after the access gate.
             order: 60,
             handler: (_ctx, _tenant, next) => {
               try {
@@ -45,15 +44,15 @@ export const channelModule: SkyeModule = {
         ]
       : [];
 
-    const tools = cfg.CHANNEL_ENABLED
+    const tools = c.enabled
       ? channelTools({
           service: channelService,
           admin: ctx.services.get("admin"),
           getBot: () =>
             ctx.services.has("telegramBot") ? ctx.services.get("telegramBot") : undefined,
           getChatId: () => channelChatId,
-          adminOnly: cfg.CHANNEL_ADMIN_ONLY,
-          enabled: cfg.CHANNEL_ENABLED,
+          adminOnly: c.admin_only,
+          enabled: c.enabled,
         })
       : [];
 

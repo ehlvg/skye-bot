@@ -3,7 +3,7 @@ import { join, dirname } from "path";
 import { fileURLToPath } from "url";
 import { existsSync } from "fs";
 import type { SkyeModule } from "../../core/module.js";
-import { panelEnvSchema } from "./env.js";
+import { panelConfigSchema } from "./config.js";
 import { validateInitData, type ValidatedInitData } from "./auth.js";
 import { tenantFromInitData, type TenantContext } from "../../core/tenant.js";
 import { log } from "../../utils/log.js";
@@ -19,10 +19,11 @@ let server: import("http").Server | null = null;
 
 export const panelModule: SkyeModule = {
   name: "panel",
-  envSchema: panelEnvSchema,
+  configSchema: panelConfigSchema,
   async start(ctx, contributions, extra) {
-    const botToken = String(ctx.config.BOT_TOKEN);
-    const webappPort = Number(ctx.config.PANEL_WEBAPP_PORT);
+    const c = ctx.config;
+    const botToken = c.bot_token;
+    const webappPort = c.panel.webapp_port;
 
     const app: Express = extra.app ?? express();
     // Import accepts up to 1000 memories, each capped by the memory service.

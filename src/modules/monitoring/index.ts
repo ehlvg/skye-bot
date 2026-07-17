@@ -1,7 +1,7 @@
 import { closeSync, fstatSync, openSync, readSync } from "fs";
 import type { SkyeModule } from "../../core/module.js";
 import type { PanelRequest } from "../panel/index.js";
-import { monitoringEnvSchema } from "./env.js";
+import { monitoringConfigSchema } from "./config.js";
 import { MonitoringService } from "./service.js";
 
 declare module "../../core/module.js" {
@@ -38,14 +38,15 @@ function tail(file?: string): string[] {
 
 export const monitoringModule: SkyeModule = {
   name: "monitoring",
-  envSchema: monitoringEnvSchema,
+  configSchema: monitoringConfigSchema,
   init(ctx) {
-    const outLog = ctx.config.MONITORING_OUT_LOG?.toString();
-    const errorLog = ctx.config.MONITORING_ERROR_LOG?.toString();
+    const c = ctx.config;
+    const outLog = c.monitoring.out_log;
+    const errorLog = c.monitoring.error_log;
     const service = new MonitoringService(
       ctx.db,
       ctx.services,
-      Boolean(ctx.config.REMINDERS_ENABLED)
+      ctx.config.reminders.enabled
     );
 
     return {

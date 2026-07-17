@@ -2,9 +2,9 @@ import { InlineKeyboard, type Context as GrammyContext, type NextFunction } from
 import type { TelegramCommand, TelegramHandler } from "../../core/module.js";
 import type { TenantContext } from "../../core/tenant.js";
 import type { BillingService } from "./service.js";
-import type { ModelEntry } from "../llm/env.js";
+import type { ModelEntry } from "../llm/config.js";
 import type { LlmClient } from "../llm/client.js";
-import type { TokenPack } from "./env.js";
+import type { TokenPack } from "./config.js";
 import { decodeInvoicePayload, invoicePayload, type InvoiceConfig } from "./invoices.js";
 import { sendRichReply, sendRichEdit } from "../telegram/helpers.js";
 import { log } from "../../utils/log.js";

@@ -2,19 +2,12 @@ import { InlineKeyboard, type Context as GrammyContext, type NextFunction } from
 import type { TelegramCommand, TelegramHandler } from "../../core/module.js";
 import type { TenantContext } from "../../core/tenant.js";
 import type { LegalService } from "./service.js";
-import type { LegalEnv } from "./env.js";
+import type { LegalConfig } from "./config.js";
 import { sendRichReply } from "../telegram/helpers.js";
 
 export interface LegalDeps {
   legal: LegalService;
-  cfg: Pick<
-    LegalEnv,
-    | "LEGAL_TERMS_URL"
-    | "LEGAL_PRIVACY_URL"
-    | "LEGAL_SUPPORT_USERNAME"
-    | "LEGAL_DEVELOPER_NAME"
-    | "LEGAL_DEVELOPER_EMAIL"
-  >;
+  cfg: LegalConfig["legal"];
 }
 
 export function buildLegalCommands(deps: LegalDeps): TelegramCommand[] {
@@ -27,7 +20,7 @@ export function buildLegalCommands(deps: LegalDeps): TelegramCommand[] {
       public: true,
       handler: async (ctx) => {
         await ctx.reply("📄 Terms of Service", {
-          reply_markup: new InlineKeyboard().url("Open Terms", cfg.LEGAL_TERMS_URL),
+          reply_markup: new InlineKeyboard().url("Open Terms", cfg.terms_url),
         });
       },
     },
@@ -37,7 +30,7 @@ export function buildLegalCommands(deps: LegalDeps): TelegramCommand[] {
       public: true,
       handler: async (ctx) => {
         await ctx.reply("🔐 Privacy Policy", {
-          reply_markup: new InlineKeyboard().url("Open Privacy Policy", cfg.LEGAL_PRIVACY_URL),
+          reply_markup: new InlineKeyboard().url("Open Privacy Policy", cfg.privacy_url),
         });
       },
     },
@@ -51,8 +44,8 @@ export function buildLegalCommands(deps: LegalDeps): TelegramCommand[] {
           "",
           `Problems with a Stars payment, refund, or subscription? Reach out:`,
           "",
-          `- Telegram: ${cfg.LEGAL_SUPPORT_USERNAME}`,
-          `- Email: ${cfg.LEGAL_DEVELOPER_EMAIL}`,
+          `- Telegram: ${cfg.support_username}`,
+          `- Email: ${cfg.developer_email}`,
           "",
           "Include your Telegram user id so we can find your account faster.",
         ].join("\n");
@@ -67,10 +60,10 @@ export function buildLegalCommands(deps: LegalDeps): TelegramCommand[] {
         const md = [
           "## Developer",
           "",
-          `**${cfg.LEGAL_DEVELOPER_NAME}**`,
+          `**${cfg.developer_name}**`,
           "",
-          `- Telegram: ${cfg.LEGAL_SUPPORT_USERNAME}`,
-          `- Email: ${cfg.LEGAL_DEVELOPER_EMAIL}`,
+          `- Telegram: ${cfg.support_username}`,
+          `- Email: ${cfg.developer_email}`,
         ].join("\n");
         await sendRichReply(ctx, md);
       },

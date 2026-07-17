@@ -1,5 +1,5 @@
 import type { SkyeModule } from "../../core/module.js";
-import { sandboxEnvSchema } from "./env.js";
+import { sandboxConfigSchema } from "./config.js";
 import { SandboxService } from "./service.js";
 import { sandboxTools } from "./tools.js";
 
@@ -13,31 +13,28 @@ let serviceRef: SandboxService | null = null;
 
 export const sandboxModule: SkyeModule = {
   name: "sandbox",
-  envSchema: sandboxEnvSchema,
+  configSchema: sandboxConfigSchema,
   init(ctx) {
-    const configuredApiKey = ctx.config.DAYTONA_API_KEY ?? ctx.config.SANDBOX_DAYTONA_API_KEY;
-    const apiKey = configuredApiKey ? String(configuredApiKey) : undefined;
-    const apiUrl = ctx.config.DAYTONA_API_URL ?? ctx.config.SANDBOX_DAYTONA_API_URL;
-    const target = ctx.config.DAYTONA_TARGET ?? ctx.config.SANDBOX_DAYTONA_TARGET;
-
-    const enabled = Boolean(ctx.config.SANDBOX_ENABLED) && apiKey != null;
+    const c = ctx.config.sandbox;
+    const apiKey = c.daytona_api_key;
+    const enabled = c.enabled && apiKey != null;
 
     const service = new SandboxService({
       enabled,
       apiKey,
-      apiUrl: apiUrl ? String(apiUrl) : undefined,
-      target: target ? String(target) : undefined,
-      image: String(ctx.config.SANDBOX_IMAGE),
-      snapshot: ctx.config.SANDBOX_SNAPSHOT ? String(ctx.config.SANDBOX_SNAPSHOT) : undefined,
-      cpu: Number(ctx.config.SANDBOX_CPU),
-      memoryGiB: Number(ctx.config.SANDBOX_MEMORY_GIB),
-      diskGiB: Number(ctx.config.SANDBOX_DISK_GIB),
-      autoStopMinutes: Number(ctx.config.SANDBOX_AUTO_STOP_MINUTES),
-      autoArchiveMinutes: Number(ctx.config.SANDBOX_AUTO_ARCHIVE_MINUTES),
-      persistent: Boolean(ctx.config.SANDBOX_PERSISTENT),
-      commandTimeoutMs: Number(ctx.config.SANDBOX_COMMAND_TIMEOUT_MS),
-      maxOutputChars: Number(ctx.config.SANDBOX_MAX_OUTPUT_CHARS),
-      maxFileBytes: Number(ctx.config.SANDBOX_MAX_FILE_BYTES),
+      apiUrl: c.daytona_api_url,
+      target: c.daytona_target,
+      image: c.image,
+      snapshot: c.snapshot,
+      cpu: c.cpu,
+      memoryGiB: c.memory_gib,
+      diskGiB: c.disk_gib,
+      autoStopMinutes: c.auto_stop_minutes,
+      autoArchiveMinutes: c.auto_archive_minutes,
+      persistent: c.persistent,
+      commandTimeoutMs: c.command_timeout_ms,
+      maxOutputChars: c.max_output_chars,
+      maxFileBytes: c.max_file_bytes,
     });
 
     serviceRef = service;

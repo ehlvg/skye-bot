@@ -1,5 +1,5 @@
 import type { SkyeModule } from "../../core/module.js";
-import { mcpEnvSchema } from "./env.js";
+import { mcpConfigSchema } from "./config.js";
 import { McpService } from "./service.js";
 
 declare module "../../core/module.js" {
@@ -12,10 +12,10 @@ let serviceRef: McpService | null = null;
 
 export const mcpModule: SkyeModule = {
   name: "mcp",
-  envSchema: mcpEnvSchema,
+  configSchema: mcpConfigSchema,
   async init(ctx) {
     const service = new McpService({
-      configPath: String(ctx.config.MCP_CONFIG_PATH ?? ""),
+      configPath: ctx.config.mcp.config_path,
       userConfig: ctx.services.get("userConfig"),
     });
     serviceRef = service;

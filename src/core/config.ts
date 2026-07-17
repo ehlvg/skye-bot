@@ -1,56 +1,96 @@
 import { readFileSync, existsSync } from "fs";
 import { join } from "path";
 import { load as parseYaml } from "js-yaml";
+import {
+  z,
+  type ZodObject,
+  type ZodRawShape,
+  type ZodPreprocess,
+} from "zod";
+import type { SkyeModule } from "./module.js";
 
-let cachedConfig: Record<string, string> | null = null;
-
-function flatten(obj: Record<string, unknown>, prefix = ""): Record<string, string> {
-  const result: Record<string, string> = {};
-  for (const [key, value] of Object.entries(obj)) {
-    const flatKey = (prefix ? `${prefix}_${key}` : key).toUpperCase();
-    if (value === null) {
-      result[flatKey] = "";
-    } else if (Array.isArray(value)) {
-      // Arrays are flattened to a JSON string so Zod schemas can parse them
-      // back into structured values (e.g. the model catalog, token packs).
-      result[flatKey] = JSON.stringify(value);
-    } else if (typeof value === "object") {
-      Object.assign(result, flatten(value as Record<string, unknown>, flatKey));
-    } else {
-      result[flatKey] = String(value);
-    }
-  }
-  return result;
+/**
+ * Wrap a nested object schema so that a missing/undefined section is treated
+ * as `{}` — letting per-field `.default()` values fill in. Zod v4's
+ * `.default({})` doesn't re-parse the substituted value, so this preprocess
+ * is the reliable way to get nested defaults.
+ */
+export function section<T extends ZodRawShape>(
+  shape: T
+): ZodPreprocess<ZodObject<T>> {
+  return z.preprocess((v) => v ?? {}, z.object(shape));
 }
 
-export function loadConfig(): Record<string, string> {
+/**
+ * Root config object. Each module augments this via `declare module` to add
+ * its own typed section:
+ *
+ *   declare module "../../core/config.js" {
+ *     interface SkyeConfig {
+ *       voice: VoiceConfig;
+ *     }
+ *   }
+ */
+export interface SkyeConfig {
+  [key: string]: unknown;
+}
+
+let cachedConfig: SkyeConfig | null = null;
+
+/**
+ * Compose the root Zod schema from every module's `configSchema`, plus the
+ * core section (db_path, log_level). Returns a single ZodObject that mirrors
+ * the YAML structure 1:1.
+ */
+export function composeSchema(modules: readonly SkyeModule[]): ZodObject<ZodRawShape> {
+  let shape: ZodRawShape = {
+    db_path: z.string().default("data/skye.db"),
+    log_level: z.enum(["trace", "debug", "info", "warn", "error", "fatal"]).default("info"),
+  };
+  for (const mod of modules) {
+    if (!mod.configSchema) continue;
+    shape = { ...shape, ...(mod.configSchema as ZodObject<ZodRawShape>).shape };
+  }
+  return z.object(shape);
+}
+
+/**
+ * Load, parse, and validate `config.yaml` against the composed module schemas.
+ * Returns a typed, frozen `SkyeConfig`. Throws on missing file or schema errors.
+ */
+export function loadConfig(modules: readonly SkyeModule[]): SkyeConfig {
   if (cachedConfig) return cachedConfig;
 
   const configPath = process.env.SKYE_CONFIG ?? join(process.cwd(), "config.yaml");
 
   if (!existsSync(configPath)) {
-    console.warn(`[skye] No config.yaml found at ${configPath} — falling back to environment variables only`);
-    cachedConfig = {};
-    return cachedConfig;
+    throw new Error(
+      `No config.yaml found at ${configPath}. Copy config.example.yaml to config.yaml and fill in your values.`
+    );
   }
 
+  let raw: unknown;
   try {
-    const raw = readFileSync(configPath, "utf-8");
-    const parsed = parseYaml(raw) as Record<string, unknown>;
-    cachedConfig = flatten(parsed);
+    raw = parseYaml(readFileSync(configPath, "utf-8"));
   } catch (e) {
-    console.error(`[skye] Failed to parse config.yaml at ${configPath}:`, e);
-    throw e;
+    throw new Error(`Failed to parse YAML at ${configPath}: ${e instanceof Error ? e.message : e}`);
   }
 
-  for (const [key, value] of Object.entries(cachedConfig)) {
-    if (process.env[key] === undefined) {
-      process.env[key] = value;
-    }
+  const schema = composeSchema(modules);
+  const result = schema.safeParse(raw);
+  if (!result.success) {
+    const issues = result.error.issues
+      .map((i) => `  ${i.path.join(".")}: ${i.message}`)
+      .join("\n");
+    throw new Error(`Invalid config.yaml:\n${issues}`);
   }
 
-  console.info(`[skye] Configuration loaded from ${configPath} (${Object.keys(cachedConfig).length} keys)`);
+  cachedConfig = Object.freeze(result.data) as SkyeConfig;
+  console.info(`[skye] Configuration loaded from ${configPath}`);
   return cachedConfig;
 }
 
-loadConfig();
+/** For tests: reset the cache so the next `loadConfig` re-parses. */
+export function resetConfigCache(): void {
+  cachedConfig = null;
+}

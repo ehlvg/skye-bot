@@ -6,7 +6,14 @@ Skye is configured through a `config.yaml` file and per-user settings. This page
 
 Create a `config.yaml` from `config.example.yaml`. All keys are required unless marked optional.
 
-Real environment variables override YAML values — useful for platform-injected secrets (e.g. `DAYTONA_API_KEY`) or PaaS dashboards that don't allow mounting config files. For local dev and VPS, put everything in `config.yaml`.
+For the complete, auto-generated reference of every config key (YAML path → module → type → default → bounds), see [configuration-schema.md](configuration-schema.md). That file is regenerated from the Zod schemas by `pnpm config:schema` — re-run it after adding or changing a module's `configSchema`.
+
+Validate your `config.yaml` against the schemas before booting:
+
+```
+pnpm validate-config            # validates ./config.yaml
+SKYE_CONFIG=other.yaml pnpm validate-config
+```
 
 ### Core
 
@@ -61,7 +68,7 @@ Public users unlock Skye with a recurring Stars subscription and top up with one
 | `billing.subscription_stars`          | Price per period in Stars. Default: `1899`.                                     |
 | `billing.subscription_period_seconds` | Recurring period. Bot API 8.0 requires `2592000` (30 days). Default: `2592000`. |
 | `billing.base_quota_tokens`           | Tokens granted each renewal. Default: `2000000`.                                |
-| `billing.packs[]`                     | One-off token packs. Each has `id`, `name`, `stars`, and `tokens`.              |
+| `billing.token_packs[]`               | One-off token packs. Each has `id`, `name`, `stars`, and `tokens`.              |
 
 Packs are spent before the base quota and **expire when the subscription lapses**; they can only be bought while subscribed.
 
@@ -81,13 +88,13 @@ Skye supports two interchangeable speech providers — **Yandex SpeechKit** (def
 
 | Key                             | Purpose                                                                               |
 | ------------------------------- | ------------------------------------------------------------------------------------- |
-| `voice.provider`                | `yandex` (default) or `openrouter`.                                                   |
+| `voice.provider`                | `yandex` (default), `openrouter`, or `tinfoil`.                                       |
 | `voice.yc_api_key`              | Yandex Cloud API key for speech recognition and synthesis.                            |
 | `voice.yc_folder_id`            | Yandex Cloud folder ID.                                                               |
-| `voice.tts_voice`               | Yandex TTS voice name. Default: `jane`.                                               |
-| `voice.tts_emotion`             | Yandex TTS emotion: `neutral`, `good`, `evil`, `strict`, or `friendly`.               |
-| `voice.tts_lang`                | Yandex TTS BCP-47 language tag. Default: `ru-RU`.                                     |
-| `voice.tts_speed`               | Yandex TTS playback speed (0.1 – 3.0). Default: `1.0`.                                |
+| `voice.yc_tts_voice`            | Yandex TTS voice name. Default: `jane`.                                               |
+| `voice.yc_tts_emotion`          | Yandex TTS emotion: `neutral`, `good`, `evil`, `strict`, or `friendly`.               |
+| `voice.yc_tts_lang`             | Yandex TTS BCP-47 language tag. Default: `ru-RU`.                                     |
+| `voice.yc_tts_speed`            | Yandex TTS playback speed (0.1 – 3.0). Default: `1.0`.                                |
 | `voice.openrouter.api_key`      | OpenRouter API key. Falls back to `openai_key` when empty.                            |
 | `voice.openrouter.base_url`     | OpenRouter base URL. Default: `https://openrouter.ai/api/v1`.                         |
 | `voice.openrouter.stt_model`    | OpenRouter STT model. Default: `nvidia/parakeet-tdt-0.6b-v3`.                         |
@@ -167,7 +174,7 @@ Surfaced via the `/terms`, `/privacy`, `/paysupport`, `/developer_info`, and `/d
 | `sandbox.command_timeout_ms`              | Per-command timeout. Default: `60000`.                                                                   |
 | `sandbox.max_output_chars`                | Maximum command output returned. Default: `64000`.                                                       |
 | `sandbox.max_file_bytes`                  | Maximum file size accepted by sandbox read/write. Default: `1000000`.                                    |
-| `sandbox.daytona_api_key`                 | Daytona API key. Can also be set as `DAYTONA_API_KEY`.                                                   |
+| `sandbox.daytona_api_key`                 | Daytona API key.                                                                               |
 | `sandbox.daytona_api_url` / `target`      | Optional Daytona API endpoint and target region.                                                         |
 
 Skye does not send Daytona network restriction parameters. The sandbox uses the organization's default

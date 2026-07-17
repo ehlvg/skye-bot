@@ -87,8 +87,8 @@ models:
   #   preset: pro-search
 
 # Force Chat Completions API instead of Responses API.
-# Set to "true" if your provider doesn't support the Responses API
-# (Ollama, vLLM, most self-hosted inference servers). Defaults to "false".
+# Set to true if your provider doesn't support the Responses API
+# (Ollama, vLLM, most self-hosted inference servers). Defaults to false.
 # use_chat_completions: false
 
 # --- Skye Plus subscription (Telegram Stars) ---
@@ -102,7 +102,7 @@ billing:
   subscription_stars: 1899
   subscription_period_seconds: 2592000 # 30 days — Bot API 8.0 requires this value
   base_quota_tokens: 2000000
-  packs:
+  token_packs:
     - id: pack_500
       name: Quick Boost
       stars: 499
@@ -138,10 +138,10 @@ pdf_engine: ""
 # Maximum PDF file size to accept (bytes, default 25 MB)
 pdf_max_bytes: 26214400
 
-# Voice (speech) provider — choose between Yandex SpeechKit and OpenRouter.
-# Both support STT (speech-to-text) and TTS (text-to-speech).
+# Voice (speech) provider — choose between Yandex SpeechKit, OpenRouter,
+# and Tinfoil. All three support STT (speech-to-text) and TTS (text-to-speech).
 voice:
-  # "yandex" (default) or "openrouter"
+  # "yandex" (default), "openrouter", or "tinfoil"
   provider: "yandex"
 
   # Yandex Cloud SpeechKit — single Api-Key drives both STT and TTS.
@@ -151,13 +151,13 @@ voice:
   # TTS voice settings (Yandex SpeechKit). Optional — sensible defaults below.
   # Voice catalogue: https://aistudio.yandex.ru/docs/ru/speechkit/tts/voices.html
   # Russian options include: jane, omazh, alena, oksana, zahar, ermil, filipp
-  tts_voice: "jane"
+  yc_tts_voice: "jane"
   # Emotion: neutral | good | evil | strict | friendly (voice-dependent)
-  tts_emotion: "neutral"
+  yc_tts_emotion: "neutral"
   # BCP-47 language tag — ru-RU | en-US | tr-TR | kk-KK | uz-UZ ..
-  tts_lang: "ru-RU"
+  yc_tts_lang: "ru-RU"
   # Playback speed: 0.1 – 3.0 (1.0 is normal)
-  tts_speed: 1.0
+  yc_tts_speed: 1.0
 
   # OpenRouter speech (used when provider: "openrouter").
   # By default reuses openai_key/base_url above — fill in below to override.
@@ -176,6 +176,10 @@ voice:
     # TTS response format: mp3 | pcm. Gemini TTS only supports "pcm".
     tts_format: "pcm"
     # tts_format: "mp3"
+    # PCM raw stream parameters (used only when tts_format = "pcm"). OpenRouter
+    # returns 48 kHz mono s16le by default.
+    pcm_sample_rate: 48000
+    pcm_channels: 1
     # Input format to normalize audio into before STT: mp3 | wav | oggopus
     stt_format: "mp3"
     # ISO-639-1 language hint for STT; "" = auto-detect (e.g. "ru", "en")
@@ -183,6 +187,23 @@ voice:
     # Optional OpenRouter ranking headers
     referer: ""
     title: ""
+
+  # Tinfoil speech — uses the OpenAI-compatible /audio/transcriptions and
+  # /audio/speech endpoints on inference.tinfoil.sh. By default reuses
+  # openai_key/base_url (set tinfoil.api_key / tinfoil.base_url to override).
+  # Models: whisper-large-v3-turbo (STT), qwen3-tts (TTS).
+  tinfoil:
+    api_key: ""
+    base_url: ""
+    stt_model: "whisper-large-v3-turbo"
+    tts_model: "qwen3-tts"
+    # qwen3-tts voices: aiden, dylan, eric, ono_anna, ryan, serena, sohee, uncle_fu, vivian
+    tts_voice: "vivian"
+    # Hidden qwen3-tts `instruct` field: controls timbre, emotion and pace via
+    # natural language. Empty string disables the instruct path.
+    tts_instruct: "Speak very fast and cheerful. Bouncy, energetic young woman, smiling voice, punchy and bright. High energy, upbeat, lively delivery with no long pauses."
+    stt_format: "mp3"
+    stt_language: ""
 
 # Logging (pino)
 # Levels: trace | debug | info | warn | error | fatal
@@ -203,15 +224,17 @@ background_jobs:
   lease_sec: 300
   retention_days: 7
 
+# Reminders scheduler — checks for due reminders and delivers them via the
+# background jobs queue.
+reminders:
+  enabled: true
+  check_interval_sec: 30
+  grace_sec: 300
+
 # MCP (Model Context Protocol) — path to mcp.json config file
 # Defaults to ./mcp.json in the project root
-# mcp:
-#   config_path: "./mcp.json"
-#
-# For HTTP MCP servers, set inputs as environment variables.
-# For example, if mcp.json contains "Authorization": "Bearer ${input:github_mcp_pat}",
-# add the PAT here using the input id as the variable name:
-# github_mcp_pat: "ghp_xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
+mcp:
+  config_path: ""
 
 # Settings Panel (Telegram Mini App)
 panel:
@@ -221,7 +244,7 @@ panel:
   webapp_port: 3001
 
 # Database path. Supports ":memory:" for ephemeral storage.
-# db_path: "data/skye.db"
+db_path: "data/skye.db"
 
 # Daytona Sandbox — isolated per-chat compute. Daytona applies the
 # organization's tier-based network policy; no per-sandbox network restrictions
@@ -254,6 +277,22 @@ channel:
   enabled: false
   chat_id: ""
   admin_only: true
+
+# Proactive reactions — let Skye occasionally react in groups without being
+# addressed directly. The model decides whether to react; these settings only
+# gate how often Skye even asks.
+proactive:
+  enabled: true
+  probability: 0.06
+  warmup: 8
+  min_interval_sec: 180
+  context_size: 20
+
+# Monitoring — optional log file paths for the /monitoring panel endpoint.
+# Leave empty to skip log tailing.
+monitoring:
+  out_log: ""
+  error_log: ""
 
 # Legal — surfaced via the /terms, /privacy, /paysupport, /developer_info
 # and /delete_my_data commands. Override these to point at your own hosted

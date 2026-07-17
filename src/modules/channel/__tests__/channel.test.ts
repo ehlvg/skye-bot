@@ -7,8 +7,7 @@ import type { Message } from "grammy/types";
 
 beforeEach(() => {
   resetDbForTesting();
-  process.env.DB_PATH = ":memory:";
-  runMigrations(getDb(), [channelModule]);
+  runMigrations(getDb(":memory:"), [channelModule]);
 });
 
 const CHAT = -1001234567890;

@@ -5,6 +5,7 @@ import type { Context as GrammyContext } from "grammy";
 import type { Express, Request, Response, NextFunction } from "express";
 import type { EventBus } from "./events.js";
 import type { TenantContext } from "./tenant.js";
+import type { SkyeConfig } from "./config.js";
 
 /**
  * Service registry. Each module that exposes a service for other modules to
@@ -104,7 +105,7 @@ export interface Contributions {
 export interface ModuleContext {
   db: Database.Database;
   events: EventBus;
-  config: Readonly<Record<string, unknown>>;
+  config: SkyeConfig;
   logger: Logger;
   services: ServiceRegistry;
 }
@@ -137,8 +138,8 @@ export class ServiceRegistry {
  */
 export interface SkyeModule {
   name: string;
-  /** Zod schema for this module's environment variables. */
-  envSchema?: ZodObject<ZodRawShape>;
+  /** Zod schema for this module's YAML config section (native YAML keys). */
+  configSchema?: ZodObject<ZodRawShape>;
   /** Schema migrations applied once on startup, in order. */
   migrations?: Migration[];
   /**

@@ -1,5 +1,5 @@
 import type { SkyeModule } from "../../core/module.js";
-import { remindersEnvSchema, type RemindersEnv } from "./env.js";
+import { remindersConfigSchema } from "./config.js";
 import { migrations } from "./migrations.js";
 import { remindersService, type RemindersService } from "./service.js";
 import { ReminderScheduler } from "./scheduler.js";
@@ -16,18 +16,18 @@ let schedulerRef: ReminderScheduler | null = null;
 
 export const remindersModule: SkyeModule = {
   name: "reminders",
-  envSchema: remindersEnvSchema,
+  configSchema: remindersConfigSchema,
   migrations,
   init(ctx) {
     ctx.services.set("reminders", remindersService);
 
-    const cfg = ctx.config as RemindersEnv;
+    const c = ctx.config.reminders;
     const scheduler = new ReminderScheduler(
       { service: remindersService, jobs: ctx.services.get("jobs") },
       {
-        enabled: cfg.REMINDERS_ENABLED,
-        checkIntervalSec: cfg.REMINDERS_CHECK_INTERVAL_SEC,
-        graceSec: cfg.REMINDERS_GRACE_SEC,
+        enabled: c.enabled,
+        checkIntervalSec: c.check_interval_sec,
+        graceSec: c.grace_sec,
       }
     );
     schedulerRef = scheduler;

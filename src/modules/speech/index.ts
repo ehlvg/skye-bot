@@ -1,5 +1,6 @@
 import type { SkyeModule } from "../../core/module.js";
-import { speechEnvSchema } from "./env.js";
+import { speechConfigSchema } from "./config.js";
+import type { SkyeConfig } from "../../core/config.js";
 import { SpeechService } from "./service.js";
 import { YandexSpeechProvider } from "./providers/yandex.js";
 import { OpenRouterSpeechProvider } from "./providers/openrouter.js";
@@ -14,63 +15,60 @@ declare module "../../core/module.js" {
 
 export const speechModule: SkyeModule = {
   name: "speech",
-  envSchema: speechEnvSchema,
+  configSchema: speechConfigSchema,
   init(ctx) {
     const provider = buildProvider(ctx.config);
     return { service: new SpeechService(provider) };
   },
 };
 
-export function buildProvider(config: Readonly<Record<string, unknown>>): SpeechProvider {
-  const provider = String(config.VOICE_PROVIDER ?? "yandex");
+export function buildProvider(config: SkyeConfig): SpeechProvider {
+  const voice = config.voice;
 
-  if (provider === "openrouter") {
-    const explicitKey = String(config.VOICE_OPENROUTER_API_KEY ?? "");
-    const apiKey = explicitKey || String(config.OPENAI_KEY ?? "");
-    const baseUrl =
-      String(config.VOICE_OPENROUTER_BASE_URL ?? "") || "https://openrouter.ai/api/v1";
+  if (voice.provider === "openrouter") {
+    const or = voice.openrouter;
+    const apiKey = or.api_key || config.openai_key;
+    const baseUrl = or.base_url || "https://openrouter.ai/api/v1";
 
     return new OpenRouterSpeechProvider({
       apiKey,
       baseUrl,
-      sttModel: String(config.VOICE_OPENROUTER_STT_MODEL ?? "nvidia/parakeet-tdt-0.6b-v3"),
-      ttsModel: String(config.VOICE_OPENROUTER_TTS_MODEL ?? "google/gemini-3.1-flash-tts-preview"),
-      ttsVoice: String(config.VOICE_OPENROUTER_TTS_VOICE ?? "alloy"),
-      ttsResponseFormat: (config.VOICE_OPENROUTER_TTS_FORMAT as "mp3" | "pcm") ?? "mp3",
-      sttInputFormat: (config.VOICE_OPENROUTER_STT_FORMAT as "mp3" | "wav" | "oggopus") ?? "mp3",
-      sttLanguage: String(config.VOICE_OPENROUTER_STT_LANGUAGE ?? ""),
-      referer: String(config.VOICE_OPENROUTER_REFERER ?? ""),
-      title: String(config.VOICE_OPENROUTER_TITLE ?? ""),
-      pcmSampleRate: Number(config.VOICE_OPENROUTER_PCM_SAMPLE_RATE ?? 48000),
-      pcmChannels: Number(config.VOICE_OPENROUTER_PCM_CHANNELS ?? 1),
+      sttModel: or.stt_model,
+      ttsModel: or.tts_model,
+      ttsVoice: or.tts_voice,
+      ttsResponseFormat: or.tts_format,
+      sttInputFormat: or.stt_format,
+      sttLanguage: or.stt_language,
+      referer: or.referer,
+      title: or.title,
+      pcmSampleRate: or.pcm_sample_rate,
+      pcmChannels: or.pcm_channels,
     });
   }
 
-
-  if (provider === "tinfoil") {
-    const explicitKey = String(config.VOICE_TINFOIL_API_KEY ?? "");
-    const apiKey = explicitKey || String(config.OPENAI_KEY ?? "");
-    const baseUrl =
-      String(config.VOICE_TINFOIL_BASE_URL ?? "") || String(config.BASE_URL ?? "");
+  if (voice.provider === "tinfoil") {
+    const tf = voice.tinfoil;
+    const apiKey = tf.api_key || config.openai_key;
+    const baseUrl = tf.base_url || config.base_url;
 
     return new TinfoilSpeechProvider({
       apiKey,
       baseUrl,
-      sttModel: String(config.VOICE_TINFOIL_STT_MODEL ?? "whisper-large-v3-turbo"),
-      ttsModel: String(config.VOICE_TINFOIL_TTS_MODEL ?? "qwen3-tts"),
-      ttsVoice: String(config.VOICE_TINFOIL_TTS_VOICE ?? "vivian"),
-      ttsInstruct: String(config.VOICE_TINFOIL_TTS_INSTRUCT ?? ""),
-      sttInputFormat: (config.VOICE_TINFOIL_STT_FORMAT as "mp3" | "wav" | "oggopus") ?? "mp3",
-      sttLanguage: String(config.VOICE_TINFOIL_STT_LANGUAGE ?? ""),
+      sttModel: tf.stt_model,
+      ttsModel: tf.tts_model,
+      ttsVoice: tf.tts_voice,
+      ttsInstruct: tf.tts_instruct,
+      sttInputFormat: tf.stt_format,
+      sttLanguage: tf.stt_language,
     });
   }
 
   return new YandexSpeechProvider({
-    apiKey: String(config.YC_API_KEY ?? ""),
-    folderId: String(config.YC_FOLDER_ID ?? ""),
-    ttsVoice: String(config.YC_TTS_VOICE ?? "jane"),
-    ttsEmotion: String(config.YC_TTS_EMOTION ?? "neutral"),
-    ttsLang: String(config.YC_TTS_LANG ?? "ru-RU"),
-    ttsSpeed: Number(config.YC_TTS_SPEED ?? 1.0),
+    apiKey: voice.yc_api_key,
+    folderId: voice.yc_folder_id,
+    ttsVoice: voice.yc_tts_voice,
+    ttsEmotion: voice.yc_tts_emotion,
+    ttsLang: voice.yc_tts_lang,
+    ttsSpeed: voice.yc_tts_speed,
   });
 }

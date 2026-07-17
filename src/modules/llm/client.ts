@@ -4,7 +4,7 @@ import type {
   ResponseFunctionToolCall,
 } from "openai/resources/responses/responses.js";
 import type { ChatCompletionMessageParam } from "openai/resources/chat/completions.js";
-import type { ModelEntry } from "./env.js";
+import type { ModelEntry } from "./config.js";
 import { log } from "../../utils/log.js";
 
 export type { ResponseInputItem, ResponseFunctionToolCall };
