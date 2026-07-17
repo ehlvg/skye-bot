@@ -13,6 +13,9 @@ importers:
       "@daytona/sdk":
         specifier: ^0.196.0
         version: 0.196.0(ws@8.21.0)
+      "@grammyjs/runner":
+        specifier: ^2.0.3
+        version: 2.0.3(grammy@1.44.0)
       "@modelcontextprotocol/sdk":
         specifier: ^1.29.0
         version: 1.29.0(zod@4.4.3)
@@ -957,6 +960,15 @@ packages:
       {
         integrity: sha512-kOfP2D+ykbcX/P3IFnokOhVRNoTozo5/JxhAIVYLpea/UBmCQ/YWPBfWIDuBImXX/15KH+eKh4xpEUyS2sQQGQ==,
       }
+
+  "@grammyjs/runner@2.0.3":
+    resolution:
+      {
+        integrity: sha512-nckmTs1dPWfVQteK9cxqxzE+0m1VRvluLWB8UgFzsjg62w3qthPJt0TYtJBEdG7OedvfQq4vnFAyE6iaMkR42A==,
+      }
+    engines: { node: ">=12.20.0 || >=14.13.1" }
+    peerDependencies:
+      grammy: ^1.13.1
 
   "@grammyjs/types@3.28.0":
     resolution:
@@ -5273,6 +5285,11 @@ snapshots:
       levn: 0.4.1
 
   "@fontsource-variable/inter@5.2.8": {}
+
+  "@grammyjs/runner@2.0.3(grammy@1.44.0)":
+    dependencies:
+      abort-controller: 3.0.0
+      grammy: 1.44.0
 
   "@grammyjs/types@3.28.0": {}
 

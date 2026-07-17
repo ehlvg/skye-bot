@@ -27,6 +27,31 @@ describe("ThreadWorkQueue", () => {
     expect(queue.diagnostics()).toMatchObject({ pendingJobs: 0, activeJobs: 0 });
   });
 
+  it("runs different chats independently", async () => {
+    const queue = new ThreadWorkQueue(1_000);
+    const events: string[] = [];
+    let finishBlockedChat!: () => void;
+
+    queue.enqueue(
+      "1",
+      1,
+      async () =>
+        new Promise<void>((resolve) => {
+          finishBlockedChat = resolve;
+        })
+    );
+    queue.enqueue("2", 2, async () => {
+      events.push("second-chat");
+    });
+
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(events).toEqual(["second-chat"]);
+    expect(queue.diagnostics().activeThreads).toEqual(["1"]);
+
+    finishBlockedChat();
+    await queue.whenIdle();
+  });
+
   it("does not overlap a successor while a timed-out job is still settling", async () => {
     const queue = new ThreadWorkQueue(15);
     const events: string[] = [];

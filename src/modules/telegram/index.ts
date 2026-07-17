@@ -1,4 +1,5 @@
 import { Bot } from "grammy";
+import { run, type RunnerHandle } from "@grammyjs/runner";
 import { createHash } from "crypto";
 import {
   closeSync,
@@ -19,6 +20,7 @@ import { log } from "../../utils/log.js";
 
 let botRef: Bot | null = null;
 let reliabilityRef: TelegramReliabilityService | null = null;
+let runnerRef: RunnerHandle | null = null;
 let releasePollingLock: (() => void) | null = null;
 
 declare module "../../core/module.js" {
@@ -82,9 +84,7 @@ export const telegramModule: SkyeModule = {
         webappUrl: ctx.config.panel.webapp_url,
         defaultModelId: ctx.config.default_model_id,
         reliability,
-        ...(c.owner.name || c.owner.tag
-          ? { owner: { name: c.owner.name, tag: c.owner.tag } }
-          : {}),
+        ...(c.owner.name || c.owner.tag ? { owner: { name: c.owner.name, tag: c.owner.tag } } : {}),
       },
       contributions
     );
@@ -105,7 +105,9 @@ export const telegramModule: SkyeModule = {
 
     reliability.markPolling();
     const dropPendingUpdates = c.telegram_drop_pending_updates === "1";
-    void bot.start({ drop_pending_updates: dropPendingUpdates }).catch((e) => {
+    await bot.api.deleteWebhook({ drop_pending_updates: dropPendingUpdates });
+    runnerRef = run(bot);
+    void runnerRef.task()?.catch((e) => {
       reliability.markStopped();
       releasePollingLock?.();
       releasePollingLock = null;
@@ -122,13 +124,12 @@ export const telegramModule: SkyeModule = {
       }
       setTimeout(() => process.exit(1), 100).unref();
     });
-    log.info({ dropPendingUpdates }, "Skye is alive");
+    log.info({ dropPendingUpdates, concurrentUpdates: true }, "Skye is alive");
   },
   async shutdown() {
     reliabilityRef?.markStopped();
-    if (botRef) {
-      await botRef.stop().catch(() => {});
-    }
+    await runnerRef?.stop().catch(() => {});
+    runnerRef = null;
     releasePollingLock?.();
     releasePollingLock = null;
     reliabilityRef = null;

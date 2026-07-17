@@ -50,6 +50,7 @@
   },
   "dependencies": {
     "@daytona/sdk": "^0.196.0",
+    "@grammyjs/runner": "^2.0.3",
     "@modelcontextprotocol/sdk": "^1.29.0",
     "better-sqlite3": "^12.8.0",
     "express": "^5.1.0",
