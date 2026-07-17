@@ -13,6 +13,13 @@ import { buildSystemPrompt } from "../llm/prompt.js";
 import { safeJsonParse, type ToolCallRecord } from "./helpers.js";
 import { log } from "../../utils/log.js";
 
+export interface ToolConfirmationRequest {
+  toolName: string;
+  args: Record<string, unknown>;
+  isMcp: boolean;
+  execute: () => Promise<string>;
+}
+
 export interface ChatLoopDeps {
   llm: LlmClient;
   mcp: McpService;
@@ -32,6 +39,8 @@ export interface ChatLoopDeps {
   onUsage?: (usage: { promptTokens: number; completionTokens: number }, modelId: string) => void;
   /** Bot owner info (name + Telegram handle) to weight in the system prompt. */
   owner?: { name: string; tag: string };
+  /** Ask the caller to approve a potentially mutating tool before it runs. */
+  requestToolConfirmation?: (request: ToolConfirmationRequest) => Promise<string>;
 }
 
 /**
@@ -58,6 +67,7 @@ export async function runChatLoop(
   const chatContext = deps.chatLog.context(tenant.chatId);
   const mcpTools = deps.allowMcpTools === false ? [] : deps.mcp.toolsFor(tenant.userId);
   const mcpToolNames = mcpTools.map((t) => t.name);
+  const mcpToolMap = new Map(mcpTools.map((tool) => [tool.name, tool]));
   const tk = threadKey(tenant);
 
   const userCfg = tenant.userId ? deps.userConfig.get(tenant.userId) : undefined;
@@ -188,20 +198,51 @@ export async function runChatLoop(
       const args = safeJsonParse(fc.arguments);
       const isMcp = deps.mcp.isMcpTool(fc.name);
       const tool = builtinMap.get(fc.name);
+      const mcpTool = mcpToolMap.get(fc.name);
 
-      let result: string;
-      let failed = false;
-      try {
+      const performExecution = () => {
         const execution = isMcp
           ? deps.mcp.execute(fc.name, args, tenant.userId)
           : tool
             ? Promise.resolve(tool.execute(args, tenant))
             : Promise.resolve(`Unknown tool: ${fc.name}`);
-        result = await withTimeout(execution, tool?.timeoutMs ?? 60_000, fc.name, signal);
-      } catch (e) {
-        failed = true;
-        result = `Tool "${fc.name}" failed: ${e instanceof Error ? e.message : String(e)}`;
-        log.warn({ err: e, tool: fc.name, chatId: tenant.chatId }, "Tool execution failed");
+        return withTimeout(execution, tool?.timeoutMs ?? 60_000, fc.name, signal);
+      };
+
+      const performSafely = async (): Promise<string> => {
+        try {
+          return await performExecution();
+        } catch (e) {
+          log.warn({ err: e, tool: fc.name, chatId: tenant.chatId }, "Tool execution failed");
+          return `Tool "${fc.name}" failed: ${e instanceof Error ? e.message : String(e)}`;
+        }
+      };
+
+      let result: string;
+      let failed = false;
+      const requiresConfirmation = isMcp
+        ? mcpTool?.requiresConfirmation === true
+        : tool?.requiresConfirmation === true;
+      if (requiresConfirmation) {
+        if (deps.requestToolConfirmation) {
+          result = await deps.requestToolConfirmation({
+            toolName: fc.name,
+            args,
+            isMcp,
+            execute: performSafely,
+          });
+        } else {
+          failed = true;
+          result = `Tool "${fc.name}" was not executed because confirmation is unavailable.`;
+        }
+      } else {
+        try {
+          result = await performExecution();
+        } catch (e) {
+          failed = true;
+          result = `Tool "${fc.name}" failed: ${e instanceof Error ? e.message : String(e)}`;
+          log.warn({ err: e, tool: fc.name, chatId: tenant.chatId }, "Tool execution failed");
+        }
       }
 
       // Persist tool output (success or failure) to the conversation log.
@@ -221,7 +262,10 @@ export async function runChatLoop(
       };
     };
 
-    const allReadOnly = fnCalls.every((fc) => builtinMap.get(fc.name)?.readOnly === true);
+    const allReadOnly = fnCalls.every(
+      (fc) =>
+        builtinMap.get(fc.name)?.readOnly === true || mcpToolMap.get(fc.name)?.readOnly === true
+    );
     const executed = allReadOnly
       ? await Promise.all(fnCalls.map(executeCall))
       : await fnCalls.reduce<Promise<Awaited<ReturnType<typeof executeCall>>[]>>(

@@ -112,6 +112,14 @@ In groups, Skye:
 
 Skye supports the [Model Context Protocol](mcp-tools.md) to connect external tools. Tools from MCP servers are exposed to the LLM as function calls. Skye can execute them during a conversation — for example, querying a database, checking a service status, or interacting with an API.
 
+## Tool confirmations
+
+Skye asks the requesting user for an explicit **Run** or **Cancel** decision before a tool can make changes. This covers sandbox commands, file writes, sandbox resets, and MCP tools that are not declared read-only. Sandbox reads/listing and MCP tools with `annotations.readOnlyHint: true` can run immediately.
+
+Each confirmation is one-time, expires after 5 minutes, and is bound to the original chat, user, and forum topic. Pending confirmations are intentionally lost on restart, so an old request cannot execute later. Common secret argument fields are masked in the confirmation message, and the execution result is appended to the conversation after approval.
+
+An MCP server's read-only annotation is advisory metadata supplied by that server, not a security boundary. Only connect MCP servers you trust.
+
 ## Streaming drafts
 
 While Skye is thinking, you'll see a live-updating draft message. Tool calls are shown with indicators (🧠 for built-in tools, 🔌 for MCP tools) so you can follow what Skye is doing before the final response arrives.

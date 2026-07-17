@@ -69,6 +69,8 @@ interface OpenAITool {
   name: string;
   description: string;
   parameters: Record<string, unknown>;
+  readOnly: boolean;
+  requiresConfirmation: boolean;
 }
 
 export interface McpDetailedTool {
@@ -78,6 +80,7 @@ export interface McpDetailedTool {
   serverName: string;
   scope: "global" | "user";
   toolName: string;
+  readOnly: boolean;
 }
 
 function userKey(userId: number, serverId: number): string {
@@ -248,6 +251,10 @@ export class McpService {
             type: "object",
             properties: {},
           },
+          readOnly: tool.annotations?.readOnlyHint === true,
+          // MCP annotations are optional hints. Unknown tools therefore fail
+          // closed and require confirmation before they can change anything.
+          requiresConfirmation: tool.annotations?.readOnlyHint !== true,
         };
         openaiTools.push(openaiTool);
         toolMap.set(openaiTool.name, {
@@ -351,6 +358,7 @@ export class McpService {
         serverName: mapping.serverName,
         scope: mapping.scope,
         toolName: mapping.toolName,
+        readOnly: tool.readOnly,
       });
     }
 
@@ -369,6 +377,7 @@ export class McpService {
             serverName: mapping.serverName,
             scope: mapping.scope,
             toolName: mapping.toolName,
+            readOnly: tool.readOnly,
           });
         }
       }

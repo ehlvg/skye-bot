@@ -10,6 +10,7 @@ export function sandboxTools(service: SandboxService): ToolDefinition[] {
   return [
     {
       name: "sandbox_run_command",
+      requiresConfirmation: true,
       description:
         "Run a command inside this chat's isolated Daytona Sandbox. " +
         "The sandbox has Daytona's standard tier-based network access and the tools provided by its configured image. " +
@@ -57,6 +58,7 @@ export function sandboxTools(service: SandboxService): ToolDefinition[] {
     },
     {
       name: "sandbox_write_file",
+      requiresConfirmation: true,
       description: "Create or overwrite a text file inside the sandbox.",
       parameters: {
         type: "object",
@@ -115,6 +117,7 @@ export function sandboxTools(service: SandboxService): ToolDefinition[] {
     },
     {
       name: "sandbox_reset",
+      requiresConfirmation: true,
       description:
         "Delete the current chat's sandbox and recreate a fresh one. Use this when the environment is in a broken state or the user wants a clean workspace.",
       parameters: {
