@@ -145,6 +145,49 @@ describe("buildSystemPrompt", () => {
     expect(prompt).toContain("feminine");
   });
 
+  test("non-default personalities replace Skye's character", () => {
+    const prompt = buildSystemPrompt(
+      [],
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      "operator"
+    );
+    expect(prompt).toContain("You are **Operator**");
+    expect(prompt).not.toContain("You are **Skye**, a calm");
+    expect(prompt).not.toContain("You are always Skye");
+  });
+
+  test("places current behavior and custom instructions after chat history", () => {
+    const prompt = buildSystemPrompt(
+      [],
+      { chatTitle: "Test", recentLog: "Skye: old behavior" },
+      undefined,
+      "Answer in clipped sentences.",
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      "operator"
+    );
+    expect(prompt.indexOf("Current Behavior — Highest Priority")).toBeGreaterThan(
+      prompt.indexOf("Recent messages:")
+    );
+    expect(prompt.indexOf("Answer in clipped sentences.")).toBeGreaterThan(
+      prompt.indexOf("Recent messages:")
+    );
+  });
+
   test("includes self-awareness about subscription and reactions", () => {
     const prompt = buildSystemPrompt([]);
     expect(prompt).toContain("Skye Plus");

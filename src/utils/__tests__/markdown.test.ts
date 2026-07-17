@@ -1,5 +1,5 @@
 import { test, expect, describe } from "vitest";
-import { cleanMd } from "../markdown.js";
+import { cleanMd, unwrapTextEnvelope } from "../markdown.js";
 
 describe("cleanMd", () => {
   test("keeps rich markdown emphasis", () => {
@@ -34,5 +34,20 @@ describe("cleanMd", () => {
 
   test("handles empty string", () => {
     expect(cleanMd("")).toBe("");
+  });
+});
+
+describe("unwrapTextEnvelope", () => {
+  test("unwraps an accidental JSON text response", () => {
+    expect(unwrapTextEnvelope('{"text":"Hello there"}')).toBe("Hello there");
+  });
+
+  test("unwraps a fenced JSON text response", () => {
+    expect(unwrapTextEnvelope('```json\n{"text":"Hello there"}\n```')).toBe("Hello there");
+  });
+
+  test("preserves other JSON objects", () => {
+    const json = '{"text":"Hello","language":"en"}';
+    expect(unwrapTextEnvelope(json)).toBe(json);
   });
 });

@@ -12,6 +12,7 @@ import { threadKey } from "../../core/tenant.js";
 import { buildSystemPrompt } from "../llm/prompt.js";
 import { safeJsonParse, type ToolCallRecord } from "./helpers.js";
 import { log } from "../../utils/log.js";
+import { unwrapTextEnvelope } from "../../utils/markdown.js";
 
 export interface ChatLoopDeps {
   llm: LlmClient;
@@ -156,7 +157,7 @@ export async function runChatLoop(
     }>;
 
     if (fnCalls.length === 0) {
-      const finalText = extractFinalText(response);
+      const finalText = unwrapTextEnvelope(extractFinalText(response));
       const textWithCitations = appendCitations(finalText, response.sources);
       if (textWithCitations) {
         deps.chatLog.appendConversation(tenant.chatId, tk, {
@@ -179,9 +180,18 @@ export async function runChatLoop(
       });
     }
 
-    const currentToolCalls: ToolCallRecord[] = [];
     const toolOutputItems: ResponseInputItem[] = [];
     const builtinMap = new Map(deps.builtinTools.map((t) => [t.name, t]));
+
+    if (onToolCalls) {
+      onToolCalls(
+        fnCalls.map((fc) => ({
+          name: fc.name,
+          args: safeJsonParse(fc.arguments),
+          isMcp: deps.mcp.isMcpTool(fc.name),
+        }))
+      );
+    }
 
     const executeCall = async (fc: (typeof fnCalls)[number]) => {
       signal?.throwIfAborted();
@@ -229,16 +239,11 @@ export async function runChatLoop(
           Promise.resolve([])
         );
     for (const item of executed) {
-      currentToolCalls.push(item.call);
       toolOutputItems.push(item.output);
     }
 
     for (const fc of fnCalls) currentInput.push(fc as ResponseInputItem);
     currentInput.push(...toolOutputItems);
-
-    if (onToolCalls && currentToolCalls.length > 0) {
-      onToolCalls(currentToolCalls);
-    }
 
     iterations++;
   }

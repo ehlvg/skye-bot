@@ -254,7 +254,61 @@ type ChatAction =
   | "record_video_note"
   | "upload_video_note";
 
-const THINKING_CUSTOM_EMOJI_ID = "5368324170671202286";
+export type DraftStatusKind = "thinking" | "images" | "voice" | "documents" | "code" | "web";
+
+export interface DraftStatus {
+  kind: DraftStatusKind;
+  text: string;
+}
+
+const DRAFT_STATUS_EMOJI: Record<DraftStatusKind, { id: string; fallback: string }> = {
+  thinking: { id: "5535034915403333642", fallback: "💭" },
+  images: { id: "5537651753077440526", fallback: "👀" },
+  voice: { id: "5537354996607090745", fallback: "🎙️" },
+  documents: { id: "5535039193190760468", fallback: "📄" },
+  code: { id: "5535251334510411788", fallback: "💻" },
+  web: { id: "5535365052359507996", fallback: "🔎" },
+};
+
+export const DEFAULT_DRAFT_STATUS: DraftStatus = { kind: "thinking", text: "Thinking…" };
+
+export function draftStatusForMessageType(type: string): DraftStatus {
+  if (type === "photo") return { kind: "images", text: "Looking at images…" };
+  if (type === "voice" || type === "audio" || type === "video_note") {
+    return { kind: "voice", text: "Listening to audio…" };
+  }
+  if (type === "document") return { kind: "documents", text: "Studying documents…" };
+  return DEFAULT_DRAFT_STATUS;
+}
+
+export function draftStatusForToolCalls(calls: ToolCallRecord[]): DraftStatus {
+  const names = calls.map((call) => call.name.toLowerCase());
+  if (names.some((name) => name.includes("image"))) {
+    return { kind: "images", text: "Creating an image…" };
+  }
+  if (names.some((name) => name.startsWith("sandbox_") || name.includes("command"))) {
+    return { kind: "code", text: "Working with code and commands…" };
+  }
+  if (names.some((name) => name.includes("memory"))) {
+    return { kind: "thinking", text: "Checking memory…" };
+  }
+  if (
+    names.some((name) => /(^|_)(web|fetch|browse|internet)(_|$)/.test(name) || name === "search")
+  ) {
+    return { kind: "web", text: "Searching the web…" };
+  }
+  if (names.some((name) => name.includes("document") || name.includes("file"))) {
+    return { kind: "documents", text: "Studying documents…" };
+  }
+  return { kind: "thinking", text: "Looking for the right information…" };
+}
+
+export function renderDraftStatus(status: DraftStatus, thinkingBlock: boolean): string {
+  const emoji = DRAFT_STATUS_EMOJI[status.kind];
+  const content = `<tg-emoji emoji-id="${emoji.id}">${emoji.fallback}</tg-emoji> ${escapeHtml(status.text)}`;
+  return thinkingBlock ? `<tg-thinking>${content}</tg-thinking>` : content;
+}
+
 const DRAFT_MIN_INTERVAL_MS = 5000;
 const FINAL_RETRY_LIMIT = 3;
 const MAX_DRAFT_MARKDOWN_CHARS = 3500;
@@ -491,7 +545,7 @@ export function createChatActionTicker(ctx: GrammyContext, action: ChatAction, i
 
 export function createDraftManager(ctx: GrammyContext) {
   if (ctx.chat?.type !== "private") {
-    let latestText = "Thinking…";
+    let latestStatus = DEFAULT_DRAFT_STATUS;
     let statusMessage: Message | undefined;
     let stopped = false;
     let updating = Promise.resolve();
@@ -499,7 +553,8 @@ export function createDraftManager(ctx: GrammyContext) {
       if (stopped || !ctx.chat) return;
       updating = updating
         .then(async () => {
-          statusMessage = await ctx.reply(latestText, {
+          statusMessage = await ctx.reply(renderDraftStatus(latestStatus, false), {
+            parse_mode: "HTML",
             message_thread_id: threadId(ctx),
             ...(ctx.message?.message_id ? { reply_to_message_id: ctx.message.message_id } : {}),
           });
@@ -508,12 +563,25 @@ export function createDraftManager(ctx: GrammyContext) {
     }, 4_000);
 
     return {
-      send: (text: string) => {
-        if (stopped || !text || text === latestText) return;
-        latestText = text;
+      send: (text: string, status?: DraftStatus) => {
+        const nextStatus = status ?? (text ? { ...latestStatus, text } : latestStatus);
+        if (
+          stopped ||
+          (nextStatus.text === latestStatus.text && nextStatus.kind === latestStatus.kind)
+        ) {
+          return;
+        }
+        latestStatus = nextStatus;
         if (!statusMessage || !ctx.chat) return;
         updating = updating
-          .then(() => ctx.api.editMessageText(ctx.chat!.id, statusMessage!.message_id, text))
+          .then(() =>
+            ctx.api.editMessageText(
+              ctx.chat!.id,
+              statusMessage!.message_id,
+              renderDraftStatus(latestStatus, false),
+              { parse_mode: "HTML" }
+            )
+          )
           .then(() => undefined)
           .catch((e) => log.debug({ err: e }, "Group status update failed"));
       },
@@ -540,9 +608,11 @@ export function createDraftManager(ctx: GrammyContext) {
   let nextAllowedAt = 0;
   let idleWaiters: Array<() => void> = [];
 
-  const thinkingPrefix = `<tg-thinking><tg-emoji emoji-id="${THINKING_CUSTOM_EMOJI_ID}">💭</tg-emoji> Thinking...</tg-thinking>`;
-  const buildThinkingDraft = (markdown: string) =>
-    `${thinkingPrefix}\n\n${stabilizeStreamingMarkdown(markdown)}`.trim();
+  let latestStatus = DEFAULT_DRAFT_STATUS;
+  const buildThinkingDraft = (markdown: string, status: DraftStatus) => {
+    const body = stabilizeStreamingMarkdown(markdown);
+    return `${renderDraftStatus(status, true)}${body ? `\n\n${body}` : ""}`;
+  };
 
   const notifyIdle = () => {
     if (sending || pendingText != null) return;
@@ -569,7 +639,7 @@ export function createDraftManager(ctx: GrammyContext) {
         if (waitMs > 0) await sleep(waitMs);
 
         try {
-          await sendRichDraft(ctx, draftId, buildThinkingDraft(text));
+          await sendRichDraft(ctx, draftId, buildThinkingDraft(text, latestStatus));
           lastText = text;
           nextAllowedAt = Date.now() + DRAFT_MIN_INTERVAL_MS;
         } catch (e) {
@@ -600,8 +670,9 @@ export function createDraftManager(ctx: GrammyContext) {
   };
 
   return {
-    send: (text: string) => {
-      if (stopped || !enabled || text === lastText || text === pendingText) return;
+    send: (text: string, status?: DraftStatus) => {
+      if (status) latestStatus = status;
+      if (stopped || !enabled || (text === lastText && !status) || text === pendingText) return;
       pendingText = text;
       void pump();
     },

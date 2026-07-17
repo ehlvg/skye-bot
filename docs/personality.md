@@ -55,4 +55,4 @@ Skye uses Telegram's rich Markdown when it makes the answer clearer. For simple 
 
 ## Custom instructions
 
-You can add your own custom system prompt per user through the [Settings panel](configuration.md#per-user-settings). Your custom instructions are added after Skye's base personality — they don't replace it. This lets you tune Skye's behavior for specific use cases without losing its core character.
+You can select a personality and add your own custom system prompt per user through the [Settings panel](configuration.md#per-user-settings). A selected personality fully replaces Skye's base character. Custom instructions are then applied on top of that personality, immediately on the next response; resetting the conversation is not required.

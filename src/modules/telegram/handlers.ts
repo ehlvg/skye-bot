@@ -35,6 +35,9 @@ import {
   createChatActionTicker,
   createDraftManager,
   ctxAudit,
+  DEFAULT_DRAFT_STATUS,
+  draftStatusForMessageType,
+  draftStatusForToolCalls,
   extractLogEntry,
   fmtError,
   reactSafely,
@@ -46,7 +49,7 @@ import {
   toFileDataUrl,
   type ToolCallRecord,
 } from "./helpers.js";
-import { cleanMd } from "../../utils/markdown.js";
+import { cleanMd, unwrapTextEnvelope } from "../../utils/markdown.js";
 import { log } from "../../utils/log.js";
 import { QueueTimeoutError, type TelegramReliabilityService } from "./reliability.js";
 
@@ -1226,22 +1229,17 @@ export function installTelegram(bot: Bot, deps: TelegramDeps, contributions: Con
     };
     const onToolCalls = (calls: ToolCallRecord[]) => {
       toolCallHistory.push(...calls);
-      const status = calls.some((call) => call.name.includes("image"))
-        ? "Creating an image…"
-        : calls.some((call) => call.name.startsWith("sandbox_"))
-          ? "Working with files and code…"
-          : calls.some((call) => call.name.includes("memory"))
-            ? "Checking memory…"
-            : "Looking for the right information…";
+      const status = draftStatusForToolCalls(calls);
       void draft.send(
-        tenant.chatType === "private" ? buildDraftMarkdown(toolCallHistory, status) : status
+        tenant.chatType === "private" ? buildDraftMarkdown(toolCallHistory) : "",
+        status
       );
     };
 
     try {
       reactSafely(ctx, "👀");
       actionTicker.start();
-      void draft.send("Thinking…");
+      void draft.send("", draftStatusForMessageType(msgType));
 
       // Collect media content parts from the replied-to message (photos,
       // PDFs, audio transcripts) so the model can reason about them even
@@ -1371,13 +1369,16 @@ export function installTelegram(bot: Bot, deps: TelegramDeps, contributions: Con
             { err: e, modelId: attemptModelId, chatId: tenant.chatId },
             "LLM attempt failed"
           );
-          void draft.send("The first attempt did not work — trying again…");
+          void draft.send("", {
+            ...DEFAULT_DRAFT_STATUS,
+            text: "The first attempt did not work — trying again…",
+          });
         }
       }
 
       if (!rawText) {
         const recoveryModelId = fallbackIds[0] ?? modelId;
-        void draft.send("Trying to answer without tools…");
+        void draft.send("", { ...DEFAULT_DRAFT_STATUS, text: "Trying without tools…" });
         try {
           rawText = await withBillingLock(tenant.userId, () => runAttempt(recoveryModelId, []));
           if (rawText) usedModelId = recoveryModelId;
@@ -1386,7 +1387,7 @@ export function installTelegram(bot: Bot, deps: TelegramDeps, contributions: Con
         }
       }
       if (!rawText && lastAttemptError) throw lastAttemptError;
-      const text = cleanMd(rawText);
+      const text = cleanMd(unwrapTextEnvelope(rawText));
 
       if (!text) {
         await draft.delete();
@@ -1410,6 +1411,7 @@ export function installTelegram(bot: Bot, deps: TelegramDeps, contributions: Con
         (deps.chatConfig.get(tenant.chatId).voiceMode && deps.speech.isTtsAvailable());
       if (shouldVoice && deps.speech.isTtsAvailable()) {
         await ctx.api.sendChatAction(tenant.chatId, "record_voice");
+        void draft.send("", { kind: "voice", text: "Recording a voice response…" });
         const audioBuffer = await deps.speech.synthesize(text);
         if (audioBuffer) {
           await draft.delete();

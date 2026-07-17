@@ -1,7 +1,10 @@
 import { describe, expect, test } from "vitest";
 import {
   buildFinalReply,
+  draftStatusForMessageType,
+  draftStatusForToolCalls,
   formatToolCalls,
+  renderDraftStatus,
   stabilizeStreamingMarkdown,
   type ToolCallRecord,
 } from "../helpers.js";
@@ -45,5 +48,45 @@ describe("stabilizeStreamingMarkdown", () => {
   test("leaves stable markdown unchanged", () => {
     const markdown = "| A | B |\n|---|---|\n| $x$ | `code` |";
     expect(stabilizeStreamingMarkdown(markdown)).toBe(markdown);
+  });
+});
+
+describe("draft statuses", () => {
+  test("uses the requested AI action emoji ids", () => {
+    expect(renderDraftStatus({ kind: "thinking", text: "Thinking…" }, true)).toContain(
+      'emoji-id="5535034915403333642"'
+    );
+    expect(renderDraftStatus({ kind: "images", text: "Looking at images…" }, false)).toContain(
+      'emoji-id="5537651753077440526"'
+    );
+    expect(renderDraftStatus({ kind: "voice", text: "Listening…" }, false)).toContain(
+      'emoji-id="5537354996607090745"'
+    );
+    expect(renderDraftStatus({ kind: "documents", text: "Studying…" }, false)).toContain(
+      'emoji-id="5535039193190760468"'
+    );
+    expect(renderDraftStatus({ kind: "code", text: "Working…" }, false)).toContain(
+      'emoji-id="5535251334510411788"'
+    );
+    expect(renderDraftStatus({ kind: "web", text: "Searching…" }, false)).toContain(
+      'emoji-id="5535365052359507996"'
+    );
+  });
+
+  test("selects statuses from message and tool types", () => {
+    expect(draftStatusForMessageType("document").kind).toBe("documents");
+    expect(draftStatusForMessageType("photo").kind).toBe("images");
+    expect(
+      draftStatusForToolCalls([{ name: "sandbox_run_command", args: {}, isMcp: false }]).kind
+    ).toBe("code");
+    expect(draftStatusForToolCalls([{ name: "web_search", args: {}, isMcp: false }]).kind).toBe(
+      "web"
+    );
+  });
+
+  test("renders exactly one thinking block", () => {
+    const rendered = renderDraftStatus({ kind: "thinking", text: "Thinking…" }, true);
+    expect(rendered.match(/<tg-thinking>/g)).toHaveLength(1);
+    expect(rendered).toContain("Thinking…");
   });
 });

@@ -195,7 +195,8 @@ If none apply, Skye points the user to `/plus` to subscribe.
 
 Each user can customize the following through the Settings panel (accessible via `/config`):
 
-- **System prompt** — Custom instructions appended to Skye's base personality. This doesn't replace Skye's core character — it adds additional guidance on top.
+- **Personality** — The active character for replies. Non-default personalities fully replace Skye's base character.
+- **System prompt** — Custom instructions applied on top of the selected personality from the next response; no conversation reset is required.
 - **Model tier** — Which masked model (Sydney/Tokyo/Berlin/Toronto) to use. Tier choice affects token cost via the configured multiplier.
 - **Skye Plus** — Manage the subscription, view token balance, buy token packs, and cancel. Also reachable via `/plus`, `/models`, `/tokens`, `/cancel`.
 

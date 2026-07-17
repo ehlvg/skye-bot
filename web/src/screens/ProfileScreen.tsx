@@ -94,7 +94,7 @@ export function ProfileScreen() {
         />
         <Footnote>
           {PERSONALITIES.find((item) => item.value === (config.personality ?? "skye"))?.description}
-          . Custom instructions are applied on top.
+          . This fully replaces the active character. Custom instructions are applied on top.
         </Footnote>
       </Section>
 
@@ -112,7 +112,7 @@ export function ProfileScreen() {
             />
           </li>
         </List>
-        <Footnote>Appended to Skye's default personality.</Footnote>
+        <Footnote>Applied immediately on top of the selected personality.</Footnote>
       </Section>
 
       <Section>
