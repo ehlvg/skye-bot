@@ -52,7 +52,15 @@ export const speechEnvSchema = z.object({
   VOICE_TINFOIL_STT_MODEL: z.string().default("whisper-large-v3-turbo"),
   VOICE_TINFOIL_TTS_MODEL: z.string().default("qwen3-tts"),
   // qwen3-tts voices: aiden, dylan, eric, ono_anna, ryan, serena, sohee, uncle_fu, vivian
-  VOICE_TINFOIL_TTS_VOICE: z.string().default("serena"),
+  VOICE_TINFOIL_TTS_VOICE: z.string().default("vivian"),
+  // Hidden qwen3-tts `instruct` field (undocumented by Tinfoil, upstream
+  // Qwen3-TTS-CustomVoice feature): controls timbre, emotion and pace via
+  // natural language. Empty string disables the instruct path.
+  VOICE_TINFOIL_TTS_INSTRUCT: z
+    .string()
+    .default(
+      "Speak very fast and cheerful. Bouncy, energetic young woman, smiling voice, punchy and bright. High energy, upbeat, lively delivery with no long pauses.",
+    ),
   VOICE_TINFOIL_STT_FORMAT: z.enum(["mp3", "wav", "oggopus"]).default("mp3"),
   VOICE_TINFOIL_STT_LANGUAGE: z.string().default(""),
 

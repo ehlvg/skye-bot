@@ -58,7 +58,8 @@ export function buildProvider(config: Readonly<Record<string, unknown>>): Speech
       baseUrl,
       sttModel: String(config.VOICE_TINFOIL_STT_MODEL ?? "whisper-large-v3-turbo"),
       ttsModel: String(config.VOICE_TINFOIL_TTS_MODEL ?? "qwen3-tts"),
-      ttsVoice: String(config.VOICE_TINFOIL_TTS_VOICE ?? "serena"),
+      ttsVoice: String(config.VOICE_TINFOIL_TTS_VOICE ?? "vivian"),
+      ttsInstruct: String(config.VOICE_TINFOIL_TTS_INSTRUCT ?? ""),
       sttInputFormat: (config.VOICE_TINFOIL_STT_FORMAT as "mp3" | "wav" | "oggopus") ?? "mp3",
       sttLanguage: String(config.VOICE_TINFOIL_STT_LANGUAGE ?? ""),
     });

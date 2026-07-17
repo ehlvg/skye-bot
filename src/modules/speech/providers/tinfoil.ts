@@ -11,6 +11,7 @@ export interface TinfoilSettings {
   sttModel: string;
   ttsModel: string;
   ttsVoice: string;
+  ttsInstruct: string;
   sttInputFormat: AudioFormat;
   sttLanguage: string;
 }
@@ -92,17 +93,20 @@ export class TinfoilSpeechProvider implements SpeechProvider {
     }
 
     try {
+      const body: Record<string, unknown> = {
+        model: this.settings.ttsModel,
+        input: text,
+        voice: this.settings.ttsVoice,
+      };
+      if (this.settings.ttsInstruct) body.instruct = this.settings.ttsInstruct;
+
       const res = await fetch(`${this.settings.baseUrl}${TTS_PATH}`, {
         method: "POST",
         headers: {
           Authorization: `Bearer ${this.settings.apiKey}`,
           "Content-Type": "application/json",
         },
-        body: JSON.stringify({
-          model: this.settings.ttsModel,
-          input: text,
-          voice: this.settings.ttsVoice,
-        }),
+        body: JSON.stringify(body),
       });
 
       if (!res.ok) {
