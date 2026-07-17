@@ -3,6 +3,7 @@ import { speechEnvSchema } from "./env.js";
 import { SpeechService } from "./service.js";
 import { YandexSpeechProvider } from "./providers/yandex.js";
 import { OpenRouterSpeechProvider } from "./providers/openrouter.js";
+import { TinfoilSpeechProvider } from "./providers/tinfoil.js";
 import type { SpeechProvider } from "./types.js";
 
 declare module "../../core/module.js" {
@@ -42,6 +43,24 @@ export function buildProvider(config: Readonly<Record<string, unknown>>): Speech
       title: String(config.VOICE_OPENROUTER_TITLE ?? ""),
       pcmSampleRate: Number(config.VOICE_OPENROUTER_PCM_SAMPLE_RATE ?? 48000),
       pcmChannels: Number(config.VOICE_OPENROUTER_PCM_CHANNELS ?? 1),
+    });
+  }
+
+
+  if (provider === "tinfoil") {
+    const explicitKey = String(config.VOICE_TINFOIL_API_KEY ?? "");
+    const apiKey = explicitKey || String(config.OPENAI_KEY ?? "");
+    const baseUrl =
+      String(config.VOICE_TINFOIL_BASE_URL ?? "") || String(config.BASE_URL ?? "");
+
+    return new TinfoilSpeechProvider({
+      apiKey,
+      baseUrl,
+      sttModel: String(config.VOICE_TINFOIL_STT_MODEL ?? "whisper-large-v3-turbo"),
+      ttsModel: String(config.VOICE_TINFOIL_TTS_MODEL ?? "qwen3-tts"),
+      ttsVoice: String(config.VOICE_TINFOIL_TTS_VOICE ?? "serena"),
+      sttInputFormat: (config.VOICE_TINFOIL_STT_FORMAT as "mp3" | "wav" | "oggopus") ?? "mp3",
+      sttLanguage: String(config.VOICE_TINFOIL_STT_LANGUAGE ?? ""),
     });
   }
 

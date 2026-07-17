@@ -3,7 +3,7 @@ import { z } from "zod";
 export const speechEnvSchema = z.object({
   // Voice provider selection: "yandex" (default, backward compatible) or
   // "openrouter" (uses the same OPENAI_KEY/openai_key as chat by default).
-  VOICE_PROVIDER: z.enum(["yandex", "openrouter"]).default("yandex"),
+  VOICE_PROVIDER: z.enum(["yandex", "openrouter", "tinfoil"]).default("yandex"),
 
   // Yandex Cloud SpeechKit — used for both STT and TTS.
   YC_API_KEY: z.string().default(""),
@@ -42,6 +42,20 @@ export const speechEnvSchema = z.object({
   // Optional OpenRouter ranking headers.
   VOICE_OPENROUTER_REFERER: z.string().default(""),
   VOICE_OPENROUTER_TITLE: z.string().default(""),
+
+  // Tinfoil speech — uses the OpenAI-compatible /audio/transcriptions and
+  // /audio/speech endpoints on inference.tinfoil.sh. By default reuses
+  // OPENAI_KEY/BASE_URL (set VOICE_TINFOIL_API_KEY / VOICE_TINFOIL_BASE_URL
+  // to override). Models: whisper-large-v3-turbo (STT), qwen3-tts (TTS).
+  VOICE_TINFOIL_API_KEY: z.string().default(""),
+  VOICE_TINFOIL_BASE_URL: z.string().url().or(z.literal("")).default(""),
+  VOICE_TINFOIL_STT_MODEL: z.string().default("whisper-large-v3-turbo"),
+  VOICE_TINFOIL_TTS_MODEL: z.string().default("qwen3-tts"),
+  // qwen3-tts voices: aiden, dylan, eric, ono_anna, ryan, serena, sohee, uncle_fu, vivian
+  VOICE_TINFOIL_TTS_VOICE: z.string().default("serena"),
+  VOICE_TINFOIL_STT_FORMAT: z.enum(["mp3", "wav", "oggopus"]).default("mp3"),
+  VOICE_TINFOIL_STT_LANGUAGE: z.string().default(""),
+
 });
 
 export type SpeechEnv = z.infer<typeof speechEnvSchema>;
