@@ -111,18 +111,15 @@ class ChatCompletionsStreamAdapter {
       const stream = (await this
         .streamPromise) as AsyncIterable<OpenAI.Chat.Completions.ChatCompletionChunk>;
       for await (const chunk of stream) {
-        const delta = chunk.choices?.[0]?.delta;
-        if (!delta) {
-          // The final chunk (with no choices) carries the aggregate usage when
-          // stream_options.include_usage is set.
-          if (chunk.usage) {
-            usage = {
-              promptTokens: chunk.usage.prompt_tokens ?? 0,
-              completionTokens: chunk.usage.completion_tokens ?? 0,
-            };
-          }
-          continue;
+        if (chunk.usage) {
+          usage = {
+            promptTokens: chunk.usage.prompt_tokens ?? 0,
+            completionTokens: chunk.usage.completion_tokens ?? 0,
+          };
         }
+
+        const delta = chunk.choices?.[0]?.delta;
+        if (!delta) continue;
 
         if (delta.content) {
           text += delta.content;
@@ -176,6 +173,13 @@ class ChatCompletionsStreamAdapter {
       // ignore
     }
   }
+}
+
+export function adaptChatCompletionStream(
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  streamPromise: Promise<any>
+): LlmStream {
+  return new ChatCompletionsStreamAdapter(streamPromise) as unknown as LlmStream;
 }
 
 // ---------------------------------------------------------------------------
@@ -459,7 +463,7 @@ export class LlmClient {
     // Perplexity only supports the Responses API — never route to chat
     // completions even when USE_CHAT_COMPLETIONS is globally true.
     if (this.settings.useChatCompletions && entry.provider !== "perplexity") {
-      return this.askStreamViaChat(instructions, input, tools, modelId) as unknown as LlmStream;
+      return this.askStreamViaChat(instructions, input, tools, modelId);
     }
     return this.askStreamViaResponses(instructions, input, tools, modelId) as unknown as LlmStream;
   }
@@ -529,7 +533,7 @@ export class LlmClient {
       stream_options: { include_usage: true },
     } as Parameters<typeof client.chat.completions.create>[0]);
 
-    return new ChatCompletionsStreamAdapter(streamPromise) as unknown as LlmStream;
+    return adaptChatCompletionStream(streamPromise);
   }
 
   /** Probe the provider's /models once to learn image capability. */
