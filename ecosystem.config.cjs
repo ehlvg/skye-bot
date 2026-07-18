@@ -20,6 +20,7 @@ module.exports = {
         DB_PATH: dbPath,
         MONITORING_OUT_LOG: `${logDirectory}/${appName}-out-0.log`,
         MONITORING_ERROR_LOG: `${logDirectory}/${appName}-error-0.log`,
+        SKYE_COMMIT: process.env.SKYE_COMMIT ?? "",
       },
     },
   ],

@@ -33,6 +33,10 @@ import {
   ArrowDownTrayIcon,
   InformationCircleIcon,
   ChatBubbleLeftIcon,
+  CodeBracketIcon,
+  ShieldCheckIcon,
+  IdentificationIcon,
+  UserPlusIcon,
 } from "@heroicons/react/24/solid";
 
 import {
@@ -81,6 +85,10 @@ export const Icon = {
   Download: ArrowDownTrayIcon,
   Info: InformationCircleIcon,
   Chat: ChatBubbleLeftIcon,
+  Code: CodeBracketIcon,
+  Shield: ShieldCheckIcon,
+  Identification: IdentificationIcon,
+  UserPlus: UserPlusIcon,
 };
 
 export const TabIcon = {

@@ -13,6 +13,8 @@ pnpm install --frozen-lockfile
 pnpm --filter skye-panel build
 pnpm run build
 
+export SKYE_COMMIT="$(git rev-parse HEAD)"
+
 if pm2 describe "$app_name" >/dev/null 2>&1; then
   pm2 restart ecosystem.config.cjs --only "$app_name" --update-env
 else

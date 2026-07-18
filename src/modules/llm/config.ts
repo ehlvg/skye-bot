@@ -16,10 +16,34 @@ export const modelSchema = z.object({
 export type ModelEntry = z.infer<typeof modelSchema>;
 
 const defaultModels: ModelEntry[] = [
-  { id: "sydney", name: "Sydney", model: "google/gemini-3.1-flash-lite", multiplier: 1, contextWindow: 128_000 },
-  { id: "tokyo", name: "Tokyo", model: "openai/gpt-oss-20b", multiplier: 1.5, contextWindow: 128_000 },
-  { id: "berlin", name: "Berlin", model: "anthropic/claude-3.7-sonnet", multiplier: 2.5, contextWindow: 128_000 },
-  { id: "toronto", name: "Toronto", model: "openai/gpt-5.5", multiplier: 4, contextWindow: 128_000 },
+  {
+    id: "sydney",
+    name: "Sydney",
+    model: "google/gemini-3.1-flash-lite",
+    multiplier: 1,
+    contextWindow: 128_000,
+  },
+  {
+    id: "tokyo",
+    name: "Tokyo",
+    model: "openai/gpt-oss-20b",
+    multiplier: 1.5,
+    contextWindow: 128_000,
+  },
+  {
+    id: "berlin",
+    name: "Berlin",
+    model: "anthropic/claude-3.7-sonnet",
+    multiplier: 2.5,
+    contextWindow: 128_000,
+  },
+  {
+    id: "toronto",
+    name: "Toronto",
+    model: "openai/gpt-5.5",
+    multiplier: 4,
+    contextWindow: 128_000,
+  },
 ];
 
 export const llmConfigSchema = z.object({
@@ -30,18 +54,22 @@ export const llmConfigSchema = z.object({
   max_completion_tokens: z.number().int().positive().default(500),
   use_chat_completions: z.boolean().default(false),
   image: section({
-      base_url: z.string().url().or(z.literal("")).default(""),
-      api_key: z.string().default(""),
-      model: z.string().default("google/gemini-3.1-flash-image-preview"),
-    }),
+    base_url: z.string().url().or(z.literal("")).default(""),
+    api_key: z.string().default(""),
+    model: z.string().default("google/gemini-3.1-flash-image-preview"),
+  }),
   pdf_engine: z.string().default(""),
-  pdf_max_bytes: z.number().positive().default(25 * 1024 * 1024),
+  pdf_max_bytes: z
+    .number()
+    .positive()
+    .default(25 * 1024 * 1024),
   perplexity_api_key: z.string().optional(),
   perplexity_base_url: z.string().url().default("https://api.perplexity.ai/v1"),
   owner: section({
-      name: z.string().default(""),
-      tag: z.string().default(""),
-    }),
+    user_id: z.number().int().nonnegative().max(Number.MAX_SAFE_INTEGER).default(0),
+    name: z.string().default(""),
+    tag: z.string().default(""),
+  }),
 });
 
 export type LlmConfig = z.infer<typeof llmConfigSchema>;
@@ -59,6 +87,6 @@ declare module "../../core/config.js" {
     pdf_max_bytes: number;
     perplexity_api_key?: string;
     perplexity_base_url: string;
-    owner: { name: string; tag: string };
+    owner: { user_id: number; name: string; tag: string };
   }
 }

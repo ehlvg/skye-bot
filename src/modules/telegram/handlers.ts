@@ -76,6 +76,8 @@ export interface TelegramDeps {
   defaultModelId: string;
   reliability: TelegramReliabilityService;
   owner?: { name: string; tag: string };
+  accessMode: AccessDeps["mode"];
+  subscriptionStars: number;
 }
 
 const IMAGE_CMD_RE = /^\/image(?:@\S+)?\s*([\s\S]*)$/;
@@ -107,6 +109,8 @@ export function installTelegram(bot: Bot, deps: TelegramDeps, contributions: Con
   const access: AccessDeps = {
     billing: deps.billing,
     admin: deps.admin,
+    mode: deps.accessMode,
+    subscriptionStars: deps.subscriptionStars,
   };
 
   // --- per-thread serialized work queue + short burst buffer for Telegram typing ---
@@ -724,7 +728,7 @@ export function installTelegram(bot: Bot, deps: TelegramDeps, contributions: Con
           "",
           "Commands: /reset · /image · /voice · /memories · /forget · /status · /tools · /catchup · /reminders · /config",
           "",
-          "Legal: /terms · /privacy · /paysupport · /developer_info · /delete_my_data",
+          "Project: /source · /terms · /privacy · /paysupport · /developer_info · /delete_my_data",
         ].join("\n");
         await sendRichReply(ctx, md);
       },
@@ -1090,7 +1094,10 @@ export function installTelegram(bot: Bot, deps: TelegramDeps, contributions: Con
 
   // Advertise commands once.
   void bot.api.setMyCommands(
-    allCommands.map((c) => ({ command: c.name, description: c.description })).filter(uniqByCommand)
+    allCommands
+      .filter((c) => c.advertise !== false)
+      .map((c) => ({ command: c.name, description: c.description }))
+      .filter(uniqByCommand)
   );
 
   // --- Access gate ---
@@ -1278,7 +1285,7 @@ export function installTelegram(bot: Bot, deps: TelegramDeps, contributions: Con
       const hasReferenceImages = threadReferenceImages.has(tk);
 
       // Quota pre-check: subscribers with zero tokens can't proceed.
-      if (billAcc && deps.billing.hasActiveSub(billAcc)) {
+      if (billAcc && hasMeteredAccess(access, tenant.chatId, tenant.userId)) {
         if (deps.billing.effectiveRemaining(billAcc) <= 0) {
           await draft.delete();
           await ctx.reply(
@@ -1301,7 +1308,7 @@ export function installTelegram(bot: Bot, deps: TelegramDeps, contributions: Con
         usage: { promptTokens: number; completionTokens: number },
         usedModelId: string
       ) => {
-        if (!hasMeteredAccess(access, tenant.userId)) return;
+        if (!hasMeteredAccess(access, tenant.chatId, tenant.userId)) return;
         const usedModel = deps.llm.resolveModel(usedModelId);
         const r = deps.billing.charge(
           tenant.userId!,
@@ -1315,7 +1322,10 @@ export function installTelegram(bot: Bot, deps: TelegramDeps, contributions: Con
       const checkRoundQuota = () => {
         if (!tenant.userId) return;
         const account = deps.billing.getAccount(tenant.userId);
-        if (deps.billing.hasActiveSub(account) && deps.billing.effectiveRemaining(account) <= 0) {
+        if (
+          hasMeteredAccess(access, tenant.chatId, tenant.userId) &&
+          deps.billing.effectiveRemaining(account) <= 0
+        ) {
           throw new Error("Quota exhausted: no_quota");
         }
       };
@@ -2241,7 +2251,7 @@ export function installTelegram(bot: Bot, deps: TelegramDeps, contributions: Con
         const reminderModelId = reminderAcc?.modelId ?? deps.defaultModelId;
         const reminderModel = deps.llm.resolveModel(reminderModelId);
         const reminderMeter = (usage: { promptTokens: number; completionTokens: number }) => {
-          if (!hasMeteredAccess(access, reminder.userId)) return;
+          if (!hasMeteredAccess(access, reminder.chatId, reminder.userId)) return;
           const result = deps.billing.charge(
             reminder.userId!,
             usage.promptTokens,

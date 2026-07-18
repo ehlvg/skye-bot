@@ -2,6 +2,7 @@ import type { SkyeModule } from "../../core/module.js";
 import { legalConfigSchema } from "./config.js";
 import { legalService, type LegalService } from "./service.js";
 import { buildLegalCommands, buildLegalHandlers } from "./tele.js";
+import { buildAboutRoutes } from "./routes.js";
 
 declare module "../../core/module.js" {
   interface SkyeServices {
@@ -25,6 +26,7 @@ export const legalModule: SkyeModule = {
       service: legalService,
       commands,
       telegramHandlers: handlers,
+      panelRoutes: buildAboutRoutes(ctx),
     };
   },
 };

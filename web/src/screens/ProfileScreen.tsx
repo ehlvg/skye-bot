@@ -25,6 +25,9 @@ export function ProfileScreen() {
     saveConfig,
     toggleVoice,
     setTab,
+    about,
+    openAbout,
+    openAdmin,
   } = useApp();
 
   const acc = billing.account;
@@ -49,25 +52,27 @@ export function ProfileScreen() {
         </List>
       </Section>
 
-      <Section>
-        <Caption>Skye Plus</Caption>
-        <List>
-          <Row
-            icon={Icon.Sparkles}
-            color="c-purple"
-            title={hasSub ? "Skye Plus Active" : "Unlock Skye Plus"}
-            subtitle={
-              hasSub
-                ? `${fmtTokens(acc?.remaining)} tokens · renews ${formatDate(acc!.subExpiresAt * 1000)}`
-                : `${billing.plans?.subscriptionStars ?? 1899} ⭐ / 30 days`
-            }
-            onClick={() => {
-              haptic.light();
-              setTab("plus");
-            }}
-          />
-        </List>
-      </Section>
+      {billing.plans?.enabled && (
+        <Section>
+          <Caption>Skye Plus</Caption>
+          <List>
+            <Row
+              icon={Icon.Sparkles}
+              color="c-purple"
+              title={hasSub ? "Skye Plus Active" : "Unlock Skye Plus"}
+              subtitle={
+                hasSub
+                  ? `${fmtTokens(acc?.remaining)} tokens · renews ${formatDate(acc!.subExpiresAt * 1000)}`
+                  : `${billing.plans?.subscriptionStars ?? 1899} ⭐ / 30 days`
+              }
+              onClick={() => {
+                haptic.light();
+                setTab("plus");
+              }}
+            />
+          </List>
+        </Section>
+      )}
 
       <Section>
         <Caption>Model</Caption>
@@ -78,6 +83,28 @@ export function ProfileScreen() {
             title={model?.name ?? "Default"}
             subtitle={`${model?.multiplier ?? 1}× token cost`}
             onClick={() => setTab("plus")}
+          />
+        </List>
+      </Section>
+
+      <Section>
+        <Caption>Project</Caption>
+        <List>
+          {about?.isAdmin && (
+            <Row
+              icon={Icon.Shield}
+              color="c-indigo"
+              title="Administration"
+              subtitle={`${about.isOwner ? "Primary owner" : "Administrator"} · ${about.accessMode} access`}
+              onClick={() => void openAdmin()}
+            />
+          )}
+          <Row
+            icon={Icon.Info}
+            color="c-gray"
+            title="About Skye"
+            subtitle={`Version ${about?.version ?? "—"} · ${about?.license ?? "free software"}`}
+            onClick={openAbout}
           />
         </List>
       </Section>

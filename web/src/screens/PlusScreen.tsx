@@ -26,9 +26,9 @@ export function PlusScreen() {
 
   return (
     <div className="fade-in">
-      <LargeTitle>Skye Plus</LargeTitle>
+      <LargeTitle>{plans.enabled ? "Skye Plus" : "Models"}</LargeTitle>
 
-      <Section>
+      {plans.enabled && <Section>
         {hasSub ? (
           <div className="plus-hero">
             <div className="plus-hero-eyebrow">Active</div>
@@ -63,9 +63,9 @@ export function PlusScreen() {
             </Button>
           </div>
         )}
-      </Section>
+      </Section>}
 
-      {hasSub && (
+      {plans.enabled && hasSub && (
         <Section>
           <Caption>Token balance</Caption>
           <List>
@@ -92,7 +92,7 @@ export function PlusScreen() {
         </Section>
       )}
 
-      {hasSub && plans.packs.length > 0 && (
+      {plans.enabled && hasSub && plans.packs.length > 0 && (
         <Section>
           <Caption>Token packs</Caption>
           <List>
@@ -112,7 +112,7 @@ export function PlusScreen() {
         </Section>
       )}
 
-      {hasSub && acc?.subStatus !== "cancelled" && (
+      {plans.enabled && hasSub && acc?.subStatus !== "cancelled" && (
         <Section>
           <Button
             variant="destructive"
@@ -145,7 +145,11 @@ export function PlusScreen() {
             );
           })}
         </List>
-        <Footnote>Models differ in power and token cost. You can switch any time.</Footnote>
+        <Footnote>
+          {plans.enabled
+            ? "Models differ in power and token cost. You can switch any time."
+            : "Choose the model this self-hosted bot uses for your conversations."}
+        </Footnote>
       </Section>
     </div>
   );

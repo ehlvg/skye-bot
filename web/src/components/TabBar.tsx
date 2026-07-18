@@ -11,10 +11,21 @@ const TABS: { key: TabKey; label: string }[] = [
   { key: "stats", label: "Usage" },
 ];
 
-export function TabBar({ active, onChange }: { active: TabKey; onChange: (t: TabKey) => void }) {
+export function TabBar({
+  active,
+  onChange,
+  billingEnabled,
+}: {
+  active: TabKey;
+  onChange: (t: TabKey) => void;
+  billingEnabled: boolean;
+}) {
+  const tabs = TABS.map((tab) =>
+    tab.key === "plus" && !billingEnabled ? { ...tab, label: "Models" } : tab
+  );
   return (
-    <nav className="tabbar">
-      {TABS.map((t) => {
+    <nav className="tabbar" style={{ gridTemplateColumns: `repeat(${tabs.length}, 1fr)` }}>
+      {tabs.map((t) => {
         const isActive = active === t.key;
         const { on, off } = TabIcon[t.key];
         const I = isActive ? on : off;

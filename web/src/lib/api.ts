@@ -12,10 +12,18 @@ function headers(): Record<string, string> {
 }
 
 async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
-  const res = await fetch(`/api${path}`, {
-    ...init,
-    headers: { ...headers(), ...(init.headers || {}) },
-  });
+  const controller = new AbortController();
+  const timeout = window.setTimeout(() => controller.abort(), 30_000);
+  let res: Response;
+  try {
+    res = await fetch(`/api${path}`, {
+      ...init,
+      signal: init.signal ?? controller.signal,
+      headers: { ...headers(), ...(init.headers || {}) },
+    });
+  } finally {
+    window.clearTimeout(timeout);
+  }
   if (!res.ok) {
     let msg = `${res.status} ${res.statusText}`;
     try {
@@ -127,6 +135,7 @@ export interface TokenPack {
 }
 
 export interface Plans {
+  enabled: boolean;
   currency: string;
   title: string;
   description: string;
@@ -134,6 +143,42 @@ export interface Plans {
   subscriptionPeriodSeconds: number;
   baseQuotaTokens: number;
   packs: TokenPack[];
+}
+
+export type AccessMode = "private" | "allowlist" | "subscription" | "open";
+
+export interface AboutInfo {
+  name: string;
+  version: string;
+  commit: string | null;
+  sourceUrl: string;
+  securityUrl: string;
+  license: string;
+  maintainer: {
+    name: string;
+    alias: string;
+    telegram: string;
+    email: string;
+  };
+  accessMode: AccessMode;
+  billingEnabled: boolean;
+  isAdmin: boolean;
+  isOwner: boolean;
+}
+
+export interface AdminPrincipal {
+  userId: number;
+  role: "owner" | "admin";
+  source: "config" | "database";
+  removable: boolean;
+  addedBy: number | null;
+  createdAt: string | null;
+}
+
+export interface AdminPrincipalsResponse {
+  ownerUserId: number | null;
+  canManage: boolean;
+  admins: AdminPrincipal[];
 }
 
 export interface BillingEvent {
@@ -145,6 +190,15 @@ export interface BillingEvent {
 }
 
 export const api = {
+  getAbout: () => request<AboutInfo>("/about"),
+  getAdminPrincipals: () => request<AdminPrincipalsResponse>("/admin/principals"),
+  addAdminPrincipal: (userId: number) =>
+    request<{ admins: AdminPrincipal[] }>("/admin/principals", {
+      method: "POST",
+      body: JSON.stringify({ userId }),
+    }),
+  removeAdminPrincipal: (userId: number) =>
+    request<{ admins: AdminPrincipal[] }>(`/admin/principals/${userId}`, { method: "DELETE" }),
   getConfig: () => request<UserConfig>("/config"),
   updateConfig: (cfg: UserConfig) =>
     request<UserConfig>("/config", { method: "PUT", body: JSON.stringify(cfg) }),

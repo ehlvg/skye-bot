@@ -1,4 +1,4 @@
-import { createHmac } from "crypto";
+import { createHmac, timingSafeEqual } from "crypto";
 
 export interface TelegramUser {
   id: number;
@@ -18,12 +18,17 @@ export interface ValidatedInitData {
  * Validate Telegram WebApp initData against the bot token using the documented
  * HMAC scheme. Returns the parsed user payload, or null if invalid/expired.
  */
-export function validateInitData(initData: string, botToken: string): ValidatedInitData | null {
+export function validateInitData(
+  initData: string,
+  botToken: string,
+  maxAgeSeconds = 3_600,
+  nowSeconds = Date.now() / 1_000
+): ValidatedInitData | null {
   if (!initData) return null;
 
   const params = new URLSearchParams(initData);
   const hash = params.get("hash");
-  if (!hash) return null;
+  if (!hash || !/^[0-9a-f]{64}$/i.test(hash)) return null;
 
   const dataCheckString = [...params.entries()]
     .filter(([k]) => k !== "hash")
@@ -34,17 +39,24 @@ export function validateInitData(initData: string, botToken: string): ValidatedI
   const secretKey = createHmac("sha256", "WebAppData").update(botToken).digest();
   const computedHash = createHmac("sha256", secretKey).update(dataCheckString).digest("hex");
 
-  if (computedHash !== hash) return null;
+  const expected = Buffer.from(computedHash, "hex");
+  const supplied = Buffer.from(hash, "hex");
+  if (expected.length !== supplied.length || !timingSafeEqual(expected, supplied)) return null;
 
   const authDate = Number(params.get("auth_date"));
-  if (!authDate || Date.now() / 1000 - authDate > 86400) return null;
+  const age = nowSeconds - authDate;
+  if (!Number.isSafeInteger(authDate) || authDate <= 0 || age < -30 || age > maxAgeSeconds) {
+    return null;
+  }
 
   const userRaw = params.get("user");
   if (!userRaw) return null;
 
   try {
     const user = JSON.parse(userRaw) as TelegramUser;
-    if (!user.id) return null;
+    if (!Number.isSafeInteger(user.id) || user.id <= 0 || typeof user.first_name !== "string") {
+      return null;
+    }
     return {
       user,
       queryId: params.get("query_id") ?? undefined,

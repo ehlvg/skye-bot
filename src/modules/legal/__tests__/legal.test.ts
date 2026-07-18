@@ -8,15 +8,18 @@ function seed(userId: number): void {
   const db = getDb();
   const now = new Date().toISOString();
 
-  db.prepare(
-    "INSERT INTO user_configs (user_id, system_prompt) VALUES (?, ?)"
-  ).run(userId, "custom prompt");
+  db.prepare("INSERT INTO user_configs (user_id, system_prompt) VALUES (?, ?)").run(
+    userId,
+    "custom prompt"
+  );
   db.prepare(
     "INSERT INTO user_mcp_servers (user_id, name, config, created_at) VALUES (?, ?, ?, ?)"
   ).run(userId, "srv", "{}", now);
-  db.prepare(
-    "INSERT INTO user_mcp_inputs (server_id, input_id, value) VALUES (?, ?, ?)"
-  ).run(1, "tok", "abc");
+  db.prepare("INSERT INTO user_mcp_inputs (server_id, input_id, value) VALUES (?, ?, ?)").run(
+    1,
+    "tok",
+    "abc"
+  );
 
   db.prepare(
     `INSERT INTO billing_accounts
@@ -29,12 +32,13 @@ function seed(userId: number): void {
     "INSERT INTO billing_events (user_id, type, payload, amount, created_at) VALUES (?, 'token_spend', NULL, 1, ?)"
   ).run(userId, now);
 
-  db.prepare(
-    "INSERT INTO memories (id, chat_id, content, created_at) VALUES (?, ?, ?, ?)"
-  ).run("mem_x", userId, "a memory", now);
-  db.prepare(
-    "INSERT INTO chat_summaries (chat_id, summary) VALUES (?, ?)"
-  ).run(userId, "summary");
+  db.prepare("INSERT INTO memories (id, chat_id, content, created_at) VALUES (?, ?, ?, ?)").run(
+    "mem_x",
+    userId,
+    "a memory",
+    now
+  );
+  db.prepare("INSERT INTO chat_summaries (chat_id, summary) VALUES (?, ?)").run(userId, "summary");
   db.prepare(
     `INSERT INTO conversation_items
       (chat_id, thread_key, message_id, role, content_json, text, created_at)
@@ -43,9 +47,7 @@ function seed(userId: number): void {
   db.prepare(
     "INSERT INTO group_messages (chat_id, message_id, sender, timestamp, type, content, reply_to) VALUES (?, NULL, 'u', ?, 'text', 'hi', NULL)"
   ).run(userId, now);
-  db.prepare(
-    "INSERT INTO chat_configs (chat_id, voice_mode) VALUES (?, 1)"
-  ).run(userId);
+  db.prepare("INSERT INTO chat_configs (chat_id, voice_mode) VALUES (?, 1)").run(userId);
   db.prepare(
     "INSERT INTO reminders (id, chat_id, thread_id, user_id, prompt, fire_at, repeat, created_at, active) VALUES (?, ?, NULL, ?, 'x', ?, 'none', ?, 1)"
   ).run("rem_1", userId, userId, now, now);
@@ -67,14 +69,24 @@ function counts(userId: number): Record<string, number> {
     "reminders",
     "request_logs",
   ];
-  const byChat = ["memories", "chat_summaries", "conversation_items", "group_messages", "chat_configs"];
+  const byChat = [
+    "memories",
+    "chat_summaries",
+    "conversation_items",
+    "group_messages",
+    "chat_configs",
+  ];
   const out: Record<string, number> = {};
   for (const t of byUser) {
-    const row = db.prepare(`SELECT COUNT(*) AS c FROM ${t} WHERE user_id = ?`).get(userId) as { c: number };
+    const row = db.prepare(`SELECT COUNT(*) AS c FROM ${t} WHERE user_id = ?`).get(userId) as {
+      c: number;
+    };
     out[t] = row.c;
   }
   for (const t of byChat) {
-    const row = db.prepare(`SELECT COUNT(*) AS c FROM ${t} WHERE chat_id = ?`).get(userId) as { c: number };
+    const row = db.prepare(`SELECT COUNT(*) AS c FROM ${t} WHERE chat_id = ?`).get(userId) as {
+      c: number;
+    };
     out[t] = row.c;
   }
   const mcpInputs = db
@@ -123,6 +135,7 @@ describe("deleteUserData", () => {
     expect(summary.chatConfigs).toBe(1);
     expect(summary.reminders).toBe(1);
     expect(summary.requestLogs).toBe(1);
+    expect(summary.adminPrincipals).toBe(0);
 
     const after = counts(USER);
     for (const v of Object.values(after)) expect(v).toBe(0);

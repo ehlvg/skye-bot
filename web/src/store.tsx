@@ -10,6 +10,8 @@ import type { ReactNode } from "react";
 import {
   api,
   type BillingAccount,
+  type AboutInfo,
+  type AdminPrincipalsResponse,
   type ChatConfig,
   type McpServer,
   type Memory,
@@ -50,6 +52,18 @@ interface AppState {
   memories: Memory[];
   stats: Stats;
   billing: BillingState;
+  about: AboutInfo | null;
+  admins: AdminPrincipalsResponse | null;
+  adminBusy: boolean;
+
+  aboutOpen: boolean;
+  adminOpen: boolean;
+  openAbout: () => void;
+  closeAbout: () => void;
+  openAdmin: () => Promise<void>;
+  closeAdmin: () => void;
+  addAdmin: (userId: number) => Promise<void>;
+  removeAdmin: (userId: number) => Promise<void>;
 
   dirty: boolean;
   markDirty: () => void;
@@ -113,6 +127,11 @@ export function AppProvider({ children }: { children: ReactNode }) {
     plans: null,
     busy: false,
   });
+  const [about, setAbout] = useState<AboutInfo | null>(null);
+  const [admins, setAdmins] = useState<AdminPrincipalsResponse | null>(null);
+  const [adminBusy, setAdminBusy] = useState(false);
+  const [aboutOpen, setAboutOpen] = useState(false);
+  const [adminOpen, setAdminOpen] = useState(false);
 
   const [dirty, setDirty] = useState(false);
   const [saving, setSaving] = useState(false);
@@ -133,7 +152,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
         const name = [u.first_name, u.last_name].filter(Boolean).join(" ") || "Guest";
         setUser({ name, handle: u.username ? `@${u.username}` : `id: ${u.id}` });
       }
-      const [cfg, chatCfg, mcps, mems, st, bill, modelsInfo, plans] = await Promise.all([
+      const [cfg, chatCfg, mcps, mems, st, bill, modelsInfo, plans, aboutInfo] = await Promise.all([
         api.getConfig(),
         api.getChatConfig(),
         api.getMcpServers(),
@@ -142,6 +161,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
         api.getBillingAccount(),
         api.getModels(),
         api.getPlans(),
+        api.getAbout(),
       ]);
       setConfig(cfg);
       setChatConfig(chatCfg);
@@ -155,6 +175,10 @@ export function AppProvider({ children }: { children: ReactNode }) {
         plans,
         busy: false,
       });
+      setAbout(aboutInfo);
+      if (aboutInfo.isAdmin) {
+        setAdmins(await api.getAdminPrincipals());
+      }
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
     } finally {
@@ -168,6 +192,59 @@ export function AppProvider({ children }: { children: ReactNode }) {
   }, [load]);
 
   const markDirty = useCallback(() => setDirty(true), []);
+
+  const openAbout = useCallback(() => {
+    haptic.light();
+    setAboutOpen(true);
+  }, []);
+
+  const closeAbout = useCallback(() => setAboutOpen(false), []);
+
+  const openAdmin = useCallback(async () => {
+    haptic.light();
+    setAdminOpen(true);
+    setAdminBusy(true);
+    try {
+      setAdmins(await api.getAdminPrincipals());
+    } catch (e) {
+      haptic.error();
+      alertDialog(`Could not load administrators: ${e instanceof Error ? e.message : String(e)}`);
+    } finally {
+      setAdminBusy(false);
+    }
+  }, []);
+
+  const closeAdmin = useCallback(() => setAdminOpen(false), []);
+
+  const addAdmin = useCallback(async (userId: number) => {
+    setAdminBusy(true);
+    try {
+      const result = await api.addAdminPrincipal(userId);
+      setAdmins((current) => current ? { ...current, admins: result.admins } : current);
+      haptic.success();
+    } catch (e) {
+      haptic.error();
+      alertDialog(`Could not add administrator: ${e instanceof Error ? e.message : String(e)}`);
+    } finally {
+      setAdminBusy(false);
+    }
+  }, []);
+
+  const removeAdmin = useCallback(async (userId: number) => {
+    const ok = await confirmDialog(`Remove Telegram user ${userId} from administrators?`);
+    if (!ok) return;
+    setAdminBusy(true);
+    try {
+      const result = await api.removeAdminPrincipal(userId);
+      setAdmins((current) => current ? { ...current, admins: result.admins } : current);
+      haptic.success();
+    } catch (e) {
+      haptic.error();
+      alertDialog(`Could not remove administrator: ${e instanceof Error ? e.message : String(e)}`);
+    } finally {
+      setAdminBusy(false);
+    }
+  }, []);
 
   const updateConfig = useCallback((patch: Partial<UserConfig>) => {
     setConfig((c) => ({ ...c, ...patch }));
@@ -353,6 +430,17 @@ export function AppProvider({ children }: { children: ReactNode }) {
       memories,
       stats,
       billing,
+      about,
+      admins,
+      adminBusy,
+      aboutOpen,
+      adminOpen,
+      openAbout,
+      closeAbout,
+      openAdmin,
+      closeAdmin,
+      addAdmin,
+      removeAdmin,
       dirty,
       markDirty,
       updateConfig,
@@ -381,6 +469,17 @@ export function AppProvider({ children }: { children: ReactNode }) {
       memories,
       stats,
       billing,
+      about,
+      admins,
+      adminBusy,
+      aboutOpen,
+      adminOpen,
+      openAbout,
+      closeAbout,
+      openAdmin,
+      closeAdmin,
+      addAdmin,
+      removeAdmin,
       dirty,
       markDirty,
       updateConfig,

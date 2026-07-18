@@ -1,5 +1,5 @@
 import Database from "better-sqlite3";
-import { mkdirSync, existsSync } from "fs";
+import { chmodSync, mkdirSync, existsSync } from "fs";
 import { dirname, join } from "path";
 import { fileURLToPath } from "url";
 import type { Logger } from "pino";
@@ -20,10 +20,22 @@ export function getDb(dbPath?: string): Database.Database {
 
   if (path !== ":memory:") {
     const dir = dirname(path);
-    if (!existsSync(dir)) mkdirSync(dir, { recursive: true });
+    if (!existsSync(dir)) mkdirSync(dir, { recursive: true, mode: 0o700 });
+    try {
+      chmodSync(dir, 0o700);
+    } catch {
+      // Some mounted filesystems do not support POSIX modes.
+    }
   }
 
   _db = new Database(path);
+  if (path !== ":memory:") {
+    try {
+      chmodSync(path, 0o600);
+    } catch {
+      // Some mounted filesystems do not support POSIX modes.
+    }
+  }
   _db.pragma("journal_mode = WAL");
   _db.pragma("foreign_keys = ON");
   ensureMigrationsTable(_db);

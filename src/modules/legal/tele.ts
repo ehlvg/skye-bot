@@ -4,6 +4,7 @@ import type { TenantContext } from "../../core/tenant.js";
 import type { LegalService } from "./service.js";
 import type { LegalConfig } from "./config.js";
 import { sendRichReply } from "../telegram/helpers.js";
+import { appCommit, appVersion } from "../../core/appInfo.js";
 
 export interface LegalDeps {
   legal: LegalService;
@@ -14,6 +15,32 @@ export function buildLegalCommands(deps: LegalDeps): TelegramCommand[] {
   const { cfg } = deps;
 
   return [
+    {
+      name: "source",
+      description: "View Skye's source code and license",
+      public: true,
+      handler: async (ctx) => {
+        const commit = appCommit();
+        const sourceUrl = commit ? `${cfg.source_url}/tree/${commit}` : cfg.source_url;
+        const md = [
+          "## Skye is free software",
+          "",
+          "Skye is licensed under **GNU AGPLv3-only**. You can inspect, run, modify, and share the source under that license.",
+          "",
+          `**Version:** ${appVersion()}`,
+          ...(commit ? [`**Commit:** \`${commit.slice(0, 12)}\``] : []),
+          "",
+          "The source link below points to the code for this deployment when a commit was supplied by the operator.",
+        ].join("\n");
+        await sendRichReply(ctx, md);
+        await ctx.reply("Open source, by design.", {
+          reply_markup: new InlineKeyboard()
+            .url("View source", sourceUrl)
+            .row()
+            .url("Security policy", cfg.security_url),
+        });
+      },
+    },
     {
       name: "terms",
       description: "Terms of Service",
@@ -61,6 +88,7 @@ export function buildLegalCommands(deps: LegalDeps): TelegramCommand[] {
           "## Developer",
           "",
           `**${cfg.developer_name}**`,
+          ...(cfg.developer_alias ? [`_Also known as ${cfg.developer_alias}._`, ""] : []),
           "",
           `- Telegram: ${cfg.support_username}`,
           `- Email: ${cfg.developer_email}`,
@@ -145,7 +173,8 @@ export function buildLegalHandlers(deps: LegalDeps): TelegramHandler[] {
             summary.groupMessages +
             summary.chatConfigs +
             summary.reminders +
-            summary.requestLogs;
+            summary.requestLogs +
+            summary.adminPrincipals;
 
           const md = [
             "✅ **Your data has been deleted.**",

@@ -74,6 +74,11 @@ export function openInvoice(url: string): Promise<string> {
   });
 }
 
+export function openLink(url: string): void {
+  if (tg?.openLink) tg.openLink(url);
+  else window.open(url, "_blank", "noopener,noreferrer");
+}
+
 export function ready() {
   tg?.ready?.();
   tg?.expand?.();

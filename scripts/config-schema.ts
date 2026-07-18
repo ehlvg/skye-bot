@@ -115,11 +115,7 @@ interface RawShape {
   [key: string]: ZodTypeAny;
 }
 
-function collectLeaves(
-  shape: RawShape,
-  prefix: string,
-  moduleMap: Map<string, string>,
-): LeafDef[] {
+function collectLeaves(shape: RawShape, prefix: string, moduleMap: Map<string, string>): LeafDef[] {
   const leaves: LeafDef[] = [];
   for (const [key, schema] of Object.entries(shape)) {
     const yamlPath = prefix ? `${prefix}.${key}` : key;
@@ -196,9 +192,7 @@ function main(): void {
   // Group by top-level YAML section.
   const bySection = new Map<string, LeafDef[]>();
   for (const leaf of leaves) {
-    const section = leaf.yamlPath.includes(".")
-      ? leaf.yamlPath.split(".")[0]!
-      : leaf.module;
+    const section = leaf.yamlPath.includes(".") ? leaf.yamlPath.split(".")[0]! : leaf.module;
     const arr = bySection.get(section) ?? [];
     arr.push(leaf);
     bySection.set(section, arr);
@@ -230,7 +224,7 @@ function main(): void {
       const def = i.defaultStr ? `\`${i.defaultStr.replace(/\|/g, "\\|")}\`` : "";
       const en = i.enumVals.length ? i.enumVals.join(", ") : "";
       lines.push(
-        `| \`${i.yamlPath}\` | ${i.module} | ${i.type} | ${req} | ${def} | ${en} | ${i.bounds} |`,
+        `| \`${i.yamlPath}\` | ${i.module} | ${i.type} | ${req} | ${def} | ${en} | ${i.bounds} |`
       );
     }
     lines.push("");
@@ -239,13 +233,16 @@ function main(): void {
   lines.push(
     "## Cross-field rules",
     "",
-    "- If any model in `models[]` sets `provider: \"perplexity\"`, then",
+    '- If any model in `models[]` sets `provider: "perplexity"`, then',
     "  `perplexity_api_key` must be set.",
-    "- `voice.provider: \"yandex\"` requires `voice.yc_api_key` for STT/TTS.",
-    "- `voice.provider: \"openrouter\"` falls back to `openai_key` when",
+    '- `voice.provider: "yandex"` requires `voice.yc_api_key` for STT/TTS.',
+    '- `voice.provider: "openrouter"` falls back to `openai_key` when',
     "  `voice.openrouter.api_key` is empty.",
     "- `sandbox.enabled: true` requires `sandbox.daytona_api_key`.",
-    "",
+    '- `access.mode: "subscription"` requires `billing.enabled: true`.',
+    "- If `owner.user_id` is `0`, first run prints a one-time `/claim_owner`",
+    "  token to the operator log and persists the claimed Telegram user ID.",
+    ""
   );
 
   const outPath = join(process.cwd(), "docs", "configuration-schema.md");

@@ -30,6 +30,14 @@ export function Row({
     <li
       className={`row${tap ? " row-tap" : ""}${selected ? " is-selected" : ""} ${className}`.trim()}
       onClick={onClick}
+      role={tap ? "button" : undefined}
+      tabIndex={tap ? 0 : undefined}
+      onKeyDown={tap ? (event) => {
+        if (event.key === "Enter" || event.key === " ") {
+          event.preventDefault();
+          onClick?.();
+        }
+      } : undefined}
     >
       {icon && color && <Badge icon={icon} color={color} />}
       <div className="row-content">
