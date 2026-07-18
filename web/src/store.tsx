@@ -1,11 +1,4 @@
-import {
-  createContext,
-  useCallback,
-  useContext,
-  useEffect,
-  useMemo,
-  useState,
-} from "react";
+import { createContext, useCallback, useContext, useEffect, useMemo, useState } from "react";
 import type { ReactNode } from "react";
 import {
   api,
@@ -13,7 +6,8 @@ import {
   type AboutInfo,
   type AdminPrincipalsResponse,
   type ChatConfig,
-  type McpServer,
+  type ConnectorsResponse,
+  type CustomConnector,
   type Memory,
   type ModelEntry,
   type Plans,
@@ -24,6 +18,7 @@ import {
   alertDialog,
   confirmDialog,
   haptic,
+  openLink,
   openInvoice,
   ready,
   currentUser,
@@ -48,7 +43,7 @@ interface AppState {
 
   config: UserConfig;
   chatConfig: ChatConfig;
-  mcpServers: McpServer[];
+  connectors: ConnectorsResponse;
   memories: Memory[];
   stats: Stats;
   billing: BillingState;
@@ -72,17 +67,19 @@ interface AppState {
 
   toggleVoice: () => Promise<void>;
 
-  // MCP editor
-  editor: { open: boolean; server: McpServer | null };
-  openMcpEditor: (server: McpServer | null) => void;
-  closeMcpEditor: () => void;
-  saveMcpServer: (
+  editor: { open: boolean; connector: CustomConnector | null };
+  openCustomConnector: (connector: CustomConnector | null) => void;
+  closeCustomConnector: () => void;
+  saveCustomConnector: (
     id: number | null,
     name: string,
     config: Record<string, unknown>,
-    inputs: Record<string, string>,
+    inputs: Record<string, string>
   ) => Promise<void>;
-  deleteMcpServer: (id: number) => Promise<void>;
+  deleteCustomConnector: (id: number) => Promise<void>;
+  connectManagedConnector: (slug: string) => Promise<void>;
+  disconnectManagedConnector: (slug: string) => Promise<void>;
+  refreshConnectors: () => Promise<void>;
 
   deleteMemory: (m: Memory) => Promise<void>;
 
@@ -103,7 +100,12 @@ export function useApp(): AppState {
 const EMPTY = {
   config: { systemPrompt: "", personality: "skye" as const },
   chatConfig: { voiceMode: false },
-  mcpServers: [],
+  connectors: {
+    managed: { enabled: false, connectors: [] },
+    custom: [],
+    customEnabled: true,
+    maxCustom: 8,
+  } satisfies ConnectorsResponse,
   memories: [],
   stats: { totalRequests: 0, requestsToday: 0, avgLatencyMs: 0, errorRate: 0 },
 };
@@ -117,7 +119,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
 
   const [config, setConfig] = useState<UserConfig>(EMPTY.config);
   const [chatConfig, setChatConfig] = useState<ChatConfig>(EMPTY.chatConfig);
-  const [mcpServers, setMcpServers] = useState<McpServer[]>(EMPTY.mcpServers);
+  const [connectors, setConnectors] = useState<ConnectorsResponse>(EMPTY.connectors);
   const [memories, setMemories] = useState<Memory[]>(EMPTY.memories);
   const [stats, setStats] = useState<Stats>(EMPTY.stats);
   const [billing, setBilling] = useState<BillingState>({
@@ -135,9 +137,12 @@ export function AppProvider({ children }: { children: ReactNode }) {
 
   const [dirty, setDirty] = useState(false);
   const [saving, setSaving] = useState(false);
-  const [editor, setEditor] = useState<{ open: boolean; server: McpServer | null }>({
+  const [editor, setEditor] = useState<{
+    open: boolean;
+    connector: CustomConnector | null;
+  }>({
     open: false,
-    server: null,
+    connector: null,
   });
 
   const setTab = useCallback((t: TabKey) => {
@@ -152,20 +157,21 @@ export function AppProvider({ children }: { children: ReactNode }) {
         const name = [u.first_name, u.last_name].filter(Boolean).join(" ") || "Guest";
         setUser({ name, handle: u.username ? `@${u.username}` : `id: ${u.id}` });
       }
-      const [cfg, chatCfg, mcps, mems, st, bill, modelsInfo, plans, aboutInfo] = await Promise.all([
-        api.getConfig(),
-        api.getChatConfig(),
-        api.getMcpServers(),
-        api.getMemories(),
-        api.getStats(),
-        api.getBillingAccount(),
-        api.getModels(),
-        api.getPlans(),
-        api.getAbout(),
-      ]);
+      const [cfg, chatCfg, connectorInfo, mems, st, bill, modelsInfo, plans, aboutInfo] =
+        await Promise.all([
+          api.getConfig(),
+          api.getChatConfig(),
+          api.getConnectors(),
+          api.getMemories(),
+          api.getStats(),
+          api.getBillingAccount(),
+          api.getModels(),
+          api.getPlans(),
+          api.getAbout(),
+        ]);
       setConfig(cfg);
       setChatConfig(chatCfg);
-      setMcpServers(mcps);
+      setConnectors(connectorInfo);
       setMemories(mems);
       setStats(st);
       setBilling({
@@ -220,7 +226,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
     setAdminBusy(true);
     try {
       const result = await api.addAdminPrincipal(userId);
-      setAdmins((current) => current ? { ...current, admins: result.admins } : current);
+      setAdmins((current) => (current ? { ...current, admins: result.admins } : current));
       haptic.success();
     } catch (e) {
       haptic.error();
@@ -236,7 +242,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
     setAdminBusy(true);
     try {
       const result = await api.removeAdminPrincipal(userId);
-      setAdmins((current) => current ? { ...current, admins: result.admins } : current);
+      setAdmins((current) => (current ? { ...current, admins: result.admins } : current));
       haptic.success();
     } catch (e) {
       haptic.error();
@@ -281,29 +287,32 @@ export function AppProvider({ children }: { children: ReactNode }) {
     }
   }, [chatConfig.voiceMode]);
 
-  const openMcpEditor = useCallback((server: McpServer | null) => {
+  const openCustomConnector = useCallback((connector: CustomConnector | null) => {
     haptic.light();
-    setEditor({ open: true, server });
+    setEditor({ open: true, connector });
   }, []);
 
-  const closeMcpEditor = useCallback(() => {
+  const closeCustomConnector = useCallback(() => {
     setEditor((e) => ({ ...e, open: false }));
   }, []);
 
-  const saveMcpServer = useCallback(
+  const saveCustomConnector = useCallback(
     async (
       id: number | null,
       name: string,
       cfg: Record<string, unknown>,
-      inputs: Record<string, string>,
+      inputs: Record<string, string>
     ) => {
       try {
         if (id != null) {
-          const updated = await api.updateMcpServer(id, name, cfg, inputs);
-          setMcpServers((list) => list.map((s) => (s.id === updated.id ? updated : s)));
+          const updated = await api.updateCustomConnector(id, name, cfg, inputs);
+          setConnectors((state) => ({
+            ...state,
+            custom: state.custom.map((item) => (item.id === updated.id ? updated : item)),
+          }));
         } else {
-          const created = await api.addMcpServer(name, cfg, inputs);
-          setMcpServers((list) => [...list, created]);
+          const created = await api.addCustomConnector(name, cfg, inputs);
+          setConnectors((state) => ({ ...state, custom: [...state.custom, created] }));
         }
         haptic.success();
         setEditor((e) => ({ ...e, open: false }));
@@ -312,20 +321,64 @@ export function AppProvider({ children }: { children: ReactNode }) {
         alertDialog(`Save failed: ${e instanceof Error ? e.message : String(e)}`);
       }
     },
-    [],
+    []
   );
 
-  const deleteMcpServer = useCallback(async (id: number) => {
-    const ok = await confirmDialog("Delete this server?");
+  const deleteCustomConnector = useCallback(async (id: number) => {
+    const ok = await confirmDialog("Delete this custom connector?");
     if (!ok) return;
     try {
-      await api.deleteMcpServer(id);
-      setMcpServers((list) => list.filter((s) => s.id !== id));
+      await api.deleteCustomConnector(id);
+      setConnectors((state) => ({
+        ...state,
+        custom: state.custom.filter((item) => item.id !== id),
+      }));
       haptic.success();
       setEditor((e) => ({ ...e, open: false }));
     } catch (e) {
       haptic.error();
       alertDialog(`Delete failed: ${e instanceof Error ? e.message : String(e)}`);
+    }
+  }, []);
+
+  const refreshConnectors = useCallback(async () => {
+    try {
+      setConnectors(await api.getConnectors());
+    } catch (e) {
+      haptic.error();
+      alertDialog(`Could not refresh connectors: ${e instanceof Error ? e.message : String(e)}`);
+    }
+  }, []);
+
+  const connectManagedConnector = useCallback(async (slug: string) => {
+    try {
+      const { redirectUrl } = await api.authorizeManagedConnector(slug);
+      haptic.success();
+      openLink(redirectUrl);
+    } catch (e) {
+      haptic.error();
+      alertDialog(`Could not connect: ${e instanceof Error ? e.message : String(e)}`);
+    }
+  }, []);
+
+  const disconnectManagedConnector = useCallback(async (slug: string) => {
+    const ok = await confirmDialog("Disconnect this account from Skye?");
+    if (!ok) return;
+    try {
+      await api.disconnectManagedConnector(slug);
+      setConnectors((state) => ({
+        ...state,
+        managed: {
+          ...state.managed,
+          connectors: state.managed.connectors.map((item) =>
+            item.slug === slug ? { ...item, connected: false, status: undefined } : item
+          ),
+        },
+      }));
+      haptic.success();
+    } catch (e) {
+      haptic.error();
+      alertDialog(`Could not disconnect: ${e instanceof Error ? e.message : String(e)}`);
     }
   }, []);
 
@@ -366,7 +419,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
         setBilling((b) => ({ ...b, busy: false }));
       }
     },
-    [refreshAccount],
+    [refreshAccount]
   );
 
   const subscribe = useCallback(async () => {
@@ -399,12 +452,12 @@ export function AppProvider({ children }: { children: ReactNode }) {
         setBilling((b) => ({ ...b, busy: false }));
       }
     },
-    [refreshAccount],
+    [refreshAccount]
   );
 
   const cancelSubscription = useCallback(async () => {
     const ok = await confirmDialog(
-      "Cancel your Skye Plus subscription? Access continues until the renewal date, then ends.",
+      "Cancel your Skye Plus subscription? Access continues until the renewal date, then ends."
     );
     if (!ok) return;
     try {
@@ -426,7 +479,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
       setTab,
       config,
       chatConfig,
-      mcpServers,
+      connectors,
       memories,
       stats,
       billing,
@@ -447,10 +500,13 @@ export function AppProvider({ children }: { children: ReactNode }) {
       saveConfig,
       toggleVoice,
       editor,
-      openMcpEditor,
-      closeMcpEditor,
-      saveMcpServer,
-      deleteMcpServer,
+      openCustomConnector,
+      closeCustomConnector,
+      saveCustomConnector,
+      deleteCustomConnector,
+      connectManagedConnector,
+      disconnectManagedConnector,
+      refreshConnectors,
       deleteMemory,
       selectModel,
       subscribe,
@@ -465,7 +521,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
       setTab,
       config,
       chatConfig,
-      mcpServers,
+      connectors,
       memories,
       stats,
       billing,
@@ -486,16 +542,19 @@ export function AppProvider({ children }: { children: ReactNode }) {
       saveConfig,
       toggleVoice,
       editor,
-      openMcpEditor,
-      closeMcpEditor,
-      saveMcpServer,
-      deleteMcpServer,
+      openCustomConnector,
+      closeCustomConnector,
+      saveCustomConnector,
+      deleteCustomConnector,
+      connectManagedConnector,
+      disconnectManagedConnector,
+      refreshConnectors,
       deleteMemory,
       selectModel,
       subscribe,
       buyPack,
       cancelSubscription,
-    ],
+    ]
   );
 
   return <Ctx.Provider value={value}>{children}</Ctx.Provider>;

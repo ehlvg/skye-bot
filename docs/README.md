@@ -6,7 +6,7 @@ Skye is a calm, minimal AI assistant for Telegram. It answers questions, remembe
 
 - **Individuals** who want a thoughtful assistant in their pocket, reachable from Telegram.
 - **Groups** where Skye can listen, summarize, and help when addressed.
-- **Developers** who want to extend Skye with custom tools through MCP (Model Context Protocol).
+- **Developers** who want managed app integrations or a custom HTTPS connector.
 
 ## What Skye can do
 
@@ -19,7 +19,7 @@ Skye is a calm, minimal AI assistant for Telegram. It answers questions, remembe
 | **See images**          | Send a photo with a question and Skye will describe or analyze it.  |
 | **Listen to voice**     | Voice messages are transcribed and answered.                        |
 | **Speak back**          | Toggle voice replies with `/voice`.                                 |
-| **Use tools**           | Built-in memory tools, plus MCP tools you connect yourself.         |
+| **Use tools**           | Built-in tools plus private per-user app connectors.                |
 | **Group summarization** | In groups, Skye summarizes older messages to stay aware of context. |
 | **Per-user settings**   | Each user can bring their own API key, model, and custom prompt.    |
 
@@ -28,7 +28,7 @@ Skye is a calm, minimal AI assistant for Telegram. It answers questions, remembe
 - **[Personality](personality.md)** — How Skye thinks and communicates.
 - **[Features](features.md)** — All commands, interactions, and capabilities.
 - **[Configuration](configuration.md)** — Environment variables, API setup, and per-user settings.
-- **[MCP Tools](mcp-tools.md)** — Connecting external tools to Skye.
+- **[Connectors](connectors.md)** — Managed OAuth apps and custom HTTPS endpoints.
 
 ## Getting started
 

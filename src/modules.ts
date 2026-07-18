@@ -9,7 +9,7 @@ import { chatLogModule } from "./modules/chatLog/index.js";
 import { legalModule } from "./modules/legal/index.js";
 import { jobsModule } from "./modules/jobs/index.js";
 import { llmModule } from "./modules/llm/index.js";
-import { mcpModule } from "./modules/mcp/index.js";
+import { connectorsModule } from "./modules/connectors/index.js";
 import { memoryModule } from "./modules/memory/index.js";
 import { monitoringModule } from "./modules/monitoring/index.js";
 import { panelModule } from "./modules/panel/index.js";
@@ -23,7 +23,7 @@ import { userConfigModule } from "./modules/userConfig/index.js";
 /**
  * Module load order matters:
  *   - llm first (provides the model catalog consumed by billing & telegram)
- *   - userConfig before mcp (mcp reads user servers from it)
+ *   - userConfig before connectors (connectors read per-user settings)
  *   - admin before telegram (provides access gate allow/ban list)
  *   - billing after llm (needs the model catalog + default model id)
  *   - audit, memory, chatConfig, billing come before panel (routes contribute)
@@ -43,7 +43,7 @@ export const modules: readonly SkyeModule[] = [
   auditModule,
   monitoringModule,
   jobsModule,
-  mcpModule,
+  connectorsModule,
   sandboxModule,
   proactiveModule,
   remindersModule,

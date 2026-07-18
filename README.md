@@ -35,7 +35,7 @@ Skye's full documentation lives in the [`docs/`](docs/) directory:
 - **[Personality](docs/personality.md)** — How Skye thinks and communicates.
 - **[Features](docs/features.md)** — All commands, interactions, and capabilities.
 - **[Configuration](docs/configuration.md)** — Environment variables, API setup, and per-user settings.
-- **[MCP Tools](docs/mcp-tools.md)** — Connecting external tools to Skye via Model Context Protocol.
+- **[Connectors](docs/connectors.md)** — Managed OAuth apps and custom HTTPS endpoints.
 
 ## License
 

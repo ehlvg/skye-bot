@@ -2,8 +2,9 @@ import { getDb } from "../../core/db.js";
 
 export interface DeletionSummary {
   userConfigs: number;
-  userMcpServers: number;
-  userMcpInputs: number;
+  customConnectors: number;
+  customConnectorInputs: number;
+  connectorSessions: number;
   billingAccounts: number;
   billingEvents: number;
   memories: number;
@@ -20,8 +21,8 @@ export interface DeletionSummary {
  * Permanently delete all data associated with a Telegram user.
  *
  * Two scopes are wiped:
- *   1. Per-user data keyed by `user_id` — user configs, MCP servers (+ their
- *      inputs), billing accounts/events, reminders the user created, audit
+ *   1. Per-user data keyed by `user_id` — user configs, custom connectors (+
+ *      their inputs), managed connector sessions, billing accounts/events, reminders, audit
  *      request logs.
  *   2. Private-chat data where `chat_id = userId` (in DMs chatId === userId) —
  *      memories, chat summaries, conversation items, group messages, chat
@@ -35,14 +36,15 @@ export function deleteUserData(userId: number): DeletionSummary {
   const db = getDb();
   return db.transaction(() => {
     const changes = (sql: string): number => db.prepare(sql).run(userId).changes;
-    const userMcpInputs = changes(
-      `DELETE FROM user_mcp_inputs
-       WHERE server_id IN (SELECT id FROM user_mcp_servers WHERE user_id = ?)`
+    const customConnectorInputs = changes(
+      `DELETE FROM user_connector_inputs
+       WHERE server_id IN (SELECT id FROM user_custom_connectors WHERE user_id = ?)`
     );
     return {
       userConfigs: changes("DELETE FROM user_configs WHERE user_id = ?"),
-      userMcpServers: changes("DELETE FROM user_mcp_servers WHERE user_id = ?"),
-      userMcpInputs,
+      customConnectors: changes("DELETE FROM user_custom_connectors WHERE user_id = ?"),
+      customConnectorInputs,
+      connectorSessions: changes("DELETE FROM user_connector_sessions WHERE user_id = ?"),
       billingAccounts: changes("DELETE FROM billing_accounts WHERE user_id = ?"),
       billingEvents: changes("DELETE FROM billing_events WHERE user_id = ?"),
       memories: changes("DELETE FROM memories WHERE chat_id = ?"),

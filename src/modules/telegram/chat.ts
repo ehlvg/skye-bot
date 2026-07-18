@@ -1,5 +1,5 @@
 import type { LlmClient, ResponseInputItem, PerplexitySource } from "../llm/client.js";
-import type { McpService } from "../mcp/service.js";
+import type { ConnectorService } from "../connectors/service.js";
 import type { MemoryService } from "../memory/service.js";
 import type { ChatLogService } from "../chatLog/service.js";
 import type { UserConfigService } from "../userConfig/service.js";
@@ -16,7 +16,7 @@ import { unwrapTextEnvelope } from "../../utils/markdown.js";
 
 export interface ChatLoopDeps {
   llm: LlmClient;
-  mcp: McpService;
+  connectors: ConnectorService;
   memory: MemoryService;
   chatLog: ChatLogService;
   userConfig: UserConfigService;
@@ -24,7 +24,7 @@ export interface ChatLoopDeps {
   reminders?: RemindersService;
   channel?: ChannelService;
   builtinTools: ToolDefinition[];
-  allowMcpTools?: boolean;
+  allowConnectorTools?: boolean;
   hasReferenceImages?: boolean;
   /** Masked model id to run this turn on (resolved from the user's billing account). */
   modelId?: string;
@@ -38,7 +38,7 @@ export interface ChatLoopDeps {
 /**
  * Run the streaming Responses-API tool-call loop until the model returns a
  * final text response (or we hit the iteration cap). Tool calls — both
- * built-in (memory) and MCP — are executed, fed back, and surfaced via the
+ * built-in and connector tools are executed, fed back, and surfaced via the
  * onToolCalls callback for UI rendering.
  *
  * Every step (assistant function calls, tool outputs, final assistant text)
@@ -57,8 +57,9 @@ export async function runChatLoop(
   const memoryQuery = extractInputText(input);
   const memories = deps.memory.context(tenant.chatId, memoryQuery, 12);
   const chatContext = deps.chatLog.context(tenant.chatId);
-  const mcpTools = deps.allowMcpTools === false ? [] : deps.mcp.toolsFor(tenant.userId);
-  const mcpToolNames = mcpTools.map((t) => t.name);
+  const connectorTools =
+    deps.allowConnectorTools === false ? [] : await deps.connectors.toolsFor(tenant.userId);
+  const connectorToolNames = connectorTools.map((t) => t.name);
   const tk = threadKey(tenant);
 
   const userCfg = tenant.userId ? deps.userConfig.get(tenant.userId) : undefined;
@@ -77,7 +78,7 @@ export async function runChatLoop(
       description: t.description,
       parameters: t.parameters,
     })),
-    ...mcpTools.map((t) => ({
+    ...connectorTools.map((t) => ({
       name: t.name,
       description: t.description,
       parameters: t.parameters,
@@ -87,7 +88,7 @@ export async function runChatLoop(
   const instructions = buildSystemPrompt(
     memories,
     chatContext,
-    mcpToolNames,
+    connectorToolNames,
     userCfg?.systemPrompt,
     deps.sandbox?.isEnabled(),
     deps.hasReferenceImages,
@@ -188,7 +189,7 @@ export async function runChatLoop(
         fnCalls.map((fc) => ({
           name: fc.name,
           args: safeJsonParse(fc.arguments),
-          isMcp: deps.mcp.isMcpTool(fc.name),
+          isConnector: deps.connectors.isConnectorTool(fc.name, tenant.userId),
         }))
       );
     }
@@ -196,14 +197,14 @@ export async function runChatLoop(
     const executeCall = async (fc: (typeof fnCalls)[number]) => {
       signal?.throwIfAborted();
       const args = safeJsonParse(fc.arguments);
-      const isMcp = deps.mcp.isMcpTool(fc.name);
+      const isConnector = deps.connectors.isConnectorTool(fc.name, tenant.userId);
       const tool = builtinMap.get(fc.name);
 
       let result: string;
       let failed = false;
       try {
-        const execution = isMcp
-          ? deps.mcp.execute(fc.name, args, tenant.userId)
+        const execution = isConnector
+          ? deps.connectors.execute(fc.name, args, tenant.userId, signal)
           : tool
             ? Promise.resolve(tool.execute(args, tenant))
             : Promise.resolve(`Unknown tool: ${fc.name}`);
@@ -222,7 +223,7 @@ export async function runChatLoop(
       });
 
       return {
-        call: { name: fc.name, args, isMcp },
+        call: { name: fc.name, args, isConnector },
         output: {
           type: "function_call_output",
           call_id: fc.call_id,

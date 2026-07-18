@@ -32,7 +32,7 @@ function setSecurityHeaders(_req: Request, res: Response, next: NextFunction): v
       "script-src 'self' https://telegram.org",
       "style-src 'self' 'unsafe-inline'",
       "font-src 'self'",
-      "img-src 'self' data: blob:",
+      "img-src 'self' data: blob: https://assets.composio.dev",
       "connect-src 'self'",
       "object-src 'none'",
       "base-uri 'none'",
@@ -126,6 +126,10 @@ export const panelModule: SkyeModule = {
         Promise.resolve(route.handler(req as PanelRequest, res, next)).catch(next);
       });
     }
+
+    app.use("/api", (_req: Request, res: Response) => {
+      res.status(404).json({ error: "API endpoint not found" });
+    });
 
     // Serve the static React build from web/dist if present.
     const publicDir = join(__dirname, "..", "..", "..", "web", "dist");

@@ -27,8 +27,8 @@ Security reports are especially useful for:
 - Cross-user or cross-chat data access
 - Payment or quota bypasses
 - Remote code execution outside an explicitly configured sandbox
-- Server-side request forgery through MCP or media handling
-- Exposure of bot, provider, MCP, or user credentials
+- Server-side request forgery through custom connectors or media handling
+- Exposure of bot, provider, connector, or user credentials
 - Prompt/tool behavior that crosses a documented tenant or permission boundary
 
 Ordinary prompt injection that only affects the requesting user's own conversation is not, by
@@ -49,9 +49,18 @@ use an encrypted disk or encrypted data volume, restrict host and backup access,
 AI context: the host decrypts data only while the service is running, then Skye selects and sends
 the relevant context to the configured provider over TLS.
 
-MCP credentials are stored in the same operator-controlled SQLite database. Per-user MCP servers
-are restricted to HTTPS, public-network endpoints by default. Operators may explicitly allow
-private-network MCP endpoints when they understand the SSRF and network-boundary implications.
+Managed app credentials are held by Composio and scoped to Skye's stable per-user identity; Skye
+stores the corresponding opaque session id. Custom connector header secrets are stored in the same
+operator-controlled SQLite database as other application data and are never returned by the panel
+API. Custom connectors are restricted to HTTPS public-network endpoints by default. Redirects are
+rejected, and stdio/local-process connectors are not supported. Operators may explicitly allow
+private-network endpoints only when they understand the SSRF and network-boundary implications.
+
+Connector and document content is untrusted input. Skye labels connector output as untrusted in the
+model prompt, caps returned output, disables Composio sandbox and connection-management tools, and
+excludes Composio tools tagged as destructive by default. These controls reduce risk but cannot
+make an operator-selected external service trustworthy; users should connect only accounts and
+custom endpoints they are willing to let the assistant access.
 
 ## Deployment expectations
 

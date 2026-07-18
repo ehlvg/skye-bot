@@ -1,7 +1,7 @@
 {
   "name": "skye-bot",
   "version": "1.0.0",
-  "description": "The most human, feature-complete Telegram AI bot — built with TypeScript, OpenAI and MCP.",
+  "description": "A calm, feature-complete Telegram AI assistant with secure app connectors.",
   "type": "module",
   "packageManager": "pnpm@11.9.0",
   "scripts": {
@@ -25,6 +25,8 @@
     "ai",
     "assistant",
     "openai",
+    "connectors",
+    "composio",
     "mcp",
     "model-context-protocol",
     "typescript",
@@ -49,6 +51,8 @@
     "vitest": "^3.2.6"
   },
   "dependencies": {
+    "@composio/core": "0.14.0",
+    "@composio/openai": "0.10.1",
     "@daytona/sdk": "^0.196.0",
     "@grammyjs/runner": "^2.0.3",
     "@modelcontextprotocol/sdk": "^1.29.0",
@@ -57,9 +61,10 @@
     "ffmpeg-static": "^5.3.0",
     "grammy": "^1.44.0",
     "js-yaml": "^5.1.0",
-    "openai": "^6.17.0",
+    "openai": "^6.48.0",
     "pino": "^10.3.1",
     "pino-pretty": "^10.3.1",
+    "undici": "^6.27.0",
     "zod": "^4.3.6"
   },
   "homepage": "https://github.com/ehlvg/skye-bot",

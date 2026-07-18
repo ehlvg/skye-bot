@@ -12,9 +12,10 @@ type ConfigRow = {
 
 export function getUserConfig(userId: number): UserConfig {
   const row = getDb()
-    .prepare<[number], ConfigRow>(
-      `SELECT system_prompt AS systemPrompt, personality FROM user_configs WHERE user_id = ?`
-    )
+    .prepare<
+      [number],
+      ConfigRow
+    >(`SELECT system_prompt AS systemPrompt, personality FROM user_configs WHERE user_id = ?`)
     .get(userId);
   if (!row) return {};
   return {
@@ -40,7 +41,7 @@ export function setUserConfig(userId: number, config: UserConfig): void {
     .run(userId, merged.systemPrompt ?? null, merged.personality ?? "skye");
 }
 
-export interface UserMcpServer {
+export interface UserCustomConnector {
   id: number;
   userId: number;
   name: string;
@@ -56,11 +57,11 @@ type ServerRow = {
   createdAt: string;
 };
 
-export function getUserMcpServers(userId: number): UserMcpServer[] {
+export function getUserCustomConnectors(userId: number): UserCustomConnector[] {
   return getDb()
     .prepare<[number], ServerRow>(
       `SELECT id, user_id AS userId, name, config, created_at AS createdAt
-       FROM user_mcp_servers WHERE user_id = ? ORDER BY created_at`
+       FROM user_custom_connectors WHERE user_id = ? ORDER BY created_at`
     )
     .all(userId)
     .map((row) => ({
@@ -69,78 +70,95 @@ export function getUserMcpServers(userId: number): UserMcpServer[] {
     }));
 }
 
-export function getUserMcpServer(id: number, userId: number): UserMcpServer | null {
+export function getUserCustomConnector(id: number, userId: number): UserCustomConnector | null {
   const row = getDb()
     .prepare<[number, number], ServerRow>(
       `SELECT id, user_id AS userId, name, config, created_at AS createdAt
-       FROM user_mcp_servers WHERE id = ? AND user_id = ?`
+       FROM user_custom_connectors WHERE id = ? AND user_id = ?`
     )
     .get(id, userId);
   if (!row) return null;
   return { ...row, config: JSON.parse(row.config) };
 }
 
-export function addUserMcpServer(
+export function addUserCustomConnector(
   userId: number,
   name: string,
   config: Record<string, unknown>
 ): number {
   const result = getDb()
-    .prepare(`INSERT INTO user_mcp_servers (user_id, name, config, created_at) VALUES (?, ?, ?, ?)`)
+    .prepare(
+      `INSERT INTO user_custom_connectors (user_id, name, config, created_at) VALUES (?, ?, ?, ?)`
+    )
     .run(userId, name, JSON.stringify(config), new Date().toISOString());
   return Number(result.lastInsertRowid);
 }
 
-export function updateUserMcpServer(
+export function updateUserCustomConnector(
   id: number,
   userId: number,
   name: string,
   config: Record<string, unknown>
 ): boolean {
   const result = getDb()
-    .prepare(`UPDATE user_mcp_servers SET name = ?, config = ? WHERE id = ? AND user_id = ?`)
+    .prepare(`UPDATE user_custom_connectors SET name = ?, config = ? WHERE id = ? AND user_id = ?`)
     .run(name, JSON.stringify(config), id, userId);
   return result.changes > 0;
 }
 
-export function deleteUserMcpServer(id: number, userId: number): boolean {
+export function deleteUserCustomConnector(id: number, userId: number): boolean {
   return getDb().transaction(() => {
     getDb()
       .prepare(
-        `DELETE FROM user_mcp_inputs
-         WHERE server_id IN (SELECT id FROM user_mcp_servers WHERE id = ? AND user_id = ?)`
+        `DELETE FROM user_connector_inputs
+         WHERE server_id IN (SELECT id FROM user_custom_connectors WHERE id = ? AND user_id = ?)`
       )
       .run(id, userId);
     const result = getDb()
-      .prepare(`DELETE FROM user_mcp_servers WHERE id = ? AND user_id = ?`)
+      .prepare(`DELETE FROM user_custom_connectors WHERE id = ? AND user_id = ?`)
       .run(id, userId);
     return result.changes > 0;
   })();
 }
 
-export function setUserMcpInput(serverId: number, inputId: string, value: string): void {
+export function setUserConnectorInput(serverId: number, inputId: string, value: string): void {
   getDb()
     .prepare(
-      `INSERT INTO user_mcp_inputs (server_id, input_id, value) VALUES (?, ?, ?)
+      `INSERT INTO user_connector_inputs (server_id, input_id, value) VALUES (?, ?, ?)
        ON CONFLICT(server_id, input_id) DO UPDATE SET value = excluded.value`
     )
     .run(serverId, inputId, value);
 }
 
-export function getUserMcpInputs(serverId: number): Record<string, string> {
+export function getUserConnectorInputs(serverId: number): Record<string, string> {
   const rows = getDb()
-    .prepare<[number], { inputId: string; value: string }>(
-      `SELECT input_id AS inputId, value FROM user_mcp_inputs WHERE server_id = ?`
-    )
+    .prepare<
+      [number],
+      { inputId: string; value: string }
+    >(`SELECT input_id AS inputId, value FROM user_connector_inputs WHERE server_id = ?`)
     .all(serverId);
   return Object.fromEntries(rows.map((r) => [r.inputId, r.value]));
 }
 
-export function getAllUserMcpServers(): UserMcpServer[] {
+export function retainUserConnectorInputs(serverId: number, inputIds: string[]): void {
+  if (inputIds.length === 0) {
+    getDb().prepare("DELETE FROM user_connector_inputs WHERE server_id = ?").run(serverId);
+    return;
+  }
+  const placeholders = inputIds.map(() => "?").join(", ");
+  getDb()
+    .prepare(
+      `DELETE FROM user_connector_inputs
+       WHERE server_id = ? AND input_id NOT IN (${placeholders})`
+    )
+    .run(serverId, ...inputIds);
+}
+
+export function getAllUserCustomConnectors(): UserCustomConnector[] {
   return getDb()
     .prepare<[], ServerRow>(
       `SELECT id, user_id AS userId, name, config, created_at AS createdAt
-       FROM user_mcp_servers ORDER BY user_id, created_at`
+       FROM user_custom_connectors ORDER BY user_id, created_at`
     )
     .all()
     .map((row) => ({
@@ -149,33 +167,73 @@ export function getAllUserMcpServers(): UserMcpServer[] {
     }));
 }
 
+export function getConnectorSession(userId: number, provider: string): string | null {
+  return (
+    getDb()
+      .prepare<[number, string], { sessionId: string }>(
+        `SELECT session_id AS sessionId
+         FROM user_connector_sessions WHERE user_id = ? AND provider = ?`
+      )
+      .get(userId, provider)?.sessionId ?? null
+  );
+}
+
+export function setConnectorSession(userId: number, provider: string, sessionId: string): void {
+  const now = new Date().toISOString();
+  getDb()
+    .prepare(
+      `INSERT INTO user_connector_sessions (user_id, provider, session_id, created_at, updated_at)
+       VALUES (?, ?, ?, ?, ?)
+       ON CONFLICT(user_id, provider) DO UPDATE SET
+         session_id = excluded.session_id,
+         updated_at = excluded.updated_at`
+    )
+    .run(userId, provider, sessionId, now, now);
+}
+
+export function deleteConnectorSession(userId: number, provider: string): boolean {
+  return (
+    getDb()
+      .prepare("DELETE FROM user_connector_sessions WHERE user_id = ? AND provider = ?")
+      .run(userId, provider).changes > 0
+  );
+}
+
 export interface UserConfigService {
   get(userId: number): UserConfig;
   set(userId: number, config: UserConfig): void;
-  listMcpServers(userId: number): UserMcpServer[];
-  getMcpServer(id: number, userId: number): UserMcpServer | null;
-  addMcpServer(userId: number, name: string, config: Record<string, unknown>): number;
-  updateMcpServer(
+  listCustomConnectors(userId: number): UserCustomConnector[];
+  getCustomConnector(id: number, userId: number): UserCustomConnector | null;
+  addCustomConnector(userId: number, name: string, config: Record<string, unknown>): number;
+  updateCustomConnector(
     id: number,
     userId: number,
     name: string,
     config: Record<string, unknown>
   ): boolean;
-  deleteMcpServer(id: number, userId: number): boolean;
-  setMcpInput(serverId: number, inputId: string, value: string): void;
-  getMcpInputs(serverId: number): Record<string, string>;
-  listAllMcpServers(): UserMcpServer[];
+  deleteCustomConnector(id: number, userId: number): boolean;
+  setConnectorInput(serverId: number, inputId: string, value: string): void;
+  retainConnectorInputs(serverId: number, inputIds: string[]): void;
+  getConnectorInputs(serverId: number): Record<string, string>;
+  listAllCustomConnectors(): UserCustomConnector[];
+  getConnectorSession(userId: number, provider: string): string | null;
+  setConnectorSession(userId: number, provider: string, sessionId: string): void;
+  deleteConnectorSession(userId: number, provider: string): boolean;
 }
 
 export const userConfigService: UserConfigService = {
   get: getUserConfig,
   set: setUserConfig,
-  listMcpServers: getUserMcpServers,
-  getMcpServer: getUserMcpServer,
-  addMcpServer: addUserMcpServer,
-  updateMcpServer: updateUserMcpServer,
-  deleteMcpServer: deleteUserMcpServer,
-  setMcpInput: setUserMcpInput,
-  getMcpInputs: getUserMcpInputs,
-  listAllMcpServers: getAllUserMcpServers,
+  listCustomConnectors: getUserCustomConnectors,
+  getCustomConnector: getUserCustomConnector,
+  addCustomConnector: addUserCustomConnector,
+  updateCustomConnector: updateUserCustomConnector,
+  deleteCustomConnector: deleteUserCustomConnector,
+  setConnectorInput: setUserConnectorInput,
+  retainConnectorInputs: retainUserConnectorInputs,
+  getConnectorInputs: getUserConnectorInputs,
+  listAllCustomConnectors: getAllUserCustomConnectors,
+  getConnectorSession,
+  setConnectorSession,
+  deleteConnectorSession,
 };

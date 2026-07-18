@@ -5,10 +5,13 @@ import type { LegalService } from "./service.js";
 import type { LegalConfig } from "./config.js";
 import { sendRichReply } from "../telegram/helpers.js";
 import { appCommit, appVersion } from "../../core/appInfo.js";
+import type { ConnectorService } from "../connectors/service.js";
+import { log } from "../../utils/log.js";
 
 export interface LegalDeps {
   legal: LegalService;
   cfg: LegalConfig["legal"];
+  connectors: ConnectorService;
 }
 
 export function buildLegalCommands(deps: LegalDeps): TelegramCommand[] {
@@ -114,7 +117,7 @@ export function buildLegalCommands(deps: LegalDeps): TelegramCommand[] {
           "This will **permanently** erase everything Skye stores about you:",
           "",
           "- Your settings, system prompt, and model choice",
-          "- Your connected MCP servers",
+          "- Your connected accounts and custom HTTPS connectors",
           "- Your subscription, token balance, and billing history",
           "- Your long-term memories",
           "- Your private conversation history and summaries",
@@ -160,11 +163,19 @@ export function buildLegalHandlers(deps: LegalDeps): TelegramHandler[] {
 
         if (action === "delete:confirm") {
           await ctx.answerCallbackQuery("Erasing your data…");
+          let externalDeletionFailed = false;
+          try {
+            await deps.connectors.deleteExternalUserData(userId);
+          } catch (error) {
+            externalDeletionFailed = true;
+            log.error({ err: error, userId }, "Could not delete externally managed connector data");
+          }
           const summary = deps.legal.deleteUserData(userId);
           const total =
             summary.userConfigs +
-            summary.userMcpServers +
-            summary.userMcpInputs +
+            summary.customConnectors +
+            summary.customConnectorInputs +
+            summary.connectorSessions +
             summary.billingAccounts +
             summary.billingEvents +
             summary.memories +
@@ -177,9 +188,17 @@ export function buildLegalHandlers(deps: LegalDeps): TelegramHandler[] {
             summary.adminPrincipals;
 
           const md = [
-            "✅ **Your data has been deleted.**",
+            externalDeletionFailed
+              ? "⚠️ **Your local Skye data has been deleted.**"
+              : "✅ **Your data has been deleted.**",
             "",
             `Erased ${total} record(s) across Skye's database.`,
+            ...(externalDeletionFailed
+              ? [
+                  "",
+                  "Skye could not confirm deletion of externally managed connector credentials. Please contact support via /paysupport so the operator can finish that removal.",
+                ]
+              : []),
             "",
             "_This message is the only confirmation we keep. A fresh start — say hi anytime._",
           ].join("\n");

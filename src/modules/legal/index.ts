@@ -17,9 +17,10 @@ export const legalModule: SkyeModule = {
     ctx.services.set("legal", legalService);
 
     const cfg = ctx.config.legal;
+    const connectors = ctx.services.get("connectors");
     const { commands, handlers } = {
-      commands: buildLegalCommands({ legal: legalService, cfg }),
-      handlers: buildLegalHandlers({ legal: legalService, cfg }),
+      commands: buildLegalCommands({ legal: legalService, cfg, connectors }),
+      handlers: buildLegalHandlers({ legal: legalService, cfg, connectors }),
     };
 
     return {
