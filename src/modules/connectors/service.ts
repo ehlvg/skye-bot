@@ -111,7 +111,12 @@ interface ManagedSession {
     }>
   >;
   authorize(toolkit: string, options?: { callbackUrl?: string }): Promise<{ redirectUrl: string }>;
-  toolkits(options?: { toolkits?: string[]; limit?: number; isConnected?: boolean }): Promise<{
+  toolkits(options?: {
+    toolkits?: string[];
+    cursor?: string;
+    limit?: number;
+    isConnected?: boolean;
+  }): Promise<{
     items: Array<{
       slug: string;
       name: string;
@@ -121,6 +126,8 @@ interface ManagedSession {
         connectedAccount?: { id: string; status: string };
       };
     }>;
+    cursor?: string;
+    totalPages?: number;
   }>;
   execute(
     toolSlug: string,
@@ -420,6 +427,30 @@ export class ConnectorService {
     this.managedToolNames.delete(userId);
   }
 
+  private async listManagedToolkits(
+    session: ManagedSession,
+    options: { toolkits?: string[]; isConnected?: boolean }
+  ): Promise<Awaited<ReturnType<ManagedSession["toolkits"]>>["items"]> {
+    const items: Awaited<ReturnType<ManagedSession["toolkits"]>>["items"] = [];
+    const seenCursors = new Set<string>();
+    let cursor: string | undefined;
+    let hasNextPage = true;
+    while (hasNextPage) {
+      const page = await session.toolkits({
+        ...options,
+        ...(cursor ? { cursor } : {}),
+        limit: 50,
+      });
+      items.push(...page.items);
+      hasNextPage = Boolean(page.cursor && !seenCursors.has(page.cursor));
+      if (page.cursor && hasNextPage) {
+        seenCursors.add(page.cursor);
+        cursor = page.cursor;
+      }
+    }
+    return items;
+  }
+
   private async managedToolsFor(userId: number): Promise<ConnectorTool[]> {
     if (!this.composio) return [];
     const cached = this.managedTools.get(userId);
@@ -525,8 +556,8 @@ export class ConnectorService {
   async managedCatalog(userId: number): Promise<ManagedConnectorCatalog> {
     if (!this.composio) return { enabled: false, connectors: [] };
     const session = await this.getManagedSession(userId);
-    const result = await session.toolkits({ toolkits: this.allowedToolkits, limit: 100 });
-    const bySlug = new Map(result.items.map((item) => [item.slug.toLowerCase(), item]));
+    const items = await this.listManagedToolkits(session, { toolkits: this.allowedToolkits });
+    const bySlug = new Map(items.map((item) => [item.slug.toLowerCase(), item]));
     const connectors = this.allowedToolkits.map((slug) => {
       const item = bySlug.get(slug);
       const account = item?.connection?.connectedAccount;
@@ -678,9 +709,9 @@ export class ConnectorService {
     if (!sessionId) return;
     try {
       const session = await this.getManagedSession(userId);
-      const connected = await session.toolkits({ isConnected: true, limit: 100 });
+      const connected = await this.listManagedToolkits(session, { isConnected: true });
       let accountDeletionFailed = false;
-      for (const toolkit of connected.items) {
+      for (const toolkit of connected) {
         const accountId = toolkit.connection?.connectedAccount?.id;
         if (accountId) {
           await this.composio.connectedAccounts.delete(accountId).catch(() => {
