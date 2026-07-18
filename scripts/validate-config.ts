@@ -49,6 +49,9 @@ function main(): void {
     models?: Array<{ provider?: string }>;
     perplexity_api_key?: string;
     voice?: { provider: string; yc_api_key: string };
+    access?: { mode: string };
+    billing?: { enabled: boolean };
+    owner?: { user_id: number };
   };
   const warnings: string[] = [];
 
@@ -60,6 +63,17 @@ function main(): void {
 
   if (cfg.voice?.provider === "yandex" && !cfg.voice.yc_api_key) {
     warnings.push("voice.provider=yandex but voice.yc_api_key is unset");
+  }
+
+  if (cfg.access?.mode === "subscription" && !cfg.billing?.enabled) {
+    console.error("✖ access.mode=subscription requires billing.enabled=true");
+    process.exit(1);
+  }
+
+  if (!cfg.owner?.user_id) {
+    warnings.push(
+      "owner.user_id is unset; first run will require the one-time /claim_owner token from logs"
+    );
   }
 
   for (const w of warnings) console.warn(`  ⚠ ${w}`);

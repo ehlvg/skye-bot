@@ -47,6 +47,8 @@ export interface TelegramCommand {
   handler: (ctx: GrammyContext, tenant: TenantContext) => Promise<void> | void;
   /** If true, this command bypasses the access gate. */
   public?: boolean;
+  /** Set false for sensitive bootstrap commands that should not appear in Telegram's menu. */
+  advertise?: boolean;
 }
 
 /** A free-form Telegram message handler (e.g. message:photo). */

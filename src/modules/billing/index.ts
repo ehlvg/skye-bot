@@ -32,6 +32,7 @@ export const billingModule: SkyeModule = {
     ctx.services.set("billing", billing);
 
     const deps: BillingDeps = {
+      enabled: c.billing.enabled,
       billing,
       llm,
       cfg: decodeInvoiceConfig(ctx.config),
@@ -42,7 +43,7 @@ export const billingModule: SkyeModule = {
 
     return {
       service: billing,
-      commands,
+      commands: c.billing.enabled ? commands : [],
       telegramHandlers: handlers,
       panelRoutes: buildRoutes(ctx),
     };

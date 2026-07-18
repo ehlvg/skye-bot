@@ -74,6 +74,7 @@ export function buildRoutes(ctx: ModuleContext): PanelRoute[] {
       handler: (_req, res) => {
         const cfg = decodeInvoiceConfig(ctx.config);
         res.json({
+          enabled: ctx.config.billing.enabled,
           currency: cfg.currency,
           title: cfg.title,
           description: cfg.description,
@@ -88,6 +89,10 @@ export function buildRoutes(ctx: ModuleContext): PanelRoute[] {
       method: "post",
       path: "/billing/invoice/subscription",
       handler: async (req, res) => {
+        if (!ctx.config.billing.enabled) {
+          res.status(404).json({ error: "Subscriptions are disabled on this bot" });
+          return;
+        }
         const userId = (req as PanelRequest).tenant.userId!;
         const bot = getBot();
         if (!bot) {
@@ -119,6 +124,10 @@ export function buildRoutes(ctx: ModuleContext): PanelRoute[] {
       method: "post",
       path: "/billing/invoice/pack",
       handler: async (req, res) => {
+        if (!ctx.config.billing.enabled) {
+          res.status(404).json({ error: "Subscriptions are disabled on this bot" });
+          return;
+        }
         const userId = (req as PanelRequest).tenant.userId!;
         const { packId } = req.body as { packId?: string };
         const packs = ctx.config.billing.token_packs as TokenPack[];
@@ -162,6 +171,10 @@ export function buildRoutes(ctx: ModuleContext): PanelRoute[] {
       method: "post",
       path: "/billing/cancel",
       handler: async (req, res) => {
+        if (!ctx.config.billing.enabled) {
+          res.status(404).json({ error: "Subscriptions are disabled on this bot" });
+          return;
+        }
         const userId = (req as PanelRequest).tenant.userId!;
         const acc = billing.getAccount(userId);
         if (!billing.hasActiveSub(acc) || !acc.lastChargeId) {

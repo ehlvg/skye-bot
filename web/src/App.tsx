@@ -8,6 +8,8 @@ import { PlusScreen } from "./screens/PlusScreen";
 import { StatsScreen } from "./screens/StatsScreen";
 import { McpEditor } from "./screens/McpEditor";
 import { Spinner } from "./components/ui";
+import { AboutSheet } from "./screens/AboutSheet";
+import { AdminSheet } from "./screens/AdminSheet";
 import {
   applyScheme,
   colorScheme,
@@ -33,7 +35,19 @@ function Screen() {
 }
 
 function Shell() {
-  const { loading, error, tab, setTab, editor, closeMcpEditor } = useApp();
+  const {
+    loading,
+    error,
+    tab,
+    setTab,
+    editor,
+    closeMcpEditor,
+    aboutOpen,
+    closeAbout,
+    adminOpen,
+    closeAdmin,
+    billing,
+  } = useApp();
 
   // Re-apply theme + chrome whenever Telegram pushes a theme change.
   useEffect(() => {
@@ -47,10 +61,10 @@ function Shell() {
 
   // Telegram back button closes the MCP editor when it's open.
   useEffect(() => {
-    if (editor.open) {
-      return useBackButton(() => closeMcpEditor());
-    }
-  }, [editor.open, closeMcpEditor]);
+    if (adminOpen) return useBackButton(closeAdmin);
+    if (aboutOpen) return useBackButton(closeAbout);
+    if (editor.open) return useBackButton(closeMcpEditor);
+  }, [adminOpen, closeAdmin, aboutOpen, closeAbout, editor.open, closeMcpEditor]);
 
   if (loading) {
     return (
@@ -76,8 +90,10 @@ function Shell() {
       <main className="scroll" key={tab}>
         <Screen />
       </main>
-      <TabBar active={tab as TabKey} onChange={setTab} />
+      <TabBar active={tab as TabKey} onChange={setTab} billingEnabled={billing.plans?.enabled ?? false} />
       <McpEditor />
+      <AboutSheet />
+      <AdminSheet />
     </div>
   );
 }

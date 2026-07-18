@@ -24,4 +24,20 @@ export const migrations: Migration[] = [
       `);
     },
   },
+  {
+    id: "002-admin-principals",
+    up: (db) => {
+      db.exec(`
+        CREATE TABLE IF NOT EXISTS admin_principals (
+          user_id    INTEGER PRIMARY KEY,
+          role       TEXT    NOT NULL CHECK(role IN ('owner', 'admin')),
+          added_by   INTEGER NOT NULL,
+          source     TEXT    NOT NULL,
+          created_at TEXT    NOT NULL
+        );
+        CREATE UNIQUE INDEX IF NOT EXISTS idx_admin_single_owner
+          ON admin_principals(role) WHERE role = 'owner';
+      `);
+    },
+  },
 ];

@@ -84,6 +84,8 @@ export const telegramModule: SkyeModule = {
         webappUrl: ctx.config.panel.webapp_url,
         defaultModelId: ctx.config.default_model_id,
         reliability,
+        accessMode: c.access.mode,
+        subscriptionStars: c.billing.subscription_stars,
         ...(c.owner.name || c.owner.tag ? { owner: { name: c.owner.name, tag: c.owner.tag } } : {}),
       },
       contributions

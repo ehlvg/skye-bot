@@ -13,15 +13,13 @@ function resolveTarget(
   arg: string | undefined
 ): { id: number; kind: AllowKind; source: string } | null {
   const reply =
-    ctx.message && "reply_to_message" in ctx.message
-      ? ctx.message.reply_to_message
-      : undefined;
+    ctx.message && "reply_to_message" in ctx.message ? ctx.message.reply_to_message : undefined;
   if (reply?.from) {
     return { id: reply.from.id, kind: "user", source: `replied user (id ${reply.from.id})` };
   }
   if (arg) {
     const n = Number(arg.trim());
-    if (!Number.isFinite(n)) return null;
+    if (!Number.isSafeInteger(n) || n === 0) return null;
     return { id: n, kind: kindFromId(n), source: `id ${n}` };
   }
   const chat = ctx.chat;
@@ -40,7 +38,106 @@ export function buildAdminCommands(admin: AdminService): TelegramCommand[] {
     return true;
   };
 
+  const ownerGuard = (ctx: GrammyContext): boolean => {
+    if (!admin.isOwner(ctx.from?.id)) {
+      void sendRichReply(ctx, "🚫 Only the primary bot owner can manage administrators.");
+      return false;
+    }
+    return true;
+  };
+
   return [
+    {
+      name: "claim_owner",
+      description: "Claim ownership during first-run setup",
+      public: true,
+      advertise: false,
+      handler: async (ctx, tenant) => {
+        if (!admin.ownerClaimRequired()) {
+          await sendRichReply(ctx, "The bot already has a primary owner.");
+          return;
+        }
+        if (ctx.chat?.type !== "private" || !tenant.userId) {
+          await sendRichReply(ctx, "Run this command in a private chat with the bot.");
+          return;
+        }
+        const token = (ctx.match?.toString() ?? "").trim();
+        if (!token || !admin.claimOwner(tenant.userId, token)) {
+          await sendRichReply(ctx, "Invalid or expired owner claim token.");
+          return;
+        }
+        if (ctx.message?.message_id) {
+          await ctx.api.deleteMessage(ctx.chat.id, ctx.message.message_id).catch(() => {});
+        }
+        await sendRichReply(
+          ctx,
+          "✅ **Ownership claimed.**\n\nYou are now the permanent primary administrator. The one-time token has been invalidated."
+        );
+      },
+    },
+    {
+      name: "add_admin",
+      description: "(owner) Add a bot administrator",
+      public: true,
+      handler: async (ctx, tenant) => {
+        if (!ownerGuard(ctx)) return;
+        const arg = (ctx.match?.toString() ?? "").trim() || undefined;
+        const target = resolveTarget(ctx, arg);
+        if (!target || target.kind !== "user" || target.id <= 0) {
+          await sendRichReply(
+            ctx,
+            "Usage: /add_admin <user_id>, or reply to a user with /add_admin."
+          );
+          return;
+        }
+        const added = admin.addAdmin(target.id, tenant.userId!);
+        await sendRichReply(
+          ctx,
+          added
+            ? `✅ Added \`${target.id}\` as an administrator.`
+            : "That user is already an administrator."
+        );
+      },
+    },
+    {
+      name: "remove_admin",
+      description: "(owner) Remove a bot administrator",
+      public: true,
+      handler: async (ctx) => {
+        if (!ownerGuard(ctx)) return;
+        const arg = (ctx.match?.toString() ?? "").trim() || undefined;
+        const target = resolveTarget(ctx, arg);
+        if (!target || target.kind !== "user" || target.id <= 0) {
+          await sendRichReply(
+            ctx,
+            "Usage: /remove_admin <user_id>, or reply to a user with /remove_admin."
+          );
+          return;
+        }
+        const result = admin.removeAdmin(target.id);
+        const message =
+          result === "removed"
+            ? `🗑 Removed \`${target.id}\` from administrators.`
+            : result === "protected"
+              ? "The primary owner and config-defined administrators cannot be removed here."
+              : "That user is not a delegated administrator.";
+        await sendRichReply(ctx, message);
+      },
+    },
+    {
+      name: "admins",
+      description: "(admin) List bot administrators",
+      public: true,
+      handler: async (ctx) => {
+        if (!guard(ctx)) return;
+        const entries = admin.listAdmins();
+        const lines = entries.map((entry) => {
+          const source = entry.role === "owner" ? "primary owner" : `${entry.source} admin`;
+          return `- \`${entry.userId}\` — ${source}`;
+        });
+        await sendRichReply(ctx, `## Administrators (${entries.length})\n\n${lines.join("\n")}`);
+      },
+    },
     {
       name: "allow",
       description: "(admin) Allow a user or chat to use Skye",
@@ -81,7 +178,9 @@ export function buildAdminCommands(admin: AdminService): TelegramCommand[] {
         const removed = admin.disallow(target.id);
         await sendRichReply(
           ctx,
-          removed ? `🗑 Removed ${target.source} from the allowlist.` : "That id isn't in the allowlist."
+          removed
+            ? `🗑 Removed ${target.source} from the allowlist.`
+            : "That id isn't in the allowlist."
         );
       },
     },
@@ -117,15 +216,20 @@ export function buildAdminCommands(admin: AdminService): TelegramCommand[] {
         if (reply?.from) id = reply.from.id;
         else if (arg) {
           const n = Number(arg.trim());
-          if (Number.isFinite(n)) id = n;
+          if (Number.isSafeInteger(n) && n > 0) id = n;
         }
         if (id === undefined) {
           await sendRichReply(ctx, "Usage: /ban <user_id>, or reply to a user with /ban.");
           return;
         }
         admin.disallow(id);
-        admin.ban(id, tenant.userId ?? 0);
-        await sendRichReply(ctx, `🚫 Banned \`${id}\`.`);
+        const banned = admin.ban(id, tenant.userId ?? 0);
+        await sendRichReply(
+          ctx,
+          banned
+            ? `🚫 Banned \`${id}\`.`
+            : "Administrators cannot be banned. Remove delegated access first."
+        );
       },
     },
     {
@@ -140,7 +244,7 @@ export function buildAdminCommands(admin: AdminService): TelegramCommand[] {
           return;
         }
         const n = Number(arg.trim());
-        if (!Number.isFinite(n)) {
+        if (!Number.isSafeInteger(n) || n <= 0) {
           await sendRichReply(ctx, "Invalid id.");
           return;
         }

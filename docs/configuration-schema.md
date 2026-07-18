@@ -11,6 +11,12 @@ The result is a typed `SkyeConfig` object consumed by modules via
 Legend: **Required** = no default and not optional. **Default** = used
 when the key is absent. **Bounds** = numeric min/max or string length.
 
+## access
+
+| YAML path | Module | Type | Required | Default | Enum | Bounds |
+|---|---|---|---|---|---|---|
+| `access.mode` | access | enum |  | `subscription` | private, allowlist, subscription, open |  |
+
 ## admin
 
 | YAML path | Module | Type | Required | Default | Enum | Bounds |
@@ -40,6 +46,7 @@ when the key is absent. **Bounds** = numeric min/max or string length.
 | `billing.base_quota_tokens` | billing | number |  | `2000000` |  | > 0 |
 | `billing.currency` | billing | string |  | `XTR` |  |  |
 | `billing.description` | billing | string |  | `Monthly subscription — unlocks Skye and adds 2,000,000 tokens per month.` |  |  |
+| `billing.enabled` | billing | boolean |  | `true` |  |  |
 | `billing.subscription_period_seconds` | billing | number |  | `2592000` |  | > 0 |
 | `billing.subscription_stars` | billing | number |  | `1899` |  | > 0 |
 | `billing.title` | billing | string |  | `Skye Plus` |  |  |
@@ -72,9 +79,12 @@ when the key is absent. **Bounds** = numeric min/max or string length.
 
 | YAML path | Module | Type | Required | Default | Enum | Bounds |
 |---|---|---|---|---|---|---|
+| `legal.developer_alias` | legal | string |  | `Erich Helvig` |  |  |
 | `legal.developer_email` | legal | string |  | `serg@skye-bot.com` |  |  |
 | `legal.developer_name` | legal | string |  | `Sergey Gamuylo` |  |  |
 | `legal.privacy_url` | legal | string |  | `https://shiftlinehq.craft.me/skye-privacy` |  |  |
+| `legal.security_url` | legal | string |  | `https://github.com/ehlvg/skye-bot/security/policy` |  |  |
+| `legal.source_url` | legal | string |  | `https://github.com/ehlvg/skye-bot` |  |  |
 | `legal.support_username` | legal | string |  | `@overwaven` |  |  |
 | `legal.terms_url` | legal | string |  | `https://shiftlinehq.craft.me/skye-terms` |  |  |
 
@@ -97,7 +107,9 @@ when the key is absent. **Bounds** = numeric min/max or string length.
 
 | YAML path | Module | Type | Required | Default | Enum | Bounds |
 |---|---|---|---|---|---|---|
+| `mcp.allow_private_user_servers` | mcp | boolean |  | `false` |  |  |
 | `mcp.config_path` | mcp | string |  |  |  |  |
+| `mcp.max_tool_output_chars` | mcp | number |  | `64000` |  | ≥ 1000, ≤ 1000000 |
 
 ## monitoring
 
@@ -112,11 +124,16 @@ when the key is absent. **Bounds** = numeric min/max or string length.
 |---|---|---|---|---|---|---|
 | `owner.name` | owner | string |  |  |  |  |
 | `owner.tag` | owner | string |  |  |  |  |
+| `owner.user_id` | owner | number |  | `0` |  | ≥ 0, ≤ 9007199254740991 |
 
 ## panel
 
 | YAML path | Module | Type | Required | Default | Enum | Bounds |
 |---|---|---|---|---|---|---|
+| `panel.auth_max_age_seconds` | panel | number |  | `3600` |  | ≥ 60, ≤ 86400 |
+| `panel.json_body_limit_kb` | panel | number |  | `3072` |  | ≥ 64, ≤ 10240 |
+| `panel.rate_limit_max` | panel | number |  | `120` |  | ≥ 10, ≤ 10000 |
+| `panel.rate_limit_window_ms` | panel | number |  | `60000` |  | ≥ 1000, ≤ 3600000 |
 | `panel.webapp_port` | panel | number |  | `3001` |  | > 0 |
 | `panel.webapp_url` | panel | string |  | `http://localhost:3001` |  |  |
 
@@ -209,3 +226,6 @@ when the key is absent. **Bounds** = numeric min/max or string length.
 - `voice.provider: "openrouter"` falls back to `openai_key` when
   `voice.openrouter.api_key` is empty.
 - `sandbox.enabled: true` requires `sandbox.daytona_api_key`.
+- `access.mode: "subscription"` requires `billing.enabled: true`.
+- If `owner.user_id` is `0`, first run prints a one-time `/claim_owner`
+  token to the operator log and persists the claimed Telegram user ID.

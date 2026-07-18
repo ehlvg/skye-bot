@@ -13,6 +13,7 @@ export interface DeletionSummary {
   chatConfigs: number;
   reminders: number;
   requestLogs: number;
+  adminPrincipals: number;
 }
 
 /**
@@ -32,29 +33,28 @@ export interface DeletionSummary {
  */
 export function deleteUserData(userId: number): DeletionSummary {
   const db = getDb();
-  const changes = (sql: string): number => db.prepare(sql).run(userId).changes;
-
-  const userMcpInputs = changes(
-    `DELETE FROM user_mcp_inputs
-     WHERE server_id IN (SELECT id FROM user_mcp_servers WHERE user_id = ?)`
-  );
-
-  const summary: DeletionSummary = {
-    userConfigs: changes("DELETE FROM user_configs WHERE user_id = ?"),
-    userMcpServers: changes("DELETE FROM user_mcp_servers WHERE user_id = ?"),
-    userMcpInputs,
-    billingAccounts: changes("DELETE FROM billing_accounts WHERE user_id = ?"),
-    billingEvents: changes("DELETE FROM billing_events WHERE user_id = ?"),
-    memories: changes("DELETE FROM memories WHERE chat_id = ?"),
-    chatSummaries: changes("DELETE FROM chat_summaries WHERE chat_id = ?"),
-    conversationItems: changes("DELETE FROM conversation_items WHERE chat_id = ?"),
-    groupMessages: changes("DELETE FROM group_messages WHERE chat_id = ?"),
-    chatConfigs: changes("DELETE FROM chat_configs WHERE chat_id = ?"),
-    reminders: changes("DELETE FROM reminders WHERE user_id = ?"),
-    requestLogs: changes("DELETE FROM request_logs WHERE user_id = ?"),
-  };
-
-  return summary;
+  return db.transaction(() => {
+    const changes = (sql: string): number => db.prepare(sql).run(userId).changes;
+    const userMcpInputs = changes(
+      `DELETE FROM user_mcp_inputs
+       WHERE server_id IN (SELECT id FROM user_mcp_servers WHERE user_id = ?)`
+    );
+    return {
+      userConfigs: changes("DELETE FROM user_configs WHERE user_id = ?"),
+      userMcpServers: changes("DELETE FROM user_mcp_servers WHERE user_id = ?"),
+      userMcpInputs,
+      billingAccounts: changes("DELETE FROM billing_accounts WHERE user_id = ?"),
+      billingEvents: changes("DELETE FROM billing_events WHERE user_id = ?"),
+      memories: changes("DELETE FROM memories WHERE chat_id = ?"),
+      chatSummaries: changes("DELETE FROM chat_summaries WHERE chat_id = ?"),
+      conversationItems: changes("DELETE FROM conversation_items WHERE chat_id = ?"),
+      groupMessages: changes("DELETE FROM group_messages WHERE chat_id = ?"),
+      chatConfigs: changes("DELETE FROM chat_configs WHERE chat_id = ?"),
+      reminders: changes("DELETE FROM reminders WHERE user_id = ?"),
+      requestLogs: changes("DELETE FROM request_logs WHERE user_id = ?"),
+      adminPrincipals: changes("DELETE FROM admin_principals WHERE user_id = ? AND role = 'admin'"),
+    };
+  })();
 }
 
 export interface LegalService {

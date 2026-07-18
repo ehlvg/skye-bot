@@ -17,6 +17,8 @@ export const mcpModule: SkyeModule = {
     const service = new McpService({
       configPath: ctx.config.mcp.config_path,
       userConfig: ctx.services.get("userConfig"),
+      allowPrivateUserServers: ctx.config.mcp.allow_private_user_servers,
+      maxToolOutputChars: ctx.config.mcp.max_tool_output_chars,
     });
     serviceRef = service;
     // Connect global + user MCP servers asynchronously, but await so the

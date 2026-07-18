@@ -226,6 +226,7 @@ code {
   letter-spacing: -0.6px;
   margin: 6px 8px 14px;
   line-height: 1.1;
+  text-wrap: balance;
 }
 
 /* ============================================================================
@@ -246,6 +247,7 @@ code {
   color: var(--caption);
   margin: 7px 20px 0;
   padding-bottom: 4px;
+  text-wrap: pretty;
 }
 
 .section {
@@ -322,6 +324,11 @@ code {
 .row-tap {
   cursor: pointer;
   transition: background-color 90ms ease-out;
+}
+
+.row-tap:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: -2px;
 }
 
 .row-tap::after {
@@ -602,8 +609,133 @@ code {
 }
 
 .button:active {
-  transform: scale(0.98);
+  transform: scale(0.96);
   opacity: 0.85;
+}
+
+.button:focus-visible,
+.icon-action:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+.sheet-actions {
+  padding: 0 16px 28px;
+}
+
+.about-hero {
+  margin: 8px 16px 6px;
+  padding: 24px 22px;
+  border-radius: 22px;
+  background:
+    radial-gradient(circle at 85% 10%, color-mix(in srgb, var(--c-purple) 30%, transparent), transparent 42%),
+    linear-gradient(145deg, color-mix(in srgb, var(--accent) 14%, var(--glass-bg-strong)), var(--glass-bg));
+  box-shadow: var(--glass-shadow);
+  text-align: center;
+}
+
+.about-mark {
+  display: grid;
+  place-items: center;
+  width: 58px;
+  height: 58px;
+  margin: 0 auto 14px;
+  border-radius: 17px;
+  color: #ffffff;
+  background: linear-gradient(145deg, var(--c-indigo), var(--c-purple));
+  box-shadow: 0 10px 24px -12px color-mix(in srgb, var(--c-purple) 70%, transparent);
+}
+
+.about-mark svg {
+  width: 30px;
+  height: 30px;
+}
+
+.about-hero h3 {
+  margin: 0;
+  font-size: 23px;
+  letter-spacing: -0.35px;
+  text-wrap: balance;
+}
+
+.about-hero p {
+  max-width: 360px;
+  margin: 8px auto 0;
+  color: var(--hint);
+  font-size: 14px;
+  line-height: 1.45;
+  text-wrap: pretty;
+}
+
+.row-mono,
+.admin-id {
+  font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+  font-variant-numeric: tabular-nums;
+}
+
+.access-card {
+  margin: 8px 16px 18px;
+  padding: 18px;
+  border-radius: 18px;
+  background: var(--glass-bg-strong);
+  box-shadow: var(--glass-shadow);
+}
+
+.access-card span {
+  color: var(--caption);
+  font-size: 12px;
+  font-weight: 650;
+  letter-spacing: 0.5px;
+  text-transform: uppercase;
+}
+
+.access-card strong {
+  display: block;
+  margin-top: 4px;
+  color: var(--accent);
+  font-size: 22px;
+  text-transform: capitalize;
+}
+
+.access-card p {
+  margin: 7px 0 0;
+  color: var(--hint);
+  font-size: 13px;
+  line-height: 1.45;
+  text-wrap: pretty;
+}
+
+.icon-action {
+  display: grid;
+  place-items: center;
+  width: 44px;
+  height: 44px;
+  margin: -7px -10px -7px 0;
+  padding: 0;
+  border: 0;
+  border-radius: 12px;
+  background: transparent;
+  cursor: pointer;
+  transition: background-color 120ms ease-out, transform 120ms ease-out;
+}
+
+.icon-action:active {
+  transform: scale(0.96);
+  background: color-mix(in srgb, var(--tg-text) 7%, transparent);
+}
+
+.icon-action:disabled {
+  cursor: default;
+  opacity: 0.45;
+}
+
+.icon-action.is-destructive {
+  color: var(--destructive);
+}
+
+.icon-action svg {
+  width: 20px;
+  height: 20px;
 }
 
 .button-icon {

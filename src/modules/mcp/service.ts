@@ -6,6 +6,8 @@ import { join } from "path";
 import { log } from "../../utils/log.js";
 import type { UserConfigService } from "../userConfig/service.js";
 import { z } from "zod";
+import { lookup } from "dns/promises";
+import { isIP } from "net";
 
 interface McpInput {
   id: string;
@@ -40,6 +42,60 @@ export type UserMcpServerConfig = z.infer<typeof userMcpConfigSchema>;
 
 export function parseUserMcpConfig(config: unknown): UserMcpServerConfig {
   return userMcpConfigSchema.parse(config);
+}
+
+function isPrivateIpv4(address: string): boolean {
+  const octets = address.split(".").map(Number);
+  if (octets.length !== 4 || octets.some((part) => !Number.isInteger(part))) return true;
+  const [a, b] = octets;
+  return (
+    a === 0 ||
+    a === 10 ||
+    a === 127 ||
+    (a === 100 && b >= 64 && b <= 127) ||
+    (a === 169 && b === 254) ||
+    (a === 172 && b >= 16 && b <= 31) ||
+    (a === 192 && b === 168) ||
+    (a === 198 && (b === 18 || b === 19)) ||
+    a >= 224
+  );
+}
+
+export function isPrivateNetworkAddress(address: string): boolean {
+  const normalized = address.toLowerCase().split("%")[0];
+  if (isIP(normalized) === 4) return isPrivateIpv4(normalized);
+  if (isIP(normalized) !== 6) return true;
+  if (normalized === "::" || normalized === "::1") return true;
+  if (normalized.startsWith("fc") || normalized.startsWith("fd")) return true;
+  if (/^fe[89ab]/.test(normalized)) return true;
+  if (normalized.startsWith("::ffff:")) {
+    const mapped = normalized.slice("::ffff:".length);
+    return isIP(mapped) === 4 ? isPrivateIpv4(mapped) : true;
+  }
+  return false;
+}
+
+export async function assertSafeUserMcpUrl(urlValue: string, allowPrivate = false): Promise<void> {
+  if (allowPrivate) return;
+  const url = new URL(urlValue);
+  const hostname = url.hostname.replace(/^\[|\]$/g, "").toLowerCase();
+  if (
+    hostname === "localhost" ||
+    hostname.endsWith(".localhost") ||
+    hostname.endsWith(".local") ||
+    hostname.endsWith(".internal")
+  ) {
+    throw new Error("Private-network MCP servers are disabled");
+  }
+  if (isIP(hostname)) {
+    if (isPrivateNetworkAddress(hostname))
+      throw new Error("Private-network MCP servers are disabled");
+    return;
+  }
+  const addresses = await lookup(hostname, { all: true, verbatim: true });
+  if (addresses.length === 0 || addresses.some(({ address }) => isPrivateNetworkAddress(address))) {
+    throw new Error("MCP hostname resolves to a private or reserved network");
+  }
 }
 
 interface McpConfig {
@@ -167,10 +223,19 @@ export class McpService {
 
   private configPath: string;
   private userConfig: UserConfigService;
+  private allowPrivateUserServers: boolean;
+  private maxToolOutputChars: number;
 
-  constructor(opts: { configPath: string; userConfig: UserConfigService }) {
+  constructor(opts: {
+    configPath: string;
+    userConfig: UserConfigService;
+    allowPrivateUserServers: boolean;
+    maxToolOutputChars: number;
+  }) {
     this.configPath = opts.configPath || join(process.cwd(), "mcp.json");
     this.userConfig = opts.userConfig;
+    this.allowPrivateUserServers = opts.allowPrivateUserServers;
+    this.maxToolOutputChars = opts.maxToolOutputChars;
   }
 
   private loadConfig(): McpConfig | null {
@@ -210,8 +275,11 @@ export class McpService {
           log.warn({ server: name }, "HTTP MCP server missing url, skipping");
           return null;
         }
+        if (scope === "user") {
+          await assertSafeUserMcpUrl(cfg.url, this.allowPrivateUserServers);
+        }
         const transport = new StreamableHTTPClientTransport(new URL(cfg.url), {
-          requestInit: { headers: cfg.headers ?? {} },
+          requestInit: { headers: cfg.headers ?? {}, redirect: "error" },
         });
         await client.connect(transport);
       } else {
@@ -406,13 +474,18 @@ export class McpService {
       });
 
       if (result.isError) {
-        return `Tool error: ${extractText(result.content)}`;
+        return this.limitToolOutput(`Tool error: ${extractText(result.content)}`);
       }
-      return extractText(result.content);
+      return this.limitToolOutput(extractText(result.content));
     } catch (e) {
       const msg = e instanceof Error ? e.message : String(e);
       return `Tool error: ${msg}`;
     }
+  }
+
+  private limitToolOutput(value: string): string {
+    if (value.length <= this.maxToolOutputChars) return value;
+    return `${value.slice(0, this.maxToolOutputChars)}\n\n[tool output truncated]`;
   }
 
   async connectUserServer(

@@ -23,16 +23,17 @@ const defaultPacks: TokenPack[] = [
 
 export const billingConfigSchema = z.object({
   billing: section({
-      currency: z.string().default("XTR"),
-      title: z.string().default("Skye Plus"),
-      description: z
-        .string()
-        .default("Monthly subscription — unlocks Skye and adds 2,000,000 tokens per month."),
-      subscription_stars: z.number().int().positive().default(1899),
-      subscription_period_seconds: z.number().int().positive().default(2_592_000),
-      base_quota_tokens: z.number().int().positive().default(2_000_000),
-      token_packs: z.array(tokenPackSchema).default(defaultPacks),
-    }),
+    enabled: z.boolean().default(true),
+    currency: z.string().default("XTR"),
+    title: z.string().default("Skye Plus"),
+    description: z
+      .string()
+      .default("Monthly subscription — unlocks Skye and adds 2,000,000 tokens per month."),
+    subscription_stars: z.number().int().positive().default(1899),
+    subscription_period_seconds: z.number().int().positive().default(2_592_000),
+    base_quota_tokens: z.number().int().positive().default(2_000_000),
+    token_packs: z.array(tokenPackSchema).default(defaultPacks),
+  }),
 });
 
 export type BillingConfig = z.infer<typeof billingConfigSchema>;
@@ -40,6 +41,7 @@ export type BillingConfig = z.infer<typeof billingConfigSchema>;
 declare module "../../core/config.js" {
   interface SkyeConfig {
     billing: {
+      enabled: boolean;
       currency: string;
       title: string;
       description: string;

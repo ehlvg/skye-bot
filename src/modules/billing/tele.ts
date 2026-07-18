@@ -41,6 +41,7 @@ function modelName(llm: LlmClient, id: string): ModelEntry {
 }
 
 export interface BillingDeps {
+  enabled: boolean;
   billing: BillingService;
   llm: LlmClient;
   cfg: InvoiceConfig;
@@ -233,6 +234,11 @@ function buildHandlers(deps: BillingDeps): TelegramHandler[] {
       const data = ctx.callbackQuery?.data ?? "";
       if (!data.startsWith("bill:")) return next();
 
+      if (!deps.enabled) {
+        await ctx.answerCallbackQuery("Subscriptions are disabled on this bot.");
+        return;
+      }
+
       const userId = ctx.from?.id;
       if (!userId) {
         await ctx.answerCallbackQuery();
@@ -371,6 +377,12 @@ function buildHandlers(deps: BillingDeps): TelegramHandler[] {
       try {
         const query = ctx.preCheckoutQuery;
         if (!query) return;
+        if (!deps.enabled) {
+          await ctx.answerPreCheckoutQuery(false, {
+            error_message: "Subscriptions are disabled on this bot.",
+          });
+          return;
+        }
         const invoiceId = decodeInvoicePayload(query.invoice_payload);
         const valid = invoiceId
           ? deps.billing.validateInvoice(

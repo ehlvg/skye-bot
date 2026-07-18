@@ -14,8 +14,20 @@ telegram_max_attachment_bytes: 26214400 # reject Telegram files larger than 25 M
 # her and weights their messages above other participants. Set both to empty
 # strings to omit the owner section entirely.
 owner:
-  name: "Melissa"
-  tag: "miss_sterling"
+  # Numeric Telegram user ID of the permanent primary administrator. Telegram
+  # does not expose a bot creator ID. Leave 0 on first run and Skye will print
+  # a one-time /claim_owner token to the operator log.
+  user_id: 0
+  name: ""
+  tag: ""
+
+# Access policy:
+#   private      — primary owner + administrators only (safe self-host default)
+#   allowlist    — administrators plus users/chats approved with /allow
+#   subscription — allowlist plus active Telegram Stars subscribers
+#   open         — every Telegram user; use only with deliberate spend controls
+access:
+  mode: "private"
 
 # Bot administrators — Telegram user ids allowed to run /allow, /disallow,
 # /ban, /unban, /allowed and to use Skye with unlimited, free access.
@@ -96,6 +108,8 @@ models:
 # monthly token quota is topped up each renewal; users can buy extra token
 # packs (only while subscribed) which expire when the subscription lapses.
 billing:
+  # Required for access.mode=subscription. Keep false for a personal bot.
+  enabled: false
   currency: "XTR"
   title: "Skye Plus"
   description: "Monthly subscription — unlocks Skye and adds 2,000,000 tokens per month."
@@ -235,6 +249,10 @@ reminders:
 # Defaults to ./mcp.json in the project root
 mcp:
   config_path: ""
+  # User-configured MCP endpoints are HTTPS-only. Private/reserved network
+  # targets remain blocked unless the operator explicitly opts in here.
+  allow_private_user_servers: false
+  max_tool_output_chars: 64000
 
 # Settings Panel (Telegram Mini App)
 panel:
@@ -242,6 +260,10 @@ panel:
   webapp_url: "http://localhost:3001"
   # Port for the panel web server
   webapp_port: 3001
+  auth_max_age_seconds: 3600
+  rate_limit_window_ms: 60000
+  rate_limit_max: 120
+  json_body_limit_kb: 3072
 
 # Database path. Supports ":memory:" for ephemeral storage.
 db_path: "data/skye.db"
@@ -300,6 +322,9 @@ monitoring:
 legal:
   terms_url: "https://shiftlinehq.craft.me/skye-terms"
   privacy_url: "https://shiftlinehq.craft.me/skye-privacy"
+  source_url: "https://github.com/ehlvg/skye-bot"
+  security_url: "https://github.com/ehlvg/skye-bot/security/policy"
   support_username: "@overwaven"
   developer_name: "Sergey Gamuylo"
+  developer_alias: "Erich Helvig"
   developer_email: "serg@skye-bot.com"
