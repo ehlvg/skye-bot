@@ -60,6 +60,18 @@ when the key is absent. **Bounds** = numeric min/max or string length.
 | `channel.chat_id` | channel | string |  |  |  |  |
 | `channel.enabled` | channel | boolean |  | `false` |  |  |
 
+## connectors
+
+| YAML path | Module | Type | Required | Default | Enum | Bounds |
+|---|---|---|---|---|---|---|
+| `connectors.composio.allowed_toolkits` | connectors.composio | array |  | `["gmail","googlecalendar","googledrive","github","notion","slack"]` |  | min length 1, max length 100 |
+| `connectors.composio.api_key` | connectors.composio | string |  |  |  |  |
+| `connectors.composio.disable_destructive_tools` | connectors.composio | boolean |  | `true` |  |  |
+| `connectors.custom.allow_private_networks` | connectors.custom | boolean |  | `false` |  |  |
+| `connectors.custom.enabled` | connectors.custom | boolean |  | `true` |  |  |
+| `connectors.custom.max_per_user` | connectors.custom | number |  | `8` |  | ≥ 0, ≤ 50 |
+| `connectors.max_tool_output_chars` | connectors | number |  | `64000` |  | ≥ 1000, ≤ 1000000 |
+
 ## core
 
 | YAML path | Module | Type | Required | Default | Enum | Bounds |
@@ -102,14 +114,6 @@ when the key is absent. **Bounds** = numeric min/max or string length.
 | `perplexity_api_key` | llm | string |  |  |  |  |
 | `perplexity_base_url` | llm | string |  | `https://api.perplexity.ai/v1` |  |  |
 | `use_chat_completions` | llm | boolean |  | `false` |  |  |
-
-## mcp
-
-| YAML path | Module | Type | Required | Default | Enum | Bounds |
-|---|---|---|---|---|---|---|
-| `mcp.allow_private_user_servers` | mcp | boolean |  | `false` |  |  |
-| `mcp.config_path` | mcp | string |  |  |  |  |
-| `mcp.max_tool_output_chars` | mcp | number |  | `64000` |  | ≥ 1000, ≤ 1000000 |
 
 ## monitoring
 

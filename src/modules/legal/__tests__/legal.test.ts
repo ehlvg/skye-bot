@@ -13,13 +13,16 @@ function seed(userId: number): void {
     "custom prompt"
   );
   db.prepare(
-    "INSERT INTO user_mcp_servers (user_id, name, config, created_at) VALUES (?, ?, ?, ?)"
+    "INSERT INTO user_custom_connectors (user_id, name, config, created_at) VALUES (?, ?, ?, ?)"
   ).run(userId, "srv", "{}", now);
-  db.prepare("INSERT INTO user_mcp_inputs (server_id, input_id, value) VALUES (?, ?, ?)").run(
+  db.prepare("INSERT INTO user_connector_inputs (server_id, input_id, value) VALUES (?, ?, ?)").run(
     1,
     "tok",
     "abc"
   );
+  db.prepare(
+    "INSERT INTO user_connector_sessions (user_id, provider, session_id, created_at, updated_at) VALUES (?, 'composio', 'session_1', ?, ?)"
+  ).run(userId, now, now);
 
   db.prepare(
     `INSERT INTO billing_accounts
@@ -63,7 +66,8 @@ function counts(userId: number): Record<string, number> {
   const db = getDb();
   const byUser = [
     "user_configs",
-    "user_mcp_servers",
+    "user_custom_connectors",
+    "user_connector_sessions",
     "billing_accounts",
     "billing_events",
     "reminders",
@@ -89,21 +93,22 @@ function counts(userId: number): Record<string, number> {
     };
     out[t] = row.c;
   }
-  const mcpInputs = db
+  const connectorInputs = db
     .prepare(
-      `SELECT COUNT(*) AS c FROM user_mcp_inputs
-       WHERE server_id IN (SELECT id FROM user_mcp_servers WHERE user_id = ?)`
+      `SELECT COUNT(*) AS c FROM user_connector_inputs
+       WHERE server_id IN (SELECT id FROM user_custom_connectors WHERE user_id = ?)`
     )
     .get(userId) as { c: number };
-  out.user_mcp_inputs = mcpInputs.c;
+  out.user_connector_inputs = connectorInputs.c;
   return out;
 }
 
 beforeEach(() => {
   const db = getDb();
   db.exec(`
-    DELETE FROM user_mcp_inputs;
-    DELETE FROM user_mcp_servers;
+    DELETE FROM user_connector_inputs;
+    DELETE FROM user_custom_connectors;
+    DELETE FROM user_connector_sessions;
     DELETE FROM user_configs;
     DELETE FROM billing_events;
     DELETE FROM billing_accounts;
@@ -124,8 +129,9 @@ describe("deleteUserData", () => {
     const summary = deleteUserData(USER);
 
     expect(summary.userConfigs).toBe(1);
-    expect(summary.userMcpServers).toBe(1);
-    expect(summary.userMcpInputs).toBe(1);
+    expect(summary.customConnectors).toBe(1);
+    expect(summary.customConnectorInputs).toBe(1);
+    expect(summary.connectorSessions).toBe(1);
     expect(summary.billingAccounts).toBe(1);
     expect(summary.billingEvents).toBe(1);
     expect(summary.memories).toBe(1);

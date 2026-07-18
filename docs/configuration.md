@@ -133,13 +133,20 @@ Failed jobs use bounded exponential backoff and stop after their configured
 attempt limit. Their error and attempt count remain in `background_jobs` for
 diagnostics; `BackgroundJobsService.retry()` can explicitly requeue one.
 
-### MCP
+### Connectors
 
-| Key               | Purpose                                             |
-| ----------------- | --------------------------------------------------- |
-| `mcp.config_path` | Path to the MCP config file. Default: `./mcp.json`. |
+| Key                                             | Purpose                                                              |
+| ----------------------------------------------- | -------------------------------------------------------------------- |
+| `connectors.composio.api_key`                   | Composio project key. Leave blank to hide managed one-click apps.    |
+| `connectors.composio.allowed_toolkits`          | Composio toolkit slugs shown to users and allowed in their sessions. |
+| `connectors.composio.disable_destructive_tools` | Exclude tools tagged as destructive. Default: `true`.                |
+| `connectors.custom.enabled`                     | Allow users to add custom HTTPS MCP endpoints. Default: `true`.      |
+| `connectors.custom.max_per_user`                | Maximum custom connectors per Telegram user. Default: `8`.           |
+| `connectors.custom.allow_private_networks`      | Permit private/reserved targets. Keep `false` on public deployments. |
+| `connectors.max_tool_output_chars`              | Maximum connector output returned to the model. Default: `64000`.    |
 
-See [MCP Tools](mcp-tools.md) for configuration details.
+There is no stdio or global process connector configuration. See [Connectors](connectors.md) for
+the Composio setup, tenant model, and custom endpoint security rules.
 
 ### Settings panel
 
@@ -174,7 +181,7 @@ Surfaced via the `/terms`, `/privacy`, `/paysupport`, `/developer_info`, and `/d
 | `sandbox.command_timeout_ms`              | Per-command timeout. Default: `60000`.                                                                   |
 | `sandbox.max_output_chars`                | Maximum command output returned. Default: `64000`.                                                       |
 | `sandbox.max_file_bytes`                  | Maximum file size accepted by sandbox read/write. Default: `1000000`.                                    |
-| `sandbox.daytona_api_key`                 | Daytona API key.                                                                               |
+| `sandbox.daytona_api_key`                 | Daytona API key.                                                                                         |
 | `sandbox.daytona_api_url` / `target`      | Optional Daytona API endpoint and target region.                                                         |
 
 Skye does not send Daytona network restriction parameters. The sandbox uses the organization's default

@@ -10,12 +10,12 @@ import {
 } from "../helpers.js";
 
 const calls: ToolCallRecord[] = [
-  { name: "save_memory", args: { content: "likes coffee" }, isMcp: false },
-  { name: "search", args: { query: "telegram rich messages" }, isMcp: true },
+  { name: "save_memory", args: { content: "likes coffee" }, isConnector: false },
+  { name: "search", args: { query: "telegram rich messages" }, isConnector: true },
 ];
 
 describe("formatToolCalls", () => {
-  test("formats built-in and MCP calls", () => {
+  test("formats built-in and connector calls", () => {
     expect(formatToolCalls(calls)).toContain("save_memory");
     expect(formatToolCalls(calls)).toContain("search");
   });
@@ -77,11 +77,11 @@ describe("draft statuses", () => {
     expect(draftStatusForMessageType("document").kind).toBe("documents");
     expect(draftStatusForMessageType("photo").kind).toBe("images");
     expect(
-      draftStatusForToolCalls([{ name: "sandbox_run_command", args: {}, isMcp: false }]).kind
+      draftStatusForToolCalls([{ name: "sandbox_run_command", args: {}, isConnector: false }]).kind
     ).toBe("code");
-    expect(draftStatusForToolCalls([{ name: "web_search", args: {}, isMcp: false }]).kind).toBe(
-      "web"
-    );
+    expect(
+      draftStatusForToolCalls([{ name: "web_search", args: {}, isConnector: false }]).kind
+    ).toBe("web");
   });
 
   test("renders exactly one thinking block", () => {

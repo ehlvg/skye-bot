@@ -3,18 +3,18 @@ import { getDb } from "../../../core/db.js";
 import { userConfigService } from "../service.js";
 
 beforeEach(() => {
-  getDb().exec("DELETE FROM user_mcp_inputs; DELETE FROM user_mcp_servers;");
+  getDb().exec("DELETE FROM user_connector_inputs; DELETE FROM user_custom_connectors;");
 });
 
-describe("MCP ownership", () => {
+describe("custom connector ownership", () => {
   test("cannot delete another user's inputs", () => {
-    const id = userConfigService.addMcpServer(1, "victim", {
+    const id = userConfigService.addCustomConnector(1, "victim", {
       type: "http",
       url: "https://mcp.example.com",
     });
-    userConfigService.setMcpInput(id, "TOKEN", "secret");
-    expect(userConfigService.deleteMcpServer(id, 2)).toBe(false);
-    expect(userConfigService.getMcpServer(id, 1)).not.toBeNull();
-    expect(userConfigService.getMcpInputs(id)).toEqual({ TOKEN: "secret" });
+    userConfigService.setConnectorInput(id, "TOKEN", "secret");
+    expect(userConfigService.deleteCustomConnector(id, 2)).toBe(false);
+    expect(userConfigService.getCustomConnector(id, 1)).not.toBeNull();
+    expect(userConfigService.getConnectorInputs(id)).toEqual({ TOKEN: "secret" });
   });
 });

@@ -10,6 +10,12 @@ overrides:
 importers:
   .:
     dependencies:
+      "@composio/core":
+        specifier: 0.14.0
+        version: 0.14.0(@aws-sdk/credential-provider-node@3.972.66)(@smithy/signature-v4@5.6.4)(ws@8.21.0)(zod@4.4.3)
+      "@composio/openai":
+        specifier: 0.10.1
+        version: 0.10.1(@composio/core@0.14.0(@aws-sdk/credential-provider-node@3.972.66)(@smithy/signature-v4@5.6.4)(ws@8.21.0)(zod@4.4.3))(openai@6.48.0(@aws-sdk/credential-provider-node@3.972.66)(@smithy/signature-v4@5.6.4)(ws@8.21.0)(zod@4.4.3))
       "@daytona/sdk":
         specifier: ^0.196.0
         version: 0.196.0(ws@8.21.0)
@@ -35,14 +41,17 @@ importers:
         specifier: ^5.1.0
         version: 5.1.0
       openai:
-        specifier: ^6.17.0
-        version: 6.39.1(ws@8.21.0)(zod@4.4.3)
+        specifier: ^6.48.0
+        version: 6.48.0(@aws-sdk/credential-provider-node@3.972.66)(@smithy/signature-v4@5.6.4)(ws@8.21.0)(zod@4.4.3)
       pino:
         specifier: ^10.3.1
         version: 10.3.1
       pino-pretty:
         specifier: ^10.3.1
         version: 10.3.1
+      undici:
+        specifier: ^6.27.0
+        version: 6.27.0
       zod:
         specifier: ^4.3.6
         version: 4.4.3
@@ -396,6 +405,37 @@ packages:
         integrity: sha512-4zBIxpPzowiZpusoFkyGVwakdRJUyuH5PxQ/PrqghfdFWWasvnCdPfQXHrenDai+gyLARulZjZowCOj6fjT4pA==,
       }
     engines: { node: ">=6.9.0" }
+
+  "@composio/client@0.1.0-alpha.75":
+    resolution:
+      {
+        integrity: sha512-bS2yYAkgieeVGxqmkBUmtRKa6bojLhLnA/OJM8BdYvlsR0HST57aCCg9NCqYIvYQd3L08ZKzOWeGqIqzHu/2tQ==,
+      }
+
+  "@composio/core@0.14.0":
+    resolution:
+      {
+        integrity: sha512-6gf1cmmUoD++la7u9sfqK6Xs0KLLBFfZ77kcjvuNH+QUM9r3HbsPrb9hVWtoihmNMQ4h6G4o7JHTrMi7GLr37w==,
+      }
+    peerDependencies:
+      zod: ">=3.25.76 <5"
+
+  "@composio/json-schema-to-zod@0.2.1":
+    resolution:
+      {
+        integrity: sha512-ezIaQoXdqWJXFaI8+gTShpj8YZcRdSnLkA1hgzx1+kn2Bi1SXOtXjghoQDy2ZBYIOCefRXGmyaPl52+idjS9wA==,
+      }
+    peerDependencies:
+      zod: ">=3.25.76 <5"
+
+  "@composio/openai@0.10.1":
+    resolution:
+      {
+        integrity: sha512-ioCRe7ddQWTip1vP4jCVqM1Jwu2KnzwK20ssZ1qrpVb+aFjIczJErs/fJp1t1fPnd4YcV1EyRpNjVfp7dTWHxg==,
+      }
+    peerDependencies:
+      "@composio/core": ">=0.10.0 <1.0.0"
+      openai: ^6.45.0
 
   "@daytona/api-client@0.196.0":
     resolution:
@@ -3717,16 +3757,24 @@ packages:
         integrity: sha512-lNaJgI+2Q5URQBkccEKHTQOPaXdUxnZZElQTZY0MFUAuaEqe1E+Nyvgdz/aIyNi6Z9MzO5dv1H8n58/GELp3+w==,
       }
 
-  openai@6.39.1:
+  openai@6.48.0:
     resolution:
       {
-        integrity: sha512-z3dO9fEWOXBzlXynVb/xZ/tujzUjFWQWn3C0n0mw6Vo0zJTbEkaN4b2cLWjhJ6haJQx8LlREoafHRl+Gu/Hl+A==,
+        integrity: sha512-KhVp+FyV50QrXNextvL9hIU5l6ox5HYuKQjGVk7lIqprgJol90+dQXWONV6S1lRWsKA1bXjrow8RsUT14M1hNA==,
       }
-    hasBin: true
     peerDependencies:
+      "@aws-sdk/credential-provider-node": ">=3.972.0 <4"
+      "@smithy/hash-node": ">=4.3.0 <5"
+      "@smithy/signature-v4": ">=5.4.0 <6"
       ws: ^8.18.0
       zod: ^3.25 || ^4.0
     peerDependenciesMeta:
+      "@aws-sdk/credential-provider-node":
+        optional: true
+      "@smithy/hash-node":
+        optional: true
+      "@smithy/signature-v4":
+        optional: true
       ws:
         optional: true
       zod:
@@ -3957,6 +4005,12 @@ packages:
       }
     engines: { node: ">=6" }
 
+  pusher-js@8.5.0:
+    resolution:
+      {
+        integrity: sha512-V7uzGi9bqOOOyM/6IkJdpFyjGZj7llz1v0oWnYkZKcYLvbz6VcHVLmzKqkvegjuMumpfIEKGLmWHwFb39XFCpw==,
+      }
+
   qs@6.15.2:
     resolution:
       {
@@ -4144,6 +4198,14 @@ packages:
     resolution:
       {
         integrity: sha512-rkVq3IXh+4FDGch+KwzX3aV9W3kO54GyEgpvBzSyctDA6Xtd7RJQV1xmXbeQp5v7+VzLOfVqiutSE6GICgPFvg==,
+      }
+    engines: { node: ">=10" }
+    hasBin: true
+
+  semver@7.8.5:
+    resolution:
+      {
+        integrity: sha512-Y7/KDsb8LjooZpwaqGyulO6DQlksgCncchHGk+sZIY4SBvUocMBEFH5Ur1fI4dV+Jvl0w6cjvucaIi40puRioA==,
       }
     engines: { node: ">=10" }
     hasBin: true
@@ -4456,6 +4518,12 @@ packages:
         integrity: sha512-McnNiV1l8RYeY8tBgEpuodCC1mLUdbSN+CYBL7kJsJNInOP8UjDDEwdk6Mw60vdLLrr5NHKZhMAOSrR2NZuQ+w==,
       }
 
+  tweetnacl@1.0.3:
+    resolution:
+      {
+        integrity: sha512-6rt+RN7aOi1nGMyC4Xa5DdYiukl2UWCbcJft7YhxReBGQD7OAM8Pbxw6YMo4r2diNEA8FEmu32YOn9rhaiE5yw==,
+      }
+
   type-check@0.4.0:
     resolution:
       {
@@ -4499,6 +4567,13 @@ packages:
       {
         integrity: sha512-Zz+aZWSj8LE6zoxD+xrjh4VfkIG8Ya6LvYkZqtUQGJPZjYl53ypCaUwWqo7eI0x66KBGeRo+mlBEkMSeSZ38Nw==,
       }
+
+  undici@6.27.0:
+    resolution:
+      {
+        integrity: sha512-YmfV3YnEDzXRC5lZ2jWtWWHKGUm1zIt8AhesR1tens+HTNv+YZlN/dp6G727LOvMJ8xjP9Be7Y2Sdr96LDm+pg==,
+      }
+    engines: { node: ">=18.17" }
 
   unpipe@1.0.0:
     resolution:
@@ -5030,6 +5105,34 @@ snapshots:
     dependencies:
       "@babel/helper-string-parser": 7.29.7
       "@babel/helper-validator-identifier": 7.29.7
+
+  "@composio/client@0.1.0-alpha.75": {}
+
+  "@composio/core@0.14.0(@aws-sdk/credential-provider-node@3.972.66)(@smithy/signature-v4@5.6.4)(ws@8.21.0)(zod@4.4.3)":
+    dependencies:
+      "@composio/client": 0.1.0-alpha.75
+      "@composio/json-schema-to-zod": 0.2.1(zod@4.4.3)
+      "@types/json-schema": 7.0.15
+      openai: 6.48.0(@aws-sdk/credential-provider-node@3.972.66)(@smithy/signature-v4@5.6.4)(ws@8.21.0)(zod@4.4.3)
+      picocolors: 1.1.1
+      pusher-js: 8.5.0
+      semver: 7.8.5
+      zod: 4.4.3
+      zod-to-json-schema: 3.25.2(zod@4.4.3)
+    transitivePeerDependencies:
+      - "@aws-sdk/credential-provider-node"
+      - "@smithy/hash-node"
+      - "@smithy/signature-v4"
+      - ws
+
+  "@composio/json-schema-to-zod@0.2.1(zod@4.4.3)":
+    dependencies:
+      zod: 4.4.3
+
+  "@composio/openai@0.10.1(@composio/core@0.14.0(@aws-sdk/credential-provider-node@3.972.66)(@smithy/signature-v4@5.6.4)(ws@8.21.0)(zod@4.4.3))(openai@6.48.0(@aws-sdk/credential-provider-node@3.972.66)(@smithy/signature-v4@5.6.4)(ws@8.21.0)(zod@4.4.3))":
+    dependencies:
+      "@composio/core": 0.14.0(@aws-sdk/credential-provider-node@3.972.66)(@smithy/signature-v4@5.6.4)(ws@8.21.0)(zod@4.4.3)
+      openai: 6.48.0(@aws-sdk/credential-provider-node@3.972.66)(@smithy/signature-v4@5.6.4)(ws@8.21.0)(zod@4.4.3)
 
   "@daytona/api-client@0.196.0":
     dependencies:
@@ -6951,8 +7054,10 @@ snapshots:
     dependencies:
       wrappy: 1.0.2
 
-  openai@6.39.1(ws@8.21.0)(zod@4.4.3):
+  openai@6.48.0(@aws-sdk/credential-provider-node@3.972.66)(@smithy/signature-v4@5.6.4)(ws@8.21.0)(zod@4.4.3):
     optionalDependencies:
+      "@aws-sdk/credential-provider-node": 3.972.66
+      "@smithy/signature-v4": 5.6.4
       ws: 8.21.0
       zod: 4.4.3
 
@@ -7102,6 +7207,10 @@ snapshots:
 
   punycode@2.3.1: {}
 
+  pusher-js@8.5.0:
+    dependencies:
+      tweetnacl: 1.0.3
+
   qs@6.15.2:
     dependencies:
       side-channel: 1.1.0
@@ -7226,6 +7335,8 @@ snapshots:
   semver@6.3.1: {}
 
   semver@7.8.1: {}
+
+  semver@7.8.5: {}
 
   send@1.2.1:
     dependencies:
@@ -7417,6 +7528,8 @@ snapshots:
     dependencies:
       safe-buffer: 5.2.1
 
+  tweetnacl@1.0.3: {}
+
   type-check@0.4.0:
     dependencies:
       prelude-ls: 1.2.1
@@ -7443,6 +7556,8 @@ snapshots:
   typescript@5.9.3: {}
 
   undici-types@7.16.0: {}
+
+  undici@6.27.0: {}
 
   unpipe@1.0.0: {}
 

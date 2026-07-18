@@ -12,7 +12,7 @@ Skye supports several interaction modes and commands. This page covers what you 
 | `/voice`          | Toggles voice reply mode on/off. When on, Skye speaks its responses as voice notes.                       | Yes     |
 | `/forget`         | Clears all long-term memories for the current chat. Conversation history is not affected.                 | No      |
 | `/memories`       | Lists active memories with their category and expiration information.                                     | No      |
-| `/status`         | Shows current model, vision, voice, memory, context, and MCP capability status.                           | Yes     |
+| `/status`         | Shows current model, vision, voice, memory, context, and connector capability status.                     | Yes     |
 | `/catchup`        | Summarizes the current group context from the rolling chat summary and recent log.                        | Yes     |
 | `/terms`          | Opens the Terms of Service.                                                                               | Yes     |
 | `/privacy`        | Opens the Privacy Policy.                                                                                 | Yes     |
@@ -108,13 +108,16 @@ In groups, Skye:
 - **Summarizes** older messages every 10 new messages, using an LLM call to maintain a compact rolling summary with participants, topics, decisions, open questions, shared files/media, and timeline.
 - Supports `/catchup` for a quick summary of what happened recently.
 
-## MCP tools
+## Connectors
 
-Skye supports the [Model Context Protocol](mcp-tools.md) to connect external tools. Tools from MCP servers are exposed to the LLM as function calls. Skye can execute them during a conversation — for example, querying a database, checking a service status, or interacting with an API.
+The Settings panel includes a [Connectors](connectors.md) gallery for one-click app authorization
+through Composio. Each connection belongs to one Telegram user. Advanced users may also add an
+explicitly trusted custom HTTPS MCP endpoint; local processes, stdio, redirects, and private-network
+targets are rejected by default.
 
 ## Streaming drafts
 
-While Skye is thinking, you'll see a live-updating draft message. Tool calls are shown with indicators (🧠 for built-in tools, 🔌 for MCP tools) so you can follow what Skye is doing before the final response arrives.
+While Skye is thinking, you'll see a live-updating draft message. Tool calls are shown with indicators (🧠 for built-in tools, 🔌 for connector tools) so you can follow what Skye is doing before the final response arrives.
 
 ## Rate limiting
 

@@ -245,13 +245,29 @@ reminders:
   check_interval_sec: 30
   grace_sec: 300
 
-# MCP (Model Context Protocol) — path to mcp.json config file
-# Defaults to ./mcp.json in the project root
-mcp:
-  config_path: ""
-  # User-configured MCP endpoints are HTTPS-only. Private/reserved network
-  # targets remain blocked unless the operator explicitly opts in here.
-  allow_private_user_servers: false
+# Connectors — managed OAuth apps through Composio plus optional custom HTTPS
+# MCP endpoints. Create a project key at https://app.composio.dev/settings.
+connectors:
+  composio:
+    # Leave blank to hide the managed app gallery.
+    api_key: ""
+    # Toolkit slugs enabled for every user. Configure each app's auth method in
+    # Composio; some Google apps require your own OAuth credentials.
+    allowed_toolkits:
+      - gmail
+      - googlecalendar
+      - googledrive
+      - github
+      - notion
+      - slack
+    # Keeps tools tagged as destructive out of the model's tool catalog.
+    disable_destructive_tools: true
+  custom:
+    enabled: true
+    max_per_user: 8
+    # Keep false on public/multi-user deployments to block SSRF into the host
+    # and private infrastructure.
+    allow_private_networks: false
   max_tool_output_chars: 64000
 
 # Settings Panel (Telegram Mini App)

@@ -6,7 +6,7 @@ import { ToolsScreen } from "./screens/ToolsScreen";
 import { MemoryScreen } from "./screens/MemoryScreen";
 import { PlusScreen } from "./screens/PlusScreen";
 import { StatsScreen } from "./screens/StatsScreen";
-import { McpEditor } from "./screens/McpEditor";
+import { CustomConnectorSheet } from "./screens/CustomConnectorSheet";
 import { Spinner } from "./components/ui";
 import { AboutSheet } from "./screens/AboutSheet";
 import { AdminSheet } from "./screens/AdminSheet";
@@ -41,7 +41,7 @@ function Shell() {
     tab,
     setTab,
     editor,
-    closeMcpEditor,
+    closeCustomConnector,
     aboutOpen,
     closeAbout,
     adminOpen,
@@ -59,12 +59,12 @@ function Shell() {
     });
   }, []);
 
-  // Telegram back button closes the MCP editor when it's open.
+  // Telegram back button closes the active sheet.
   useEffect(() => {
     if (adminOpen) return useBackButton(closeAdmin);
     if (aboutOpen) return useBackButton(closeAbout);
-    if (editor.open) return useBackButton(closeMcpEditor);
-  }, [adminOpen, closeAdmin, aboutOpen, closeAbout, editor.open, closeMcpEditor]);
+    if (editor.open) return useBackButton(closeCustomConnector);
+  }, [adminOpen, closeAdmin, aboutOpen, closeAbout, editor.open, closeCustomConnector]);
 
   if (loading) {
     return (
@@ -90,8 +90,12 @@ function Shell() {
       <main className="scroll" key={tab}>
         <Screen />
       </main>
-      <TabBar active={tab as TabKey} onChange={setTab} billingEnabled={billing.plans?.enabled ?? false} />
-      <McpEditor />
+      <TabBar
+        active={tab as TabKey}
+        onChange={setTab}
+        billingEnabled={billing.plans?.enabled ?? false}
+      />
+      <CustomConnectorSheet />
       <AboutSheet />
       <AdminSheet />
     </div>

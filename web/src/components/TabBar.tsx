@@ -5,7 +5,7 @@ export type TabKey = "profile" | "tools" | "memory" | "plus" | "stats";
 
 const TABS: { key: TabKey; label: string }[] = [
   { key: "profile", label: "Profile" },
-  { key: "tools", label: "Tools" },
+  { key: "tools", label: "Connectors" },
   { key: "memory", label: "Memory" },
   { key: "plus", label: "Plus" },
   { key: "stats", label: "Usage" },

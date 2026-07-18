@@ -7,7 +7,7 @@ import {
 } from "grammy";
 import type { InputChecklist, Message, ReplyParameters } from "grammy/types";
 import type { LlmClient, ResponseInputItem } from "../llm/client.js";
-import type { McpService, McpDetailedTool } from "../mcp/service.js";
+import type { ConnectorService, ConnectorDetailedTool } from "../connectors/service.js";
 import type { MemoryService } from "../memory/service.js";
 import type { ChatLogService } from "../chatLog/service.js";
 import type { ChatConfigService } from "../chatConfig/service.js";
@@ -55,7 +55,7 @@ import { QueueTimeoutError, type TelegramReliabilityService } from "./reliabilit
 
 export interface TelegramDeps {
   llm: LlmClient;
-  mcp: McpService;
+  connectors: ConnectorService;
   memory: MemoryService;
   chatLog: ChatLogService;
   chatConfig: ChatConfigService;
@@ -716,9 +716,9 @@ export function installTelegram(bot: Bot, deps: TelegramDeps, contributions: Con
           "",
           "Ask me to remind you of something, or to follow up later. Use /reminders to see active ones.",
           "",
-          "## MCP tools",
+          "## Connectors",
           "",
-          "Connect external tools via the Model Context Protocol — databases, APIs, anything. I’ll use them when relevant. Use /tools to see everything I have available.",
+          "Connect Gmail, GitHub, Notion, Slack, and other services from Settings. Advanced users can also add a trusted custom HTTPS connector. Use /tools to see what is available.",
           "",
           "## Group chats",
           "",
@@ -848,9 +848,12 @@ export function installTelegram(bot: Bot, deps: TelegramDeps, contributions: Con
         if (ctx.chat?.type === "private") {
           kb.webApp("Open Settings", deps.webappUrl);
         }
-        await ctx.reply("Open the settings panel to manage your subscription, model, and tools:", {
-          reply_markup: kb,
-        });
+        await ctx.reply(
+          "Open the settings panel to manage your subscription, model, and connectors:",
+          {
+            reply_markup: kb,
+          }
+        );
       },
     },
     {
@@ -861,7 +864,7 @@ export function installTelegram(bot: Bot, deps: TelegramDeps, contributions: Con
         const chatCfg = deps.chatConfig.get(tenant.chatId);
         const billAcc = tenant.userId ? deps.billing.getAccount(tenant.userId) : undefined;
         const modelEntry = deps.llm.resolveModel(billAcc?.modelId ?? deps.defaultModelId);
-        const mcpTools = tenant.userId ? deps.mcp.toolsFor(tenant.userId) : [];
+        const connectorTools = tenant.userId ? await deps.connectors.toolsFor(tenant.userId) : [];
         const vision = deps.llm.supportsImages();
         const memoryCount = deps.memory.list(tenant.chatId).length;
         const ctxCount = deps.chatLog.countConversation(tenant.chatId, threadKey(tenant));
@@ -895,7 +898,7 @@ export function installTelegram(bot: Bot, deps: TelegramDeps, contributions: Con
           `| **TTS** | ${deps.speech.isTtsAvailable() ? yes : no} |`,
           `| **Memories** | ${memoryCount} |`,
           `| **Context items** | ${ctxCount} |`,
-          `| **MCP tools** | ${mcpTools.length} |`,
+          `| **Connector tools** | ${connectorTools.length} |`,
           `| **Sandbox** | ${deps.sandbox?.isEnabled() ? yes : no} |`,
           `| **Proactive** | ${proactiveOn ? yes : no} |`,
           `| **Reminders** | ${reminderCount} |`,
@@ -907,8 +910,8 @@ export function installTelegram(bot: Bot, deps: TelegramDeps, contributions: Con
       name: "tools",
       description: "Show all available tools (full debug detail)",
       handler: async (ctx, tenant) => {
-        const mcpTools = deps.mcp.detailedToolsFor(tenant.userId);
-        const total = builtinTools.length + mcpTools.length;
+        const connectorTools = await deps.connectors.detailedToolsFor(tenant.userId);
+        const total = builtinTools.length + connectorTools.length;
 
         if (total === 0) {
           await sendRichReply(ctx, "_No tools available._");
@@ -917,7 +920,7 @@ export function installTelegram(bot: Bot, deps: TelegramDeps, contributions: Con
 
         const sep = "\n\n---\n\n";
         const blocks: string[] = [
-          `## Tools (${total} total)\n\n**${builtinTools.length} built-in · ${mcpTools.length} MCP**`,
+          `## Tools (${total} total)\n\n**${builtinTools.length} built-in · ${connectorTools.length} connector**`,
         ];
 
         if (builtinTools.length > 0) {
@@ -929,29 +932,32 @@ export function installTelegram(bot: Bot, deps: TelegramDeps, contributions: Con
           });
         }
 
-        if (mcpTools.length > 0) {
-          const servers: {
+        if (connectorTools.length > 0) {
+          const connectorGroups: {
             name: string;
             scope: string;
-            tools: McpDetailedTool[];
+            tools: ConnectorDetailedTool[];
           }[] = [];
-          for (const tool of mcpTools) {
-            let group = servers.find((s) => s.name === tool.serverName && s.scope === tool.scope);
+          for (const tool of connectorTools) {
+            let group = connectorGroups.find(
+              (item) => item.name === tool.connectorName && item.scope === tool.scope
+            );
             if (!group) {
-              group = { name: tool.serverName, scope: tool.scope, tools: [] };
-              servers.push(group);
+              group = { name: tool.connectorName, scope: tool.scope, tools: [] };
+              connectorGroups.push(group);
             }
             group.tools.push(tool);
           }
-          for (const server of servers) {
-            server.tools.forEach((tool, j) => {
-              const heading = j === 0 ? `### MCP · ${server.name} (${server.scope})\n\n` : "";
+          for (const connector of connectorGroups) {
+            connector.tools.forEach((tool, j) => {
+              const heading =
+                j === 0 ? `### Connector · ${connector.name} (${connector.scope})\n\n` : "";
               blocks.push(
                 `${heading}${formatToolBlock(
                   tool.name,
                   tool.description,
                   tool.parameters,
-                  `mcp:${server.name}`
+                  `connector:${connector.name}`
                 )}`
               );
             });
@@ -1334,7 +1340,7 @@ export function installTelegram(bot: Bot, deps: TelegramDeps, contributions: Con
         runChatLoop(
           {
             llm: deps.llm,
-            mcp: deps.mcp,
+            connectors: deps.connectors,
             memory: deps.memory,
             chatLog: deps.chatLog,
             userConfig: deps.userConfig,
@@ -1342,7 +1348,7 @@ export function installTelegram(bot: Bot, deps: TelegramDeps, contributions: Con
             reminders: deps.reminders,
             channel: deps.channel,
             builtinTools: tools,
-            allowMcpTools: tools.length > 0,
+            allowConnectorTools: tools.length > 0,
             hasReferenceImages,
             modelId: attemptModelId,
             beforeRound: checkRoundQuota,
@@ -2294,12 +2300,12 @@ export function installTelegram(bot: Bot, deps: TelegramDeps, contributions: Con
               runChatLoop(
                 {
                   llm: deps.llm,
-                  mcp: deps.mcp,
+                  connectors: deps.connectors,
                   memory: deps.memory,
                   chatLog: deps.chatLog,
                   userConfig: deps.userConfig,
                   builtinTools: [],
-                  allowMcpTools: false,
+                  allowConnectorTools: false,
                   modelId: reminderModelId,
                   beforeRound: checkReminderQuota,
                   onUsage: reminderMeter,

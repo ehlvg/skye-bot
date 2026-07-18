@@ -13,7 +13,6 @@ RUN pnpm install --frozen-lockfile
 
 COPY tsconfig.json tsconfig.build.json ./
 COPY src ./src
-COPY mcp.json ./
 COPY config.example.yaml ./
 COPY web ./web
 

@@ -1,12 +1,12 @@
 import { describe, expect, test } from "vitest";
-import { isPrivateNetworkAddress, parseUserMcpConfig } from "../service.js";
+import { isPrivateNetworkAddress, parseCustomConnectorConfig } from "../service.js";
 
-describe("user MCP configuration", () => {
-  test("accepts strict HTTPS remote servers", () => {
+describe("custom connector configuration", () => {
+  test("accepts a strict HTTPS remote connector", () => {
     expect(
-      parseUserMcpConfig({
+      parseCustomConnectorConfig({
         type: "http",
-        url: "https://mcp.example.com",
+        url: "https://connector.example.com/mcp",
         headers: { Authorization: "${input:TOKEN}" },
       })
     ).toMatchObject({ type: "http" });
@@ -16,9 +16,15 @@ describe("user MCP configuration", () => {
     { type: "stdio", command: "/bin/sh" },
     { command: "/bin/sh" },
     { type: "http", url: "http://localhost:3000" },
-    { type: "http", url: "https://mcp.example.com", command: "/bin/sh" },
+    { type: "http", url: "https://connector.example.com/mcp", command: "/bin/sh" },
+    {
+      type: "http",
+      url: "https://connector.example.com/mcp",
+      headers: { Authorization: "Bearer plaintext-secret" },
+    },
+    { type: "http", url: "https://user:secret@connector.example.com/mcp" },
   ])("rejects unsafe config %#", (config) => {
-    expect(() => parseUserMcpConfig(config)).toThrow();
+    expect(() => parseCustomConnectorConfig(config)).toThrow();
   });
 
   test.each([

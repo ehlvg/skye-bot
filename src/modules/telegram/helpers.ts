@@ -209,13 +209,13 @@ export function escapeHtml(text: string): string {
 export interface ToolCallRecord {
   name: string;
   args: Record<string, unknown>;
-  isMcp: boolean;
+  isConnector: boolean;
 }
 
 export function formatToolCalls(calls: ToolCallRecord[]): string {
   return calls
     .map((c) => {
-      const icon = c.isMcp ? "🔌" : "🧠";
+      const icon = c.isConnector ? "🔌" : "🧠";
       const argsStr = Object.entries(c.args)
         .map(([k, v]) => {
           let val = JSON.stringify(v);

@@ -64,7 +64,7 @@ export const telegramModule: SkyeModule = {
       bot,
       {
         llm,
-        mcp: ctx.services.get("mcp"),
+        connectors: ctx.services.get("connectors"),
         memory: ctx.services.get("memory"),
         chatLog: ctx.services.get("chatLog"),
         chatConfig: ctx.services.get("chatConfig"),

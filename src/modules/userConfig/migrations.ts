@@ -62,4 +62,101 @@ export const migrations: Migration[] = [
       }
     },
   },
+  {
+    id: "004-connector-sessions",
+    up: (db) => {
+      db.exec(`
+        CREATE TABLE IF NOT EXISTS user_connector_sessions (
+          user_id    INTEGER NOT NULL,
+          provider   TEXT NOT NULL,
+          session_id TEXT NOT NULL,
+          created_at TEXT NOT NULL,
+          updated_at TEXT NOT NULL,
+          PRIMARY KEY (user_id, provider)
+        );
+      `);
+    },
+  },
+  {
+    id: "005-remove-unsafe-connector-transports",
+    up: (db) => {
+      const rows = db.prepare("SELECT id, config FROM user_mcp_servers").all() as Array<{
+        id: number;
+        config: string;
+      }>;
+      const remove = db.prepare("DELETE FROM user_mcp_servers WHERE id = ?");
+      const removeInputs = db.prepare("DELETE FROM user_mcp_inputs WHERE server_id = ?");
+      for (const row of rows) {
+        let safe = false;
+        try {
+          const config = JSON.parse(row.config) as Record<string, unknown>;
+          const url = typeof config.url === "string" ? new URL(config.url) : null;
+          const headers = config.headers;
+          const safeHeaders =
+            headers === undefined ||
+            (headers !== null &&
+              typeof headers === "object" &&
+              !Array.isArray(headers) &&
+              Object.entries(headers).every(
+                ([key, value]) =>
+                  /^[!#$%&'*+.^_`|~0-9A-Za-z-]{1,128}$/.test(key) &&
+                  typeof value === "string" &&
+                  /^\$\{input:[A-Za-z_][A-Za-z0-9_]{0,63}\}$/.test(value)
+              ));
+          safe =
+            config.type === "http" &&
+            url?.protocol === "https:" &&
+            !url.username &&
+            !url.password &&
+            safeHeaders &&
+            !Object.keys(config).some((key) => !["type", "url", "headers"].includes(key));
+        } catch {
+          safe = false;
+        }
+        if (!safe) {
+          removeInputs.run(row.id);
+          remove.run(row.id);
+        }
+      }
+    },
+  },
+  {
+    id: "006-connector-session-provider-key",
+    up: (db) => {
+      const columns = db.pragma("table_info(user_connector_sessions)") as Array<{
+        name: string;
+        pk: number;
+      }>;
+      const userKey = columns.find((column) => column.name === "user_id")?.pk;
+      const providerKey = columns.find((column) => column.name === "provider")?.pk;
+      if (userKey === 1 && providerKey === 2) return;
+      db.exec(`
+        CREATE TABLE user_connector_sessions_v2 (
+          user_id    INTEGER NOT NULL,
+          provider   TEXT NOT NULL,
+          session_id TEXT NOT NULL,
+          created_at TEXT NOT NULL,
+          updated_at TEXT NOT NULL,
+          PRIMARY KEY (user_id, provider)
+        );
+        INSERT OR REPLACE INTO user_connector_sessions_v2
+          (user_id, provider, session_id, created_at, updated_at)
+        SELECT user_id, provider, session_id, created_at, updated_at
+        FROM user_connector_sessions;
+        DROP TABLE user_connector_sessions;
+        ALTER TABLE user_connector_sessions_v2 RENAME TO user_connector_sessions;
+      `);
+    },
+  },
+  {
+    id: "007-rename-custom-connector-tables",
+    up: (db) => {
+      db.exec(`
+        ALTER TABLE user_mcp_servers RENAME TO user_custom_connectors;
+        ALTER TABLE user_mcp_inputs RENAME TO user_connector_inputs;
+        DROP INDEX IF EXISTS idx_umcp_user_id;
+        CREATE INDEX idx_ucc_user_id ON user_custom_connectors(user_id);
+      `);
+    },
+  },
 ];

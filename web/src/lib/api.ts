@@ -47,12 +47,31 @@ export interface ChatConfig {
   voiceMode: boolean;
 }
 
-export interface McpServer {
+export interface CustomConnector {
   id: number;
   name: string;
   config: Record<string, unknown>;
   connected: boolean;
   toolCount: number;
+}
+
+export interface ManagedConnector {
+  slug: string;
+  name: string;
+  logo?: string;
+  connected: boolean;
+  status?: string;
+}
+
+export interface ConnectorsResponse {
+  managed: {
+    enabled: boolean;
+    connectors: ManagedConnector[];
+  };
+  custom: CustomConnector[];
+  customEnabled: boolean;
+  maxCustom: number;
+  managedUnavailable?: boolean;
 }
 
 export interface Memory {
@@ -207,23 +226,37 @@ export const api = {
   updateChatConfig: (cfg: ChatConfig) =>
     request<ChatConfig>("/chat-config", { method: "PUT", body: JSON.stringify(cfg) }),
 
-  getMcpServers: () => request<McpServer[]>("/mcp"),
-  addMcpServer: (name: string, config: Record<string, unknown>, inputs: Record<string, string>) =>
-    request<McpServer>("/mcp", {
-      method: "POST",
-      body: JSON.stringify({ name, config, inputs }),
+  getConnectors: () => request<ConnectorsResponse>("/connectors"),
+  authorizeManagedConnector: (toolkit: string) =>
+    request<{ redirectUrl: string }>(
+      `/connectors/managed/${encodeURIComponent(toolkit)}/authorize`,
+      { method: "POST" }
+    ),
+  disconnectManagedConnector: (toolkit: string) =>
+    request<{ ok: true }>(`/connectors/managed/${encodeURIComponent(toolkit)}`, {
+      method: "DELETE",
     }),
-  updateMcpServer: (
+  addCustomConnector: (
+    name: string,
+    config: Record<string, unknown>,
+    inputs: Record<string, string>
+  ) =>
+    request<CustomConnector>("/connectors/custom", {
+      method: "POST",
+      body: JSON.stringify({ name, config, inputs, acknowledgeRisk: true }),
+    }),
+  updateCustomConnector: (
     id: number,
     name: string,
     config: Record<string, unknown>,
-    inputs: Record<string, string>,
+    inputs: Record<string, string>
   ) =>
-    request<McpServer>(`/mcp/${id}`, {
+    request<CustomConnector>(`/connectors/custom/${id}`, {
       method: "PUT",
-      body: JSON.stringify({ name, config, inputs }),
+      body: JSON.stringify({ name, config, inputs, acknowledgeRisk: true }),
     }),
-  deleteMcpServer: (id: number) => request<{ ok: true }>(`/mcp/${id}`, { method: "DELETE" }),
+  deleteCustomConnector: (id: number) =>
+    request<{ ok: true }>(`/connectors/custom/${id}`, { method: "DELETE" }),
 
   getMemories: () => request<Memory[]>("/memories"),
   exportMemories: (chatId?: number) =>

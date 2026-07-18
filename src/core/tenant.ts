@@ -17,7 +17,7 @@ export interface TenantContext {
   chatType: "private" | "group" | "supergroup" | "channel";
   /** Forum thread (topic) id, if any. */
   threadId?: number;
-  /** Individual user. Used for per-user data (api key, mcp servers). */
+  /** Individual user. Used for per-user data and connectors. */
   userId?: number;
   username?: string;
   firstName?: string;

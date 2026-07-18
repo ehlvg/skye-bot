@@ -4,7 +4,7 @@ This document captures how we work in this repo. It is intended for contributors
 
 ## Project Overview
 
-Skye is a calm, minimal AI assistant for Telegram, built with [grammy](https://grammy.dev/) + an OpenAI-compatible LLM API (OpenRouter by default). It supports streaming chat, long-term memory, image generation/editing/vision, voice (Yandex SpeechKit STT/TTS), document reading, MCP tools, a per-chat Vercel Sandbox, and a Telegram Mini App settings panel. State lives in a single SQLite database (`better-sqlite3`).
+Skye is a calm, minimal AI assistant for Telegram, built with [grammy](https://grammy.dev/) + an OpenAI-compatible LLM API (OpenRouter by default). It supports streaming chat, long-term memory, image generation/editing/vision, voice (Yandex SpeechKit STT/TTS), document reading, managed Composio apps and custom HTTPS connectors, a per-chat Vercel Sandbox, and a Telegram Mini App settings panel. State lives in a single SQLite database (`better-sqlite3`).
 
 ## Architecture: The Module System
 
@@ -73,5 +73,5 @@ Credential precedence for LLM calls: per-user key → per-chat key → global `o
 - Personality/system prompt: `src/modules/llm/prompt.ts`.
 - Telegram access control: `src/modules/telegram/access.ts`.
 - Panel auth: `src/modules/panel/auth.ts`.
-- MCP server config: `mcp.json` + `src/modules/mcp/service.ts`.
+- Connector config and service: `src/modules/connectors/config.ts` + `src/modules/connectors/service.ts`.
 - User-facing docs: `docs/`.
