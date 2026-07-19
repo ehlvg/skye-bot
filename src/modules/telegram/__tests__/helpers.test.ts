@@ -4,6 +4,7 @@ import {
   draftStatusForMessageType,
   draftStatusForToolCalls,
   formatToolCalls,
+  parseTextEncodedToolCall,
   renderDraftStatus,
   stabilizeStreamingMarkdown,
   type ToolCallRecord,
@@ -29,6 +30,35 @@ describe("buildFinalReply", () => {
   test("keeps final replies clean when tools were used", () => {
     const reply = buildFinalReply(calls, "Done.");
     expect(reply).toBe("Done.");
+  });
+});
+
+describe("parseTextEncodedToolCall", () => {
+  const tools = new Set(["search_memory"]);
+
+  test("recovers a legacy action envelope with JSON arguments", () => {
+    expect(
+      parseTextEncodedToolCall(
+        '{"action":"search_memory","action_input":"{\\"query\\":\\"salad price\\"}"}',
+        tools
+      )
+    ).toEqual({ name: "search_memory", arguments: '{"query":"salad price"}' });
+  });
+
+  test("recovers the single-quoted arguments produced by some models", () => {
+    expect(
+      parseTextEncodedToolCall(
+        '{"action":"search_memory","action_input":"{\'query\': \'salad price\'}"}',
+        tools
+      )
+    ).toEqual({ name: "search_memory", arguments: '{"query":"salad price"}' });
+  });
+
+  test("does not treat unknown actions or ordinary JSON as tool calls", () => {
+    expect(
+      parseTextEncodedToolCall('{"action":"delete_everything","action_input":"{}"}', tools)
+    ).toBeUndefined();
+    expect(parseTextEncodedToolCall('{"answer":"search_memory"}', tools)).toBeUndefined();
   });
 });
 

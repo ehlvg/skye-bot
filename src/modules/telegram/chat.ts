@@ -10,7 +10,7 @@ import type { ToolDefinition } from "../../core/module.js";
 import type { TenantContext } from "../../core/tenant.js";
 import { threadKey } from "../../core/tenant.js";
 import { buildSystemPrompt } from "../llm/prompt.js";
-import { safeJsonParse, type ToolCallRecord } from "./helpers.js";
+import { parseTextEncodedToolCall, safeJsonParse, type ToolCallRecord } from "./helpers.js";
 import { log } from "../../utils/log.js";
 import { unwrapTextEnvelope } from "../../utils/markdown.js";
 
@@ -156,6 +156,24 @@ export async function runChatLoop(
       name: string;
       arguments: string;
     }>;
+
+    if (fnCalls.length === 0) {
+      const textCall = parseTextEncodedToolCall(
+        extractFinalText(response),
+        new Set(effectiveTools.map((tool) => tool.name))
+      );
+      if (textCall) {
+        fnCalls.push({
+          type: "function_call",
+          call_id: crypto.randomUUID(),
+          ...textCall,
+        });
+        log.warn(
+          { chatId: tenant.chatId, tool: textCall.name, model: modelEntry.model },
+          "Recovered text-encoded tool call"
+        );
+      }
+    }
 
     if (fnCalls.length === 0) {
       const finalText = unwrapTextEnvelope(extractFinalText(response));

@@ -95,6 +95,60 @@ export function safeJsonParse(raw: string): Record<string, unknown> {
   }
 }
 
+export interface TextEncodedToolCall {
+  name: string;
+  arguments: string;
+}
+
+export function parseTextEncodedToolCall(
+  raw: string,
+  allowedToolNames: ReadonlySet<string>
+): TextEncodedToolCall | undefined {
+  let trimmed = raw.trim();
+  const fenced = trimmed.match(/^```(?:json)?\s*([\s\S]*?)\s*```$/i);
+  if (fenced?.[1]) trimmed = fenced[1].trim();
+
+  let envelope: unknown;
+  try {
+    envelope = JSON.parse(trimmed);
+  } catch {
+    return undefined;
+  }
+  if (!isRecord(envelope)) return undefined;
+
+  const name = envelope.action;
+  if (typeof name !== "string" || !allowedToolNames.has(name)) return undefined;
+
+  const args = parseTextEncodedToolArgs(envelope.action_input);
+  if (!args) return undefined;
+  return { name, arguments: JSON.stringify(args) };
+}
+
+function parseTextEncodedToolArgs(value: unknown): Record<string, unknown> | undefined {
+  if (isRecord(value)) return value;
+  if (typeof value !== "string") return undefined;
+
+  try {
+    const parsed = JSON.parse(value) as unknown;
+    if (isRecord(parsed)) return parsed;
+  } catch {
+    const normalized = value.replace(/'([^'\\]*(?:\\.[^'\\]*)*)'/g, (_match, content: string) =>
+      JSON.stringify(content.replace(/\\'/g, "'"))
+    );
+    try {
+      const parsed = JSON.parse(normalized) as unknown;
+      if (isRecord(parsed)) return parsed;
+    } catch {
+      return undefined;
+    }
+  }
+  return undefined;
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
 export function senderTag(ctx: GrammyContext): string {
   const from = ctx.from;
   if (!from) return "";
