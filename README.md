@@ -29,7 +29,7 @@ See `AGENTS.md` for the repository conventions.
 
 ## Documentation
 
-Skye's full documentation lives on the [website](https://shiftlinehq.craft.me/skye).
+Skye's full documentation lives on the [website](https://shiftline.craft.me/skye).
 
 ## License
 
