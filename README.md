@@ -29,13 +29,7 @@ See `AGENTS.md` for the repository conventions.
 
 ## Documentation
 
-Skye's full documentation lives in the [`docs/`](docs/) directory:
-
-- **[Overview](docs/README.md)** — What Skye is, who it's for, and what it can do.
-- **[Personality](docs/personality.md)** — How Skye thinks and communicates.
-- **[Features](docs/features.md)** — All commands, interactions, and capabilities.
-- **[Configuration](docs/configuration.md)** — Environment variables, API setup, and per-user settings.
-- **[Connectors](docs/connectors.md)** — Managed OAuth apps and custom HTTPS endpoints.
+Skye's full documentation lives on the [website](https://shiftlinehq.craft.me/skye).
 
 ## License
 
