@@ -37,6 +37,8 @@ import {
   ShieldCheckIcon,
   IdentificationIcon,
   UserPlusIcon,
+  ArrowLeftIcon,
+  PencilSquareIcon,
 } from "@heroicons/react/24/solid";
 
 import {
@@ -89,6 +91,8 @@ export const Icon = {
   Shield: ShieldCheckIcon,
   Identification: IdentificationIcon,
   UserPlus: UserPlusIcon,
+  ArrowLeft: ArrowLeftIcon,
+  Edit: PencilSquareIcon,
 };
 
 export const TabIcon = {

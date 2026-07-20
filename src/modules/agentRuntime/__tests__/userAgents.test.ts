@@ -1,7 +1,6 @@
 import { beforeEach, describe, expect, it } from "vitest";
 import { getDb } from "../../../core/db.js";
-import { agentIdFromName } from "../index.js";
-import { UserAgentService } from "../userAgents.js";
+import { agentIdFromName, UserAgentService } from "../userAgents.js";
 
 const OWNER_A = 91_001;
 const OWNER_B = 91_002;
@@ -25,6 +24,7 @@ describe("UserAgentService", () => {
       name: "Writer A",
       description: "Writes for A",
       instructions: "Use A's preferred style.",
+      modelId: "openai/gpt-5",
     });
     service.create(OWNER_B, {
       id: "writer",
@@ -34,7 +34,12 @@ describe("UserAgentService", () => {
     });
 
     expect(service.profiles(OWNER_A)).toEqual([
-      expect.objectContaining({ id: "my_writer", name: "Writer A", enabled: true }),
+      expect.objectContaining({
+        id: "my_writer",
+        name: "Writer A",
+        enabled: true,
+        model_id: "openai/gpt-5",
+      }),
     ]);
     expect(service.profiles(OWNER_B)).toEqual([
       expect.objectContaining({ id: "my_writer", name: "Writer B", enabled: true }),
@@ -113,14 +118,18 @@ describe("UserAgentService", () => {
     const service = new UserAgentService(getDb(), 10);
     service.startDraft(OWNER_A, CHAT, 10);
     service.saveDraft(OWNER_A, CHAT, 10, {
-      step: "description",
+      step: "confirm",
       name: "Research Assistant",
+      description: "Finds reliable sources",
+      instructions: "Research carefully.",
+      modelId: "anthropic/claude-sonnet-4",
     });
 
     const reloaded = new UserAgentService(getDb(), 10);
     expect(reloaded.getDraft(OWNER_A, CHAT, 10)).toMatchObject({
-      step: "description",
+      step: "confirm",
       name: "Research Assistant",
+      modelId: "anthropic/claude-sonnet-4",
     });
     expect(reloaded.getDraft(OWNER_B, CHAT, 10)).toBeUndefined();
     expect(reloaded.getDraft(OWNER_A, CHAT, 20)).toBeUndefined();

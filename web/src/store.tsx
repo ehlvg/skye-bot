@@ -53,8 +53,11 @@ interface AppState {
 
   aboutOpen: boolean;
   adminOpen: boolean;
+  agentsOpen: boolean;
   openAbout: () => void;
   closeAbout: () => void;
+  openAgents: () => void;
+  closeAgents: () => void;
   openAdmin: () => Promise<void>;
   closeAdmin: () => void;
   addAdmin: (userId: number) => Promise<void>;
@@ -134,6 +137,9 @@ export function AppProvider({ children }: { children: ReactNode }) {
   const [adminBusy, setAdminBusy] = useState(false);
   const [aboutOpen, setAboutOpen] = useState(false);
   const [adminOpen, setAdminOpen] = useState(false);
+  const [agentsOpen, setAgentsOpen] = useState(
+    () => new URLSearchParams(window.location.search).has("agents")
+  );
 
   const [dirty, setDirty] = useState(false);
   const [saving, setSaving] = useState(false);
@@ -205,6 +211,13 @@ export function AppProvider({ children }: { children: ReactNode }) {
   }, []);
 
   const closeAbout = useCallback(() => setAboutOpen(false), []);
+
+  const openAgents = useCallback(() => {
+    haptic.light();
+    setAgentsOpen(true);
+  }, []);
+
+  const closeAgents = useCallback(() => setAgentsOpen(false), []);
 
   const openAdmin = useCallback(async () => {
     haptic.light();
@@ -488,8 +501,11 @@ export function AppProvider({ children }: { children: ReactNode }) {
       adminBusy,
       aboutOpen,
       adminOpen,
+      agentsOpen,
       openAbout,
       closeAbout,
+      openAgents,
+      closeAgents,
       openAdmin,
       closeAdmin,
       addAdmin,
@@ -530,8 +546,11 @@ export function AppProvider({ children }: { children: ReactNode }) {
       adminBusy,
       aboutOpen,
       adminOpen,
+      agentsOpen,
       openAbout,
       closeAbout,
+      openAgents,
+      closeAgents,
       openAdmin,
       closeAdmin,
       addAdmin,

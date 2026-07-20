@@ -5,6 +5,57 @@ import type { AgentProfile } from "./config.js";
 export const PERSONAL_AGENT_PREFIX = "my_";
 const DRAFT_TTL_MS = 60 * 60 * 1000;
 
+const transliteration: Record<string, string> = {
+  а: "a",
+  б: "b",
+  в: "v",
+  г: "g",
+  д: "d",
+  е: "e",
+  ё: "e",
+  ж: "zh",
+  з: "z",
+  и: "i",
+  й: "y",
+  к: "k",
+  л: "l",
+  м: "m",
+  н: "n",
+  о: "o",
+  п: "p",
+  р: "r",
+  с: "s",
+  т: "t",
+  у: "u",
+  ф: "f",
+  х: "h",
+  ц: "ts",
+  ч: "ch",
+  ш: "sh",
+  щ: "sch",
+  ъ: "",
+  ы: "y",
+  ь: "",
+  э: "e",
+  ю: "yu",
+  я: "ya",
+};
+
+export function agentIdFromName(name: string): string {
+  const transliterated = [...name.toLowerCase()]
+    .map((character) => transliteration[character] ?? character)
+    .join("");
+  const slug = transliterated
+    .normalize("NFKD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .replace(/[^a-z0-9]+/g, "_")
+    .replace(/^_+|_+$/g, "")
+    .slice(0, 32)
+    .replace(/_+$/g, "");
+  const candidate = /^[a-z]/.test(slug) ? slug : `agent_${slug || crypto.randomUUID().slice(0, 8)}`;
+  return candidate.slice(0, 32).replace(/_+$/g, "");
+}
+
 const userAgentIdSchema = z
   .string()
   .min(1)
@@ -17,6 +68,7 @@ const userAgentInputSchema = z.object({
   name: z.string().min(1).max(80),
   description: z.string().min(1).max(500),
   instructions: z.string().min(1).max(16_000),
+  modelId: z.string().min(1).max(80).optional(),
 });
 
 export type UserAgentInput = z.infer<typeof userAgentInputSchema>;
@@ -27,13 +79,14 @@ export interface UserAgentRecord extends UserAgentInput {
   updatedAt: string;
 }
 
-export type UserAgentDraftStep = "name" | "description" | "instructions" | "confirm";
+export type UserAgentDraftStep = "name" | "description" | "instructions" | "model" | "confirm";
 
 export interface UserAgentDraft {
   step: UserAgentDraftStep;
   name?: string;
   description?: string;
   instructions?: string;
+  modelId?: string;
   updatedAt: string;
 }
 
@@ -43,6 +96,7 @@ interface UserAgentRow {
   name: string;
   description: string;
   instructions: string;
+  modelId: string | null;
   createdAt: string;
   updatedAt: string;
 }
@@ -52,6 +106,7 @@ interface UserAgentDraftRow {
   name: string | null;
   description: string | null;
   instructions: string | null;
+  modelId: string | null;
   updatedAt: string;
 }
 
@@ -61,6 +116,19 @@ function storedThreadId(threadId?: number): number {
 
 function normalizeId(id: string): string {
   return id.startsWith(PERSONAL_AGENT_PREFIX) ? id.slice(PERSONAL_AGENT_PREFIX.length) : id;
+}
+
+function recordFromRow(row: UserAgentRow): UserAgentRecord {
+  return {
+    ownerUserId: row.ownerUserId,
+    id: row.id,
+    name: row.name,
+    description: row.description,
+    instructions: row.instructions,
+    ...(row.modelId ? { modelId: row.modelId } : {}),
+    createdAt: row.createdAt,
+    updatedAt: row.updatedAt,
+  };
 }
 
 export function personalProfileId(id: string): string {
@@ -81,12 +149,14 @@ export class UserAgentService {
     return this.db
       .prepare<[number], UserAgentRow>(
         `SELECT owner_user_id AS ownerUserId, id, name, description, instructions,
+                model_id AS modelId,
                 created_at AS createdAt, updated_at AS updatedAt
          FROM user_agents
          WHERE owner_user_id = ?
          ORDER BY created_at, id`
       )
-      .all(ownerUserId);
+      .all(ownerUserId)
+      .map(recordFromRow);
   }
 
   profiles(ownerUserId: number): AgentProfile[] {
@@ -95,19 +165,32 @@ export class UserAgentService {
       name: agent.name,
       description: agent.description,
       instructions: agent.instructions,
+      ...(agent.modelId ? { model_id: agent.modelId } : {}),
       enabled: true,
     }));
   }
 
   get(ownerUserId: number, id: string): UserAgentRecord | undefined {
-    return this.db
+    const row = this.db
       .prepare<[number, string], UserAgentRow>(
         `SELECT owner_user_id AS ownerUserId, id, name, description, instructions,
+                model_id AS modelId,
                 created_at AS createdAt, updated_at AS updatedAt
          FROM user_agents
          WHERE owner_user_id = ? AND id = ?`
       )
       .get(ownerUserId, normalizeId(id));
+    return row ? recordFromRow(row) : undefined;
+  }
+
+  nextId(ownerUserId: number, name: string): string {
+    const baseId = agentIdFromName(name);
+    let id = baseId;
+    for (let suffix = 2; this.get(ownerUserId, id); suffix++) {
+      const suffixText = `_${suffix}`;
+      id = `${baseId.slice(0, 32 - suffixText.length)}${suffixText}`;
+    }
+    return id;
   }
 
   create(ownerUserId: number, input: UserAgentInput): UserAgentRecord {
@@ -122,10 +205,19 @@ export class UserAgentService {
     this.db
       .prepare(
         `INSERT INTO user_agents
-          (owner_user_id, id, name, description, instructions, created_at, updated_at)
-         VALUES (?, ?, ?, ?, ?, ?, ?)`
+          (owner_user_id, id, name, description, instructions, model_id, created_at, updated_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?)`
       )
-      .run(ownerUserId, parsed.id, parsed.name, parsed.description, parsed.instructions, now, now);
+      .run(
+        ownerUserId,
+        parsed.id,
+        parsed.name,
+        parsed.description,
+        parsed.instructions,
+        parsed.modelId ?? null,
+        now,
+        now
+      );
     return this.get(ownerUserId, parsed.id)!;
   }
 
@@ -135,13 +227,14 @@ export class UserAgentService {
     const result = this.db
       .prepare(
         `UPDATE user_agents
-         SET name = ?, description = ?, instructions = ?, updated_at = ?
+         SET name = ?, description = ?, instructions = ?, model_id = ?, updated_at = ?
          WHERE owner_user_id = ? AND id = ?`
       )
       .run(
         parsed.name,
         parsed.description,
         parsed.instructions,
+        parsed.modelId ?? null,
         new Date().toISOString(),
         ownerUserId,
         storedId
@@ -222,7 +315,8 @@ export class UserAgentService {
   getDraft(ownerUserId: number, chatId: number, threadId?: number): UserAgentDraft | undefined {
     const row = this.db
       .prepare<[number, number, number], UserAgentDraftRow>(
-        `SELECT step, name, description, instructions, updated_at AS updatedAt
+        `SELECT step, name, description, instructions, model_id AS modelId,
+                updated_at AS updatedAt
          FROM user_agent_drafts
          WHERE owner_user_id = ? AND chat_id = ? AND thread_id = ?`
       )
@@ -237,6 +331,7 @@ export class UserAgentService {
       ...(row.name ? { name: row.name } : {}),
       ...(row.description ? { description: row.description } : {}),
       ...(row.instructions ? { instructions: row.instructions } : {}),
+      ...(row.modelId ? { modelId: row.modelId } : {}),
       updatedAt: row.updatedAt,
     };
   }
@@ -251,13 +346,14 @@ export class UserAgentService {
     this.db
       .prepare(
         `INSERT INTO user_agent_drafts
-          (owner_user_id, chat_id, thread_id, step, name, description, instructions, updated_at)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+          (owner_user_id, chat_id, thread_id, step, name, description, instructions, model_id, updated_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
          ON CONFLICT(owner_user_id, chat_id, thread_id) DO UPDATE SET
            step = excluded.step,
            name = excluded.name,
            description = excluded.description,
            instructions = excluded.instructions,
+           model_id = excluded.model_id,
            updated_at = excluded.updated_at`
       )
       .run(
@@ -268,6 +364,7 @@ export class UserAgentService {
         draft.name ?? null,
         draft.description ?? null,
         draft.instructions ?? null,
+        draft.modelId ?? null,
         updatedAt
       );
     return { ...draft, updatedAt };

@@ -10,6 +10,7 @@ import { CustomConnectorSheet } from "./screens/CustomConnectorSheet";
 import { Spinner } from "./components/ui";
 import { AboutSheet } from "./screens/AboutSheet";
 import { AdminSheet } from "./screens/AdminSheet";
+import { AgentsSheet } from "./screens/AgentsSheet";
 import {
   applyScheme,
   colorScheme,
@@ -46,6 +47,8 @@ function Shell() {
     closeAbout,
     adminOpen,
     closeAdmin,
+    agentsOpen,
+    closeAgents,
     billing,
   } = useApp();
 
@@ -61,10 +64,20 @@ function Shell() {
 
   // Telegram back button closes the active sheet.
   useEffect(() => {
+    if (agentsOpen) return useBackButton(closeAgents);
     if (adminOpen) return useBackButton(closeAdmin);
     if (aboutOpen) return useBackButton(closeAbout);
     if (editor.open) return useBackButton(closeCustomConnector);
-  }, [adminOpen, closeAdmin, aboutOpen, closeAbout, editor.open, closeCustomConnector]);
+  }, [
+    agentsOpen,
+    closeAgents,
+    adminOpen,
+    closeAdmin,
+    aboutOpen,
+    closeAbout,
+    editor.open,
+    closeCustomConnector,
+  ]);
 
   if (loading) {
     return (
@@ -98,6 +111,7 @@ function Shell() {
       <CustomConnectorSheet />
       <AboutSheet />
       <AdminSheet />
+      <AgentsSheet />
     </div>
   );
 }

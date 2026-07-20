@@ -28,6 +28,7 @@ export function ProfileScreen() {
     about,
     openAbout,
     openAdmin,
+    openAgents,
   } = useApp();
 
   const acc = billing.account;
@@ -83,6 +84,19 @@ export function ProfileScreen() {
             title={model?.name ?? "Default"}
             subtitle={`${model?.multiplier ?? 1}× token cost`}
             onClick={() => setTab("plus")}
+          />
+        </List>
+      </Section>
+
+      <Section>
+        <Caption>Agents</Caption>
+        <List>
+          <Row
+            icon={Icon.Identification}
+            color="c-teal"
+            title="Personal agents"
+            subtitle="Create specialists with their own instructions and models"
+            onClick={openAgents}
           />
         </List>
       </Section>

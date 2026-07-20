@@ -1,8 +1,10 @@
 import type { SkyeModule } from "../../core/module.js";
-import { InlineKeyboard } from "grammy";
+import type { TenantContext } from "../../core/tenant.js";
+import { InlineKeyboard, type Context } from "grammy";
 import { ZodError } from "zod";
 import { agentRuntimeConfigSchema } from "./config.js";
 import { migrations } from "./migrations.js";
+import { buildAgentRoutes } from "./routes.js";
 import { AgentRuntimeService } from "./service.js";
 import {
   isPersonalProfileId,
@@ -28,57 +30,6 @@ function parseAgentForm(raw: string): UserAgentInput | undefined {
   const instructions = instructionParts.join(" | ").trim();
   if (!id || !name || !description || !instructions) return undefined;
   return { id, name, description, instructions };
-}
-
-const transliteration: Record<string, string> = {
-  а: "a",
-  б: "b",
-  в: "v",
-  г: "g",
-  д: "d",
-  е: "e",
-  ё: "e",
-  ж: "zh",
-  з: "z",
-  и: "i",
-  й: "y",
-  к: "k",
-  л: "l",
-  м: "m",
-  н: "n",
-  о: "o",
-  п: "p",
-  р: "r",
-  с: "s",
-  т: "t",
-  у: "u",
-  ф: "f",
-  х: "h",
-  ц: "ts",
-  ч: "ch",
-  ш: "sh",
-  щ: "sch",
-  ъ: "",
-  ы: "y",
-  ь: "",
-  э: "e",
-  ю: "yu",
-  я: "ya",
-};
-
-export function agentIdFromName(name: string): string {
-  const transliterated = [...name.toLowerCase()]
-    .map((character) => transliteration[character] ?? character)
-    .join("");
-  const slug = transliterated
-    .normalize("NFKD")
-    .replace(/[\u0300-\u036f]/g, "")
-    .replace(/[^a-z0-9]+/g, "_")
-    .replace(/^_+|_+$/g, "")
-    .slice(0, 32)
-    .replace(/_+$/g, "");
-  const candidate = /^[a-z]/.test(slug) ? slug : `agent_${slug || crypto.randomUUID().slice(0, 8)}`;
-  return candidate.slice(0, 32).replace(/_+$/g, "");
 }
 
 function errorMessage(error: unknown): string {
@@ -107,9 +58,32 @@ export const agentRuntimeModule: SkyeModule = {
   migrations,
   init(ctx) {
     const userAgents = new UserAgentService(ctx.db, ctx.config.agent_runtime.max_user_agents);
+    const llm = ctx.services.get("llm");
+    const agentModels = llm.models.filter((model) => model.provider !== "perplexity");
+    const agentsPanelUrl = new URL(ctx.config.panel.webapp_url);
+    agentsPanelUrl.searchParams.set("agents", "open");
+    const agentStudioUrl = new URL(agentsPanelUrl);
+    agentStudioUrl.searchParams.set("agents", "create");
+    const startAgentWizard = async (telegram: Context, tenant: TenantContext) => {
+      userAgents.startDraft(tenant.userId!, tenant.chatId, tenant.threadId);
+      await telegram.reply(
+        [
+          "Let's create your personal agent.",
+          "",
+          "Step 1 of 4 — What should I call it?",
+          "For example: Research Assistant or Copywriter",
+          "",
+          "You can stop at any time with /cancel_agent.",
+        ].join("\n"),
+        {
+          reply_to_message_id: telegram.message?.message_id,
+          reply_markup: forceReply("Agent name"),
+        }
+      );
+    };
     const service = new AgentRuntimeService(
       {
-        llm: ctx.services.get("llm"),
+        llm,
         connectors: ctx.services.get("connectors"),
         memory: ctx.services.get("memory"),
         chatLog: ctx.services.get("chatLog"),
@@ -126,6 +100,7 @@ export const agentRuntimeModule: SkyeModule = {
     const chatConfig = ctx.services.get("chatConfig");
     return {
       service,
+      panelRoutes: buildAgentRoutes(ctx, userAgents),
       commands: [
         {
           name: "agents",
@@ -137,6 +112,16 @@ export const agentRuntimeModule: SkyeModule = {
               (profile) =>
                 `${profile.id === selected?.id ? "●" : "○"} ${profile.name} (${profile.id}) — ${profile.description}`
             );
+            const options =
+              telegram.chat?.type === "private"
+                ? {
+                    reply_to_message_id: telegram.message?.message_id,
+                    reply_markup: new InlineKeyboard().webApp(
+                      "Manage in Mini App",
+                      agentsPanelUrl.toString()
+                    ),
+                  }
+                : { reply_to_message_id: telegram.message?.message_id };
             await telegram.reply(
               [
                 `Active for ${scopeLabel(tenant.threadId)}: ${selected?.name ?? "default Skye"}`,
@@ -145,7 +130,7 @@ export const agentRuntimeModule: SkyeModule = {
                 "",
                 "Switch with /agent <id>, or use /agent default.",
               ].join("\n"),
-              { reply_to_message_id: telegram.message?.message_id }
+              options
             );
           },
         },
@@ -233,21 +218,17 @@ export const agentRuntimeModule: SkyeModule = {
               );
               return;
             }
-            userAgents.startDraft(tenant.userId, tenant.chatId, tenant.threadId);
-            await telegram.reply(
-              [
-                "Let's create your personal agent.",
-                "",
-                "Step 1 of 3 — What should I call it?",
-                "For example: Research Assistant or Copywriter",
-                "",
-                "You can stop at any time with /cancel_agent.",
-              ].join("\n"),
-              {
+            if (telegram.chat?.type === "private") {
+              await telegram.reply("Create and manage personal agents in the Mini App.", {
                 reply_to_message_id: telegram.message?.message_id,
-                reply_markup: forceReply("Agent name"),
-              }
-            );
+                reply_markup: new InlineKeyboard()
+                  .webApp("Open agent studio", agentStudioUrl.toString())
+                  .row()
+                  .text("Create here in chat", "agent:create:chat"),
+              });
+              return;
+            }
+            await startAgentWizard(telegram, tenant);
           },
         },
         {
@@ -275,10 +256,12 @@ export const agentRuntimeModule: SkyeModule = {
               return;
             }
             try {
+              const existing = userAgents.get(tenant.userId, form.id);
               const agent = userAgents.update(tenant.userId, form.id, {
                 name: form.name,
                 description: form.description,
                 instructions: form.instructions,
+                ...(existing?.modelId ? { modelId: existing.modelId } : {}),
               });
               await telegram.reply(
                 `Updated private agent ${agent.name} (${personalProfileId(agent.id)}).`,
@@ -339,7 +322,7 @@ export const agentRuntimeModule: SkyeModule = {
                 [
                   `Great — ${text}.`,
                   "",
-                  "Step 2 of 3 — What is this agent good at?",
+                  "Step 2 of 4 — What is this agent good at?",
                   "Write one short description. This helps Skye decide when to delegate work to it.",
                 ].join("\n"),
                 { reply_markup: forceReply("What does this agent specialize in?") }
@@ -361,7 +344,7 @@ export const agentRuntimeModule: SkyeModule = {
               });
               await telegram.reply(
                 [
-                  "Step 3 of 3 — How should it work?",
+                  "Step 3 of 4 — How should it work?",
                   "",
                   "Describe its role, tone, rules, and what a good answer should look like. You can write several paragraphs.",
                 ].join("\n"),
@@ -377,27 +360,25 @@ export const agentRuntimeModule: SkyeModule = {
                 });
                 return;
               }
-              const completed = userAgents.saveDraft(
-                tenant.userId,
-                tenant.chatId,
-                tenant.threadId,
-                { ...draft, step: "confirm", instructions: text }
-              );
-              const preview = text.length > 1_000 ? `${text.slice(0, 1_000)}…` : text;
+              userAgents.saveDraft(tenant.userId, tenant.chatId, tenant.threadId, {
+                ...draft,
+                step: "model",
+                instructions: text,
+              });
+              const keyboard = new InlineKeyboard()
+                .text("Use current chat model", "agent:model:default")
+                .row();
+              agentModels.forEach((model, index) => {
+                keyboard.text(`${model.name} · ${model.multiplier}×`, `agent:model:${index}`).row();
+              });
+              keyboard.text("Cancel", "agent:create:cancel");
               await telegram.reply(
                 [
-                  "Ready to create this private agent:",
+                  "Step 4 of 4 — Choose a model",
                   "",
-                  `Name: ${completed.name}`,
-                  `Specialty: ${completed.description}`,
-                  "Instructions:",
-                  preview,
+                  "Use the current chat model, or pin this agent to a specific model. Token usage is charged at that model's multiplier.",
                 ].join("\n"),
-                {
-                  reply_markup: new InlineKeyboard()
-                    .text("Create and select", "agent:create:confirm")
-                    .text("Cancel", "agent:create:cancel"),
-                }
+                { reply_markup: keyboard }
               );
               return;
             }
@@ -410,10 +391,23 @@ export const agentRuntimeModule: SkyeModule = {
           order: 10,
           handler: async (telegram, tenant, next) => {
             const action = telegram.callbackQuery?.data;
-            if (!action?.startsWith("agent:create:")) return next();
+            if (!action?.startsWith("agent:")) return next();
             if (!tenant.userId) return;
+            if (action === "agent:create:chat") {
+              const count = userAgents.list(tenant.userId).length;
+              if (count >= ctx.config.agent_runtime.max_user_agents) {
+                await telegram.answerCallbackQuery({
+                  text: "Agent limit reached.",
+                  show_alert: true,
+                });
+                return;
+              }
+              await telegram.answerCallbackQuery();
+              await startAgentWizard(telegram, tenant);
+              return;
+            }
             const draft = userAgents.getDraft(tenant.userId, tenant.chatId, tenant.threadId);
-            if (!draft || draft.step !== "confirm") {
+            if (!draft) {
               await telegram.answerCallbackQuery({ text: "This setup has expired." });
               return;
             }
@@ -423,19 +417,61 @@ export const agentRuntimeModule: SkyeModule = {
               await telegram.reply("Agent creation cancelled.");
               return;
             }
-            if (action !== "agent:create:confirm") return next();
-            try {
-              const baseId = agentIdFromName(draft.name!);
-              let id = baseId;
-              for (let suffix = 2; userAgents.get(tenant.userId, id); suffix++) {
-                const suffixText = `_${suffix}`;
-                id = `${baseId.slice(0, 32 - suffixText.length)}${suffixText}`;
+            if (action.startsWith("agent:model:")) {
+              if (draft.step !== "model") {
+                await telegram.answerCallbackQuery({ text: "This step has expired." });
+                return;
               }
+              const selected = action.slice("agent:model:".length);
+              const model = selected === "default" ? undefined : agentModels[Number(selected)];
+              if (selected !== "default" && !model) {
+                await telegram.answerCallbackQuery({ text: "Unknown model." });
+                return;
+              }
+              const completed = userAgents.saveDraft(
+                tenant.userId,
+                tenant.chatId,
+                tenant.threadId,
+                {
+                  ...draft,
+                  step: "confirm",
+                  ...(model ? { modelId: model.id } : {}),
+                }
+              );
+              const instructions = completed.instructions ?? "";
+              const preview =
+                instructions.length > 1_000 ? `${instructions.slice(0, 1_000)}…` : instructions;
+              await telegram.answerCallbackQuery({ text: "Model selected" });
+              await telegram.reply(
+                [
+                  "Ready to create this private agent:",
+                  "",
+                  `Name: ${completed.name}`,
+                  `Specialty: ${completed.description}`,
+                  `Model: ${model?.name ?? "Current chat model"}`,
+                  "Instructions:",
+                  preview,
+                ].join("\n"),
+                {
+                  reply_markup: new InlineKeyboard()
+                    .text("Create and select", "agent:create:confirm")
+                    .text("Cancel", "agent:create:cancel"),
+                }
+              );
+              return;
+            }
+            if (action !== "agent:create:confirm") return next();
+            if (draft.step !== "confirm") {
+              await telegram.answerCallbackQuery({ text: "Complete the previous step first." });
+              return;
+            }
+            try {
               const agent = userAgents.create(tenant.userId, {
-                id,
+                id: userAgents.nextId(tenant.userId, draft.name!),
                 name: draft.name!,
                 description: draft.description!,
                 instructions: draft.instructions!,
+                ...(draft.modelId ? { modelId: draft.modelId } : {}),
               });
               userAgents.setSelection(tenant.userId, tenant.chatId, tenant.threadId, agent.id);
               userAgents.cancelDraft(tenant.userId, tenant.chatId, tenant.threadId);

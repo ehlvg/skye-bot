@@ -146,6 +146,30 @@ export interface ModelsResponse {
   defaultModelId: string;
 }
 
+export interface PersonalAgent {
+  id: string;
+  name: string;
+  description: string;
+  instructions: string;
+  modelId: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface AgentsResponse {
+  agents: PersonalAgent[];
+  activeAgentId: string | null;
+  maxAgents: number;
+  models: ModelEntry[];
+}
+
+export interface PersonalAgentInput {
+  name: string;
+  description: string;
+  instructions: string;
+  modelId: string | null;
+}
+
 export interface TokenPack {
   id: string;
   name: string;
@@ -225,6 +249,22 @@ export const api = {
   getChatConfig: () => request<ChatConfig>("/chat-config"),
   updateChatConfig: (cfg: ChatConfig) =>
     request<ChatConfig>("/chat-config", { method: "PUT", body: JSON.stringify(cfg) }),
+
+  getAgents: () => request<AgentsResponse>("/agents"),
+  createAgent: (agent: PersonalAgentInput) =>
+    request<PersonalAgent>("/agents", { method: "POST", body: JSON.stringify(agent) }),
+  updateAgent: (id: string, agent: PersonalAgentInput) =>
+    request<PersonalAgent>(`/agents/${encodeURIComponent(id)}`, {
+      method: "PUT",
+      body: JSON.stringify(agent),
+    }),
+  deleteAgent: (id: string) =>
+    request<{ ok: true }>(`/agents/${encodeURIComponent(id)}`, { method: "DELETE" }),
+  selectAgent: (agentId: string | null) =>
+    request<{ ok: true }>("/agents/selection", {
+      method: "PUT",
+      body: JSON.stringify({ agentId }),
+    }),
 
   getConnectors: () => request<ConnectorsResponse>("/connectors"),
   authorizeManagedConnector: (toolkit: string) =>
