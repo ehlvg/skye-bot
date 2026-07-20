@@ -45,6 +45,7 @@ import {
   sendRichReply,
   sendRichReplyChunked,
   serializeError,
+  shouldRunProactiveForMessage,
   toDataUrl,
   toFileDataUrl,
   type ToolCallRecord,
@@ -436,27 +437,6 @@ export function installTelegram(bot: Bot, deps: TelegramDeps, contributions: Con
           log.info(
             { chatId, targetId, emoji: decision.emoji, reason: decision.reason },
             "Proactive emoji reaction"
-          );
-        } else if (decision.kind === "text" && decision.text) {
-          const sent = await bot.api.sendMessage(chatId, decision.text, {
-            reply_parameters: { message_id: targetId },
-            ...(tenant.threadId != null ? { message_thread_id: tenant.threadId } : {}),
-          });
-          storeConversation(
-            tenant,
-            "assistant",
-            { kind: "proactive_reply", text: decision.text, targetMessageId: targetId },
-            `[proactive reply to msg ${targetId}] ${decision.text}`
-          );
-          log.info(
-            {
-              chatId,
-              targetId,
-              text: decision.text,
-              reason: decision.reason,
-              messageId: sent.message_id,
-            },
-            "Proactive text reaction"
           );
         }
       } catch (e) {
@@ -1169,7 +1149,10 @@ export function installTelegram(bot: Bot, deps: TelegramDeps, contributions: Con
       }
       const entry = extractLogEntry(ctx);
       deps.chatLog.log(tenant.chatId, entry, ctx.chat.title, tenant.threadId);
-      maybeReactProactively(ctx, tenant);
+      const text = ctx.message.text ?? ctx.message.caption ?? "";
+      if (shouldRunProactiveForMessage(isDirectedAtBot(ctx), text)) {
+        maybeReactProactively(ctx, tenant);
+      }
     }
     return next();
   });

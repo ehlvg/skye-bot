@@ -91,15 +91,14 @@ export interface ProactiveDecision {
   react: boolean;
   /** Telegram message_id to react to. */
   targetMessageId?: number;
-  /** If "emoji", pick from REACTION_EMOJIS using emoji field. If "text", send `text` reply. */
-  kind: "emoji" | "text" | "none";
+  kind: "emoji" | "none";
   emoji?: string;
-  text?: string;
   reason?: string;
 }
 
 export class ProactiveService {
   private lastReactionAt = new Map<string, number>();
+  private inFlightScopes = new Set<string>();
 
   constructor(
     private readonly deps: {
@@ -135,6 +134,7 @@ export class ProactiveService {
 
     const now = Date.now();
     const scopeKey = threadId == null ? String(chatId) : `${chatId}:${threadId}`;
+    if (this.inFlightScopes.has(scopeKey)) return null;
     const last = this.lastReactionAt.get(scopeKey) ?? 0;
     if (now - last < this.settings.minIntervalSec * 1000) return null;
 
@@ -145,16 +145,25 @@ export class ProactiveService {
     );
     if (recent.length < this.settings.warmup) return null;
 
-    const decision = await this.decideReaction(chatId, chatTitle, recent, modelId);
-    if (!decision || !decision.react || decision.kind === "none") return null;
-
-    this.lastReactionAt.set(scopeKey, Date.now());
+    this.inFlightScopes.add(scopeKey);
+    let decision: ProactiveDecision | null;
+    try {
+      decision = await this.decideReaction(chatId, chatTitle, recent, modelId);
+    } finally {
+      this.inFlightScopes.delete(scopeKey);
+    }
+    if (!decision || !decision.react || decision.kind === "none" || !decision.emoji) return null;
 
     const targetId = decision.targetMessageId ?? triggerMessageId;
-    if (!targetId) {
-      log.warn({ chatId, decision }, "Proactive reaction has no target message id");
+    const candidateIds = new Set(
+      recent.flatMap((message) => (message.messageId == null ? [] : [message.messageId]))
+    );
+    if (!targetId || !candidateIds.has(targetId)) {
+      log.warn({ chatId, targetId }, "Proactive reaction targeted an unknown message id");
       return null;
     }
+
+    this.lastReactionAt.set(scopeKey, Date.now());
     decision.targetMessageId = targetId;
     return decision;
   }
@@ -191,10 +200,8 @@ You are NOT required to react. Only react if something genuinely catches your ey
 
 If you react:
 - Pick a target_message_id from the list below. It can be any message — the latest or an earlier one. Choose what feels natural.
-- Choose a kind:
-  - "emoji" — react with a single emoji. You MUST pick exactly one of these allowed Telegram reaction emojis (no others are accepted): ${REACTION_EMOJIS.join(" ")}. Good for a quick ack, agreement, humor, or emotion.
-  - "text" — write a very short (1-2 sentences, max ~280 chars) natural reply that fits the chosen message. Use it when you have something genuinely worth saying. Keep it casual and on-topic.
-- Keep "text" replies minimal and grounded. Never explain that you are reacting unprompted. Never ask follow-up questions. Match the chat's tone.
+- React with a single emoji. You MUST pick exactly one of these allowed Telegram reaction emojis (no others are accepted): ${REACTION_EMOJIS.join(" ")}.
+- Use a reaction only for a quick acknowledgement, agreement, humor, or emotion. Never write a text reply.
 
 Long-term memories about this chat:
 ${memoryLines}
@@ -203,7 +210,7 @@ Recent messages (the most recent is at the bottom):
 ${messageLines}
 
 Respond ONLY with a single JSON object, nothing else. Shape:
-{"react": true|false, "target_message_id": <number from the list above>, "kind": "emoji"|"text"|"none", "emoji": "<one emoji>", "text": "<short reply>", "reason": "<one short sentence about why, for your own context>"}
+{"react": true|false, "target_message_id": <number from the list above>, "kind": "emoji"|"none", "emoji": "<one allowed emoji>", "reason": "<one short sentence about why, for your own context>"}
 If you choose not to react, return: {"react": false, "kind": "none"}`;
 
     try {
@@ -242,16 +249,15 @@ If you choose not to react, return: {"react": false, "kind": "none"}`;
   private normalizeDecision(json: Record<string, unknown>): ProactiveDecision {
     const react = json.react === true;
     const kindRaw = String(json.kind ?? "").toLowerCase();
-    const kind: ProactiveDecision["kind"] =
-      kindRaw === "emoji" ? "emoji" : kindRaw === "text" ? "text" : "none";
+    const kind: ProactiveDecision["kind"] = kindRaw === "emoji" ? "emoji" : "none";
     const targetMessageId =
       typeof json.target_message_id === "number"
         ? json.target_message_id
         : typeof json.target_message_id === "string"
           ? Number(json.target_message_id)
           : undefined;
-    const emoji = typeof json.emoji === "string" ? json.emoji : undefined;
-    const text = typeof json.text === "string" ? json.text : undefined;
+    const emojiRaw = typeof json.emoji === "string" ? json.emoji : undefined;
+    const emoji = emojiRaw && REACTION_EMOJIS.includes(emojiRaw) ? emojiRaw : undefined;
     const reason = typeof json.reason === "string" ? json.reason : undefined;
 
     return {
@@ -259,7 +265,6 @@ If you choose not to react, return: {"react": false, "kind": "none"}`;
       targetMessageId: Number.isFinite(targetMessageId) ? targetMessageId : undefined,
       kind: react ? kind : "none",
       emoji,
-      text,
       reason,
     };
   }

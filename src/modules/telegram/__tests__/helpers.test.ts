@@ -6,6 +6,7 @@ import {
   formatToolCalls,
   parseTextEncodedToolCall,
   renderDraftStatus,
+  shouldRunProactiveForMessage,
   stabilizeStreamingMarkdown,
   type ToolCallRecord,
 } from "../helpers.js";
@@ -30,6 +31,20 @@ describe("buildFinalReply", () => {
   test("keeps final replies clean when tools were used", () => {
     const reply = buildFinalReply(calls, "Done.");
     expect(reply).toBe("Done.");
+  });
+});
+
+describe("shouldRunProactiveForMessage", () => {
+  test("skips messages directed at the bot", () => {
+    expect(shouldRunProactiveForMessage(true, "Skye, help me")).toBe(false);
+  });
+
+  test("skips commands with leading whitespace", () => {
+    expect(shouldRunProactiveForMessage(false, "  /catchup")).toBe(false);
+  });
+
+  test("allows ordinary group messages", () => {
+    expect(shouldRunProactiveForMessage(false, "that was surprisingly good")).toBe(true);
   });
 });
 

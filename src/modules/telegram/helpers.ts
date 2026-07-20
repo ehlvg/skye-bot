@@ -160,6 +160,10 @@ export function senderTag(ctx: GrammyContext): string {
   return `[${name}${handle}] `;
 }
 
+export function shouldRunProactiveForMessage(directedAtBot: boolean, text = ""): boolean {
+  return !directedAtBot && !text.trimStart().startsWith("/");
+}
+
 export function ctxAudit(
   ctx: GrammyContext
 ): Pick<AuditEntry, "chatId" | "chatType" | "threadId" | "userId" | "username" | "firstName"> {
