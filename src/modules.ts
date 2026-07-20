@@ -1,6 +1,7 @@
 import type { SkyeModule } from "./core/module.js";
 
 import { adminModule } from "./modules/admin/index.js";
+import { agentRuntimeModule } from "./modules/agentRuntime/index.js";
 import { auditModule } from "./modules/audit/index.js";
 import { billingModule } from "./modules/billing/index.js";
 import { channelModule } from "./modules/channel/index.js";
@@ -48,6 +49,7 @@ export const modules: readonly SkyeModule[] = [
   proactiveModule,
   remindersModule,
   channelModule,
+  agentRuntimeModule,
   panelModule,
   legalModule,
   telegramModule,

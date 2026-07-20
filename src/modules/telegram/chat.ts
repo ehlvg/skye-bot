@@ -37,9 +37,11 @@ export interface ChatLoopDeps {
   owner?: { name: string; tag: string };
 }
 
+export const MAX_TOOL_ITERATIONS = 20;
+
 /**
  * Run the streaming Responses-API tool-call loop until the model returns a
- * final text response (or we hit the iteration cap). Tool calls — both
+ * final text response, with a final synthesis round after the tool iteration cap. Tool calls — both
  * built-in and connector tools are executed, fed back, and surfaced via the
  * onToolCalls callback for UI rendering.
  *
@@ -127,15 +129,19 @@ export async function runChatLoop(
   );
 
   const currentInput: ResponseInputItem[] = [...input];
-  let iterations = 0;
+  let toolIterations = 0;
 
-  while (iterations <= 5) {
+  while (true) {
     signal?.throwIfAborted();
+    const canCallTools = toolIterations < MAX_TOOL_ITERATIONS;
+    const roundInstructions = canCallTools
+      ? instructions
+      : `${instructions}\n\n## Tool limit reached\n\nDo not call any more tools. Use the tool results already available and give the user your best complete final answer now.`;
     deps.beforeRound?.(modelEntry.id);
     const stream = deps.llm.askStream(
-      instructions,
+      roundInstructions,
       currentInput,
-      effectiveTools.length > 0 ? effectiveTools : undefined,
+      canCallTools && effectiveTools.length > 0 ? effectiveTools : undefined,
       modelEntry.id
     );
     const abortStream = () => void stream.abort();
@@ -161,7 +167,7 @@ export async function runChatLoop(
       arguments: string;
     }>;
 
-    if (fnCalls.length === 0) {
+    if (canCallTools && fnCalls.length === 0) {
       const textCall = parseTextEncodedToolCall(
         extractFinalText(response),
         new Set(effectiveTools.map((tool) => tool.name))
@@ -179,9 +185,22 @@ export async function runChatLoop(
       }
     }
 
+    if (!canCallTools && fnCalls.length > 0) {
+      log.warn(
+        { chatId: tenant.chatId, model: modelEntry.model, toolIterations },
+        "Model requested another tool after reaching the iteration limit"
+      );
+      fnCalls.length = 0;
+    }
+
     if (fnCalls.length === 0) {
       const finalText = unwrapTextEnvelope(extractFinalText(response));
       const textWithCitations = appendCitations(finalText, response.sources);
+      if (!textWithCitations && !canCallTools) {
+        throw new Error(
+          `Model did not produce a final response after ${MAX_TOOL_ITERATIONS} tool iterations`
+        );
+      }
       if (textWithCitations) {
         deps.chatLog.appendConversation(tenant.chatId, tk, {
           role: "assistant",
@@ -222,18 +241,23 @@ export async function runChatLoop(
       const isConnector = deps.connectors.isConnectorTool(fc.name, tenant.userId);
       const tool = builtinMap.get(fc.name);
 
-      let result: string;
+      let result = "";
       let failed = false;
       try {
+        if (!isConnector && !tool) {
+          failed = true;
+          result = `Unknown tool: ${fc.name}`;
+          throw new Error(result);
+        }
         const execution = isConnector
           ? deps.connectors.execute(fc.name, args, tenant.userId, signal)
-          : tool
-            ? Promise.resolve(tool.execute(args, tenant))
-            : Promise.resolve(`Unknown tool: ${fc.name}`);
+          : Promise.resolve(tool!.execute(args, tenant));
         result = await withTimeout(execution, tool?.timeoutMs ?? 60_000, fc.name, signal);
       } catch (e) {
         failed = true;
-        result = `Tool "${fc.name}" failed: ${e instanceof Error ? e.message : String(e)}`;
+        if (!result) {
+          result = `Tool "${fc.name}" failed: ${e instanceof Error ? e.message : String(e)}`;
+        }
         log.warn({ err: e, tool: fc.name, chatId: tenant.chatId }, "Tool execution failed");
       }
 
@@ -268,9 +292,8 @@ export async function runChatLoop(
     for (const fc of fnCalls) currentInput.push(fc as ResponseInputItem);
     currentInput.push(...toolOutputItems);
 
-    iterations++;
+    toolIterations++;
   }
-  return "";
 }
 
 async function withTimeout<T>(
@@ -280,11 +303,14 @@ async function withTimeout<T>(
   signal?: AbortSignal
 ): Promise<T> {
   let timer: NodeJS.Timeout | undefined;
+  const abort = () => rejectAbort?.(signal?.reason ?? new Error("Tool execution aborted"));
+  let rejectAbort: ((reason?: unknown) => void) | undefined;
   const timeout = new Promise<never>((_, reject) => {
     timer = setTimeout(() => reject(new Error(`timed out after ${timeoutMs}ms`)), timeoutMs);
   });
   const aborted = new Promise<never>((_, reject) => {
-    signal?.addEventListener("abort", () => reject(signal.reason), { once: true });
+    rejectAbort = reject;
+    signal?.addEventListener("abort", abort, { once: true });
   });
   try {
     return await Promise.race([promise, timeout, aborted]);
@@ -293,6 +319,7 @@ async function withTimeout<T>(
     throw e;
   } finally {
     if (timer) clearTimeout(timer);
+    signal?.removeEventListener("abort", abort);
   }
 }
 

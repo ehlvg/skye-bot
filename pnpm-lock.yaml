@@ -25,6 +25,9 @@ importers:
       "@modelcontextprotocol/sdk":
         specifier: ^1.29.0
         version: 1.29.0(zod@4.4.3)
+      "@openai/agents":
+        specifier: ^0.13.5
+        version: 0.13.5(@aws-sdk/credential-provider-node@3.972.66)(@smithy/signature-v4@5.6.4)(ws@8.21.0)(zod@4.4.3)
       better-sqlite3:
         specifier: ^12.8.0
         version: 12.10.0
@@ -1167,6 +1170,41 @@ packages:
       }
     engines: { node: ">= 8" }
 
+  "@openai/agents-core@0.13.5":
+    resolution:
+      {
+        integrity: sha512-RI9OwHG94c6ZTLNeEB7mfIpHbncgVxu4YElAmCAhq04EqLPzsLyouWhDgli8wZL/IhN/cYTaBwHvxktFzEbeyQ==,
+      }
+    peerDependencies:
+      zod: ^4.0.0
+    peerDependenciesMeta:
+      zod:
+        optional: true
+
+  "@openai/agents-openai@0.13.5":
+    resolution:
+      {
+        integrity: sha512-DfItyOZxE7znrJMj8V8zV7qg9Ig1Q3u6/GfpkG0aTyj3NCAY8BbaxzLz0Qynlon9K4XBvo7LL8Nvxb5/FMeQcA==,
+      }
+    peerDependencies:
+      zod: ^4.0.0
+
+  "@openai/agents-realtime@0.13.5":
+    resolution:
+      {
+        integrity: sha512-8rCApGStttqZpPigEWQ1RaiqoKgoisqzQhp0pAnJvzCcZnYgTf/13AWa0wMcP9OQl/hfLcH4YQ+uipRYiVgMzg==,
+      }
+    peerDependencies:
+      zod: ^4.0.0
+
+  "@openai/agents@0.13.5":
+    resolution:
+      {
+        integrity: sha512-zmVEQrl2gIvD0Xq9ZcxPMXRkfafgaitESHU/CHA+ill10A8OQu4/pKgKW4oWb99KnJD/lP4Tnn9vX0LgCx9ouw==,
+      }
+    peerDependencies:
+      zod: ^4.0.0
+
   "@opentelemetry/api-logs@0.219.0":
     resolution:
       {
@@ -1926,6 +1964,12 @@ packages:
     resolution:
       {
         integrity: sha512-8mam4H1NHLtu7nmtalF7eyBH14QyOASmcxHhSfEoRyr0nP/YdoesEtU+uSRvMe96TW/HPTtkoKqQLl53N7UXMQ==,
+      }
+
+  "@types/ws@8.18.1":
+    resolution:
+      {
+        integrity: sha512-ThVF6DCVhA8kUGy+aazFQ4kXQ7E1Ty7A3ypFOe0IcJV8O/M511G99AW24irKrW56Wt44yG9+ij8FaqoBGkuBXg==,
       }
 
   "@typescript-eslint/eslint-plugin@8.60.0":
@@ -5493,6 +5537,69 @@ snapshots:
       "@nodelib/fs.scandir": 2.1.5
       fastq: 1.20.1
 
+  "@openai/agents-core@0.13.5(@aws-sdk/credential-provider-node@3.972.66)(@smithy/signature-v4@5.6.4)(ws@8.21.0)(zod@4.4.3)":
+    dependencies:
+      debug: 4.4.3
+      openai: 6.48.0(@aws-sdk/credential-provider-node@3.972.66)(@smithy/signature-v4@5.6.4)(ws@8.21.0)(zod@4.4.3)
+    optionalDependencies:
+      "@modelcontextprotocol/sdk": 1.29.0(zod@4.4.3)
+      zod: 4.4.3
+    transitivePeerDependencies:
+      - "@aws-sdk/credential-provider-node"
+      - "@cfworker/json-schema"
+      - "@smithy/hash-node"
+      - "@smithy/signature-v4"
+      - supports-color
+      - ws
+
+  "@openai/agents-openai@0.13.5(@aws-sdk/credential-provider-node@3.972.66)(@smithy/signature-v4@5.6.4)(ws@8.21.0)(zod@4.4.3)":
+    dependencies:
+      "@openai/agents-core": 0.13.5(@aws-sdk/credential-provider-node@3.972.66)(@smithy/signature-v4@5.6.4)(ws@8.21.0)(zod@4.4.3)
+      debug: 4.4.3
+      openai: 6.48.0(@aws-sdk/credential-provider-node@3.972.66)(@smithy/signature-v4@5.6.4)(ws@8.21.0)(zod@4.4.3)
+      zod: 4.4.3
+    transitivePeerDependencies:
+      - "@aws-sdk/credential-provider-node"
+      - "@cfworker/json-schema"
+      - "@smithy/hash-node"
+      - "@smithy/signature-v4"
+      - supports-color
+      - ws
+
+  "@openai/agents-realtime@0.13.5(@aws-sdk/credential-provider-node@3.972.66)(@smithy/signature-v4@5.6.4)(zod@4.4.3)":
+    dependencies:
+      "@openai/agents-core": 0.13.5(@aws-sdk/credential-provider-node@3.972.66)(@smithy/signature-v4@5.6.4)(ws@8.21.0)(zod@4.4.3)
+      "@types/ws": 8.18.1
+      debug: 4.4.3
+      ws: 8.21.0
+      zod: 4.4.3
+    transitivePeerDependencies:
+      - "@aws-sdk/credential-provider-node"
+      - "@cfworker/json-schema"
+      - "@smithy/hash-node"
+      - "@smithy/signature-v4"
+      - bufferutil
+      - supports-color
+      - utf-8-validate
+
+  "@openai/agents@0.13.5(@aws-sdk/credential-provider-node@3.972.66)(@smithy/signature-v4@5.6.4)(ws@8.21.0)(zod@4.4.3)":
+    dependencies:
+      "@openai/agents-core": 0.13.5(@aws-sdk/credential-provider-node@3.972.66)(@smithy/signature-v4@5.6.4)(ws@8.21.0)(zod@4.4.3)
+      "@openai/agents-openai": 0.13.5(@aws-sdk/credential-provider-node@3.972.66)(@smithy/signature-v4@5.6.4)(ws@8.21.0)(zod@4.4.3)
+      "@openai/agents-realtime": 0.13.5(@aws-sdk/credential-provider-node@3.972.66)(@smithy/signature-v4@5.6.4)(zod@4.4.3)
+      debug: 4.4.3
+      openai: 6.48.0(@aws-sdk/credential-provider-node@3.972.66)(@smithy/signature-v4@5.6.4)(ws@8.21.0)(zod@4.4.3)
+      zod: 4.4.3
+    transitivePeerDependencies:
+      - "@aws-sdk/credential-provider-node"
+      - "@cfworker/json-schema"
+      - "@smithy/hash-node"
+      - "@smithy/signature-v4"
+      - bufferutil
+      - supports-color
+      - utf-8-validate
+      - ws
+
   "@opentelemetry/api-logs@0.219.0":
     dependencies:
       "@opentelemetry/api": 1.9.1
@@ -5986,6 +6093,10 @@ snapshots:
   "@types/serve-static@2.2.0":
     dependencies:
       "@types/http-errors": 2.0.5
+      "@types/node": 24.12.4
+
+  "@types/ws@8.18.1":
+    dependencies:
       "@types/node": 24.12.4
 
   "@typescript-eslint/eslint-plugin@8.60.0(@typescript-eslint/parser@8.60.0(eslint@9.39.4(jiti@2.7.0))(typescript@5.9.3))(eslint@9.39.4(jiti@2.7.0))(typescript@5.9.3)":

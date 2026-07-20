@@ -26,9 +26,9 @@ import type { EventBus } from "../../core/events.js";
 import type { Contributions, TelegramCommand, ToolDefinition } from "../../core/module.js";
 import { tenantFromGrammy, threadKey, type TenantContext } from "../../core/tenant.js";
 import { checkAccess, hasMeteredAccess, type AccessDeps } from "./access.js";
-import { runChatLoop } from "./chat.js";
 import type { BillingService } from "../billing/service.js";
 import type { AdminService } from "../admin/service.js";
+import type { AgentRuntimeService } from "../agentRuntime/service.js";
 import {
   buildDraftMarkdown,
   buildFinalReply,
@@ -71,6 +71,7 @@ export interface TelegramDeps {
   events?: EventBus;
   billing: BillingService;
   admin: AdminService;
+  agentRuntime: AgentRuntimeService;
   botToken: string;
   maxAttachmentBytes: number;
   webappUrl: string;
@@ -1328,32 +1329,25 @@ export function installTelegram(bot: Bot, deps: TelegramDeps, contributions: Con
         }
       };
 
-      const runAttempt = (attemptModelId: string, tools: ToolDefinition[]) =>
-        runChatLoop(
-          {
-            llm: deps.llm,
-            connectors: deps.connectors,
-            memory: deps.memory,
-            chatLog: deps.chatLog,
-            userConfig: deps.userConfig,
-            chatConfig: deps.chatConfig,
-            sandbox: deps.sandbox,
-            reminders: deps.reminders,
-            channel: deps.channel,
-            builtinTools: tools,
-            allowConnectorTools: tools.length > 0,
-            hasReferenceImages,
-            modelId: attemptModelId,
-            beforeRound: checkRoundQuota,
-            onUsage: meterUsage,
-            owner: deps.owner,
-          },
+      const runAttempt = (
+        attemptModelId: string,
+        tools: ToolDefinition[],
+        attemptInput: ResponseInputItem[] = inputItems
+      ) =>
+        deps.agentRuntime.run({
           tenant,
-          inputItems,
+          input: attemptInput,
+          builtinTools: tools,
+          allowConnectorTools: tools.length > 0,
+          hasReferenceImages,
+          modelId: attemptModelId,
+          beforeRound: checkRoundQuota,
+          onUsage: meterUsage,
+          owner: deps.owner,
           onChunk,
           onToolCalls,
-          controller.signal
-        );
+          signal: controller.signal,
+        });
 
       const fallbackIds = deps.llm.models.map((model) => model.id).filter((id) => id !== modelId);
       const attempts = [modelId, modelId, ...fallbackIds];
@@ -1389,7 +1383,10 @@ export function installTelegram(bot: Bot, deps: TelegramDeps, contributions: Con
         const recoveryModelId = fallbackIds[0] ?? modelId;
         void draft.send("", { ...DEFAULT_DRAFT_STATUS, text: "Trying without tools…" });
         try {
-          rawText = await withBillingLock(tenant.userId, () => runAttempt(recoveryModelId, []));
+          const recoveryInput = contextFor(tenant, recoveryModelId);
+          rawText = await withBillingLock(tenant.userId, () =>
+            runAttempt(recoveryModelId, [], recoveryInput)
+          );
           if (rawText) usedModelId = recoveryModelId;
         } catch (e) {
           lastAttemptError = e;
@@ -2296,27 +2293,17 @@ export function installTelegram(bot: Bot, deps: TelegramDeps, contributions: Con
         try {
           const text = cleanMd(
             await withBillingLock(reminder.userId, () =>
-              runChatLoop(
-                {
-                  llm: deps.llm,
-                  connectors: deps.connectors,
-                  memory: deps.memory,
-                  chatLog: deps.chatLog,
-                  userConfig: deps.userConfig,
-                  chatConfig: deps.chatConfig,
-                  builtinTools: [],
-                  allowConnectorTools: false,
-                  modelId: reminderModelId,
-                  beforeRound: checkReminderQuota,
-                  onUsage: reminderMeter,
-                  owner: deps.owner,
-                },
+              deps.agentRuntime.run({
                 tenant,
-                inputItems,
-                undefined,
-                undefined,
-                signal
-              )
+                input: inputItems,
+                builtinTools: [],
+                allowConnectorTools: false,
+                modelId: reminderModelId,
+                beforeRound: checkReminderQuota,
+                onUsage: reminderMeter,
+                owner: deps.owner,
+                signal,
+              })
             )
           );
 

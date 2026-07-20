@@ -103,6 +103,37 @@ models:
 # (Ollama, vLLM, most self-hosted inference servers). Defaults to false.
 # use_chat_completions: false
 
+# Agent execution engine. `openai_agents` uses the OpenAI Agents SDK for the
+# model/tool loop, streaming, subagents and resumable run state. Perplexity
+# model entries automatically fall back to the legacy runtime.
+agent_runtime:
+  engine: openai_agents
+  # 20 tool/model turns plus one normal final-answer turn.
+  max_turns: 21
+  subagent_max_turns: 8
+  # Agents SDK tracing can export model and tool activity. It stays disabled
+  # unless explicitly enabled; sensitive payloads remain excluded by default.
+  tracing: false
+  trace_include_sensitive_data: false
+  # Each Telegram user can create private profiles with /create_agent. They
+  # are visible only to their owner and use the currently selected chat model.
+  max_user_agents: 10
+  # Profiles are exposed to the active agent as delegate_<id> tools. Users can
+  # also select one as the primary personality per chat/topic with /agent <id>.
+  agents:
+    - id: researcher
+      name: Researcher
+      description: Research facts, compare sources, and return evidence-backed findings.
+      instructions: >-
+        You are a careful research specialist. Gather the necessary evidence,
+        distinguish facts from inference, and return concise findings with sources.
+    - id: analyst
+      name: Analyst
+      description: Perform calculations, structured analysis, and verification.
+      instructions: >-
+        You are a rigorous analysis specialist. Use tools for calculations and
+        verification, show the decisive reasoning, and check the result before returning it.
+
 # --- Skye Plus subscription (Telegram Stars) ---
 # Public users unlock Skye with a 1899 ⭐ / 30-day subscription. The base
 # monthly token quota is topped up each renewal; users can buy extra token

@@ -217,4 +217,10 @@ describe("buildSystemPrompt", () => {
     expect(prompt).toContain("Skye Plus");
     expect(prompt).toContain("reaction");
   });
+
+  test("requires tool work to finish before returning the final answer", () => {
+    const prompt = buildSystemPrompt([]);
+    expect(prompt).toContain("## Task Completion");
+    expect(prompt).toContain("perform that work instead of merely saying that it is needed");
+  });
 });

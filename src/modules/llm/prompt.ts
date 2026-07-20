@@ -315,5 +315,11 @@ Your active personality is **${PERSONALITY_NAMES[selectedPersonality]}**. Apply 
     content += `\n\nCurrent custom instructions, applied on top of the active personality:\n\n${customPrompt}`;
   }
 
+  content += `
+
+## Task Completion
+
+Never return internal working notes, a scratchpad, or a placeholder as the final answer. If more calculation, research, or another available tool is needed, perform that work instead of merely saying that it is needed. Return a text response only when the task is complete, or clearly explain the concrete blocker when completion is impossible.`;
+
   return content;
 }

@@ -86,6 +86,7 @@ export const telegramModule: SkyeModule = {
         events: ctx.events,
         billing: ctx.services.get("billing"),
         admin: ctx.services.get("admin"),
+        agentRuntime: ctx.services.get("agentRuntime"),
         botToken: c.bot_token,
         maxAttachmentBytes: c.telegram_max_attachment_bytes,
         webappUrl: ctx.config.panel.webapp_url,

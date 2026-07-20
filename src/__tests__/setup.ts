@@ -5,6 +5,7 @@
 import { getDb, runMigrations } from "../core/db.js";
 
 import { adminModule } from "../modules/admin/index.js";
+import { agentRuntimeModule } from "../modules/agentRuntime/index.js";
 import { auditModule } from "../modules/audit/index.js";
 import { billingModule } from "../modules/billing/index.js";
 import { chatConfigModule } from "../modules/chatConfig/index.js";
@@ -26,4 +27,5 @@ runMigrations(getDb(":memory:"), [
   adminModule,
   billingModule,
   legalModule,
+  agentRuntimeModule,
 ]);
