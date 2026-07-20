@@ -39,9 +39,13 @@ type ConversationRow = {
   createdAt: string;
 };
 
-// In-memory ring buffers keyed by chatId (reset on restart is acceptable)
-const logs = new Map<number, LogEntry[]>();
+// In-memory ring buffers keyed by chat and topic (reset on restart is acceptable)
+const logs = new Map<string, LogEntry[]>();
 const chatTitles = new Map<number, string>();
+
+function logKey(chatId: number, threadId?: number): string {
+  return threadId == null ? String(chatId) : `${chatId}:${threadId}`;
+}
 
 function pruneConversation(chatId: number, threadKey: string): void {
   getDb()
@@ -153,21 +157,25 @@ export function formatLogEntry(entry: LogEntry): string {
 export function logMessage(
   chatId: number,
   entry: LogEntry,
-  chatTitle?: string
+  chatTitle?: string,
+  threadId?: number
 ): void {
   if (chatTitle) chatTitles.set(chatId, chatTitle);
-  if (!logs.has(chatId)) logs.set(chatId, []);
-  const buf = logs.get(chatId)!;
+  const key = logKey(chatId, threadId);
+  if (!logs.has(key)) logs.set(key, []);
+  const buf = logs.get(key)!;
   buf.push(entry);
   if (buf.length > MAX_BUFFER) buf.shift();
 
   getDb()
     .prepare(
-      `INSERT INTO group_messages (chat_id, message_id, sender, timestamp, type, content, reply_to)
-       VALUES (?, ?, ?, ?, ?, ?, ?)`
+      `INSERT INTO group_messages
+        (chat_id, thread_id, message_id, sender, timestamp, type, content, reply_to)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?)`
     )
     .run(
       chatId,
+      threadId ?? null,
       entry.messageId ?? null,
       entry.sender,
       entry.timestamp,
@@ -196,10 +204,10 @@ function pruneGroupMessages(chatId: number): void {
  * Reload a chat's in-memory log buffer from the DB. Called at startup so
  * Skye is aware of group activity that happened before (re)start.
  */
-export function loadChatLog(chatId: number): void {
+export function loadChatLog(chatId: number, threadId?: number): void {
   const rows = getDb()
     .prepare<
-      [number, number],
+      [number, number | null, number],
       {
         sender: string;
         timestamp: string;
@@ -210,11 +218,11 @@ export function loadChatLog(chatId: number): void {
     >(
       `SELECT sender, timestamp, type, content, reply_to
        FROM group_messages
-       WHERE chat_id = ?
+       WHERE chat_id = ? AND thread_id IS ?
        ORDER BY id DESC
        LIMIT ?`
     )
-    .all(chatId, MAX_BUFFER);
+    .all(chatId, threadId ?? null, MAX_BUFFER);
   const buf = rows.reverse().map((r) => ({
     sender: r.sender,
     timestamp: r.timestamp,
@@ -222,13 +230,14 @@ export function loadChatLog(chatId: number): void {
     content: r.content,
     ...(r.reply_to != null ? { replyTo: r.reply_to } : {}),
   }));
-  logs.set(chatId, buf);
+  logs.set(logKey(chatId, threadId), buf);
 }
 
 export function getChatContext(
-  chatId: number
+  chatId: number,
+  threadId?: number
 ): { chatTitle: string; recentLog: string } | undefined {
-  const buf = logs.get(chatId);
+  const buf = logs.get(logKey(chatId, threadId));
   if (!buf || buf.length === 0) return undefined;
   const title = chatTitles.get(chatId) ?? "Unknown Chat";
   const recent = buf.slice(-RECENT_COUNT);
@@ -240,10 +249,12 @@ export function getChatContext(
  * Return the last N group messages (with Telegram message_ids) so proactive
  * features can target a specific message to react to.
  */
-export function recentGroupMessages(chatId: number, limit = 30): GroupMessage[] {
+export function recentGroupMessages(chatId: number, limit = 30, threadId?: number): GroupMessage[] {
+  const threadFilter = threadId == null ? "" : " AND thread_id = ?";
+  const params = threadId == null ? [chatId, limit] : [chatId, threadId, limit];
   const rows = getDb()
     .prepare<
-      [number, number],
+      number[],
       {
         message_id: number | null;
         sender: string;
@@ -255,11 +266,11 @@ export function recentGroupMessages(chatId: number, limit = 30): GroupMessage[] 
     >(
       `SELECT message_id, sender, timestamp, type, content, reply_to
        FROM group_messages
-       WHERE chat_id = ?
+       WHERE chat_id = ?${threadFilter}
        ORDER BY id DESC
        LIMIT ?`
     )
-    .all(chatId, limit);
+    .all(...params);
   return rows.reverse().map((r) => ({
     messageId: r.message_id,
     sender: r.sender,
@@ -278,11 +289,17 @@ export function recentGroupMessages(chatId: number, limit = 30): GroupMessage[] 
 export function groupMessagesSince(
   chatId: number,
   since: Date,
-  until: Date = new Date()
+  until: Date = new Date(),
+  threadId?: number
 ): GroupMessage[] {
+  const threadFilter = threadId == null ? "" : " AND thread_id = ?";
+  const params =
+    threadId == null
+      ? [chatId, chatId, since.toISOString(), until.toISOString()]
+      : [chatId, threadId, chatId, threadId, since.toISOString(), until.toISOString()];
   const rows = getDb()
     .prepare<
-      [number, number, string, string],
+      Array<number | string>,
       {
         message_id: number | null;
         sender: string;
@@ -294,19 +311,14 @@ export function groupMessagesSince(
     >(
       `SELECT message_id, sender, timestamp, type, content, reply_to
        FROM group_messages
-       WHERE chat_id = ? AND id > (
+       WHERE chat_id = ?${threadFilter} AND id > (
          SELECT COALESCE(MAX(id), 0) FROM group_messages
-         WHERE chat_id = ? AND timestamp <= ?
+         WHERE chat_id = ?${threadFilter} AND timestamp <= ?
        )
        AND timestamp < ?
        ORDER BY id ASC`
     )
-    .all(
-      chatId,
-      chatId,
-      since.toISOString(),
-      until.toISOString()
-    );
+    .all(...params);
   return rows.map((r) => ({
     messageId: r.message_id,
     sender: r.sender,
@@ -318,8 +330,8 @@ export function groupMessagesSince(
 }
 
 export interface ChatLogService {
-  log(chatId: number, entry: LogEntry, chatTitle?: string): void;
-  context(chatId: number): { chatTitle: string; recentLog: string } | undefined;
+  log(chatId: number, entry: LogEntry, chatTitle?: string, threadId?: number): void;
+  context(chatId: number, threadId?: number): { chatTitle: string; recentLog: string } | undefined;
   appendConversation(
     chatId: number,
     threadKey: string,
@@ -329,9 +341,9 @@ export interface ChatLogService {
   clearConversation(chatId: number, threadKey: string): void;
   countConversation(chatId: number, threadKey?: string): number;
   findConversationText(chatId: number, messageId: number): string | undefined;
-  loadChatLog(chatId: number): void;
-  recentGroupMessages(chatId: number, limit?: number): GroupMessage[];
-  groupMessagesSince(chatId: number, since: Date, until?: Date): GroupMessage[];
+  loadChatLog(chatId: number, threadId?: number): void;
+  recentGroupMessages(chatId: number, limit?: number, threadId?: number): GroupMessage[];
+  groupMessagesSince(chatId: number, since: Date, until?: Date, threadId?: number): GroupMessage[];
 }
 
 export const chatLogService: ChatLogService = {

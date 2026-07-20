@@ -54,4 +54,19 @@ export const migrations: Migration[] = [
       `);
     },
   },
+  {
+    id: "004-group-message-threads",
+    up: (db) => {
+      const cols = new Set(
+        (db.pragma("table_info(group_messages)") as { name: string }[]).map((c) => c.name)
+      );
+      if (!cols.has("thread_id")) {
+        db.exec("ALTER TABLE group_messages ADD COLUMN thread_id INTEGER");
+      }
+      db.exec(`
+        CREATE INDEX IF NOT EXISTS idx_group_messages_thread
+          ON group_messages(chat_id, thread_id, id);
+      `);
+    },
+  },
 ];

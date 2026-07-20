@@ -99,7 +99,7 @@ export interface ProactiveDecision {
 }
 
 export class ProactiveService {
-  private lastReactionAt = new Map<number, number>();
+  private lastReactionAt = new Map<string, number>();
 
   constructor(
     private readonly deps: {
@@ -127,22 +127,28 @@ export class ProactiveService {
     chatId: number,
     triggerMessageId: number,
     chatTitle: string,
-    modelId?: string
+    modelId?: string,
+    threadId?: number
   ): Promise<ProactiveDecision | null> {
     if (!this.settings.enabled) return null;
     if (Math.random() >= this.settings.probability) return null;
 
     const now = Date.now();
-    const last = this.lastReactionAt.get(chatId) ?? 0;
+    const scopeKey = threadId == null ? String(chatId) : `${chatId}:${threadId}`;
+    const last = this.lastReactionAt.get(scopeKey) ?? 0;
     if (now - last < this.settings.minIntervalSec * 1000) return null;
 
-    const recent = this.deps.chatLog.recentGroupMessages(chatId, this.settings.contextSize);
+    const recent = this.deps.chatLog.recentGroupMessages(
+      chatId,
+      this.settings.contextSize,
+      threadId
+    );
     if (recent.length < this.settings.warmup) return null;
 
     const decision = await this.decideReaction(chatId, chatTitle, recent, modelId);
     if (!decision || !decision.react || decision.kind === "none") return null;
 
-    this.lastReactionAt.set(chatId, Date.now());
+    this.lastReactionAt.set(scopeKey, Date.now());
 
     const targetId = decision.targetMessageId ?? triggerMessageId;
     if (!targetId) {

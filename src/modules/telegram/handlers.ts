@@ -82,7 +82,7 @@ export interface TelegramDeps {
 
 const IMAGE_CMD_RE = /^\/image(?:@\S+)?\s*([\s\S]*)$/;
 const TEXT_HISTORY_LIMIT = 40;
-const TRACKED_CHATS = new Set<number>();
+const TRACKED_CHATS = new Set<string>();
 const SUPPORTED_TEXT_MIME_RE =
   /^(text\/|application\/(json|xml|csv|javascript|x-javascript|typescript|x-typescript|sql))/i;
 const SUPPORTED_TEXT_EXT_RE =
@@ -415,7 +415,13 @@ export function installTelegram(bot: Bot, deps: TelegramDeps, contributions: Con
     const chatTitle = ctx.chat?.title ?? "Group";
 
     void (async () => {
-      const decision = await proactive.maybeReact(chatId, triggerMessageId, chatTitle);
+      const decision = await proactive.maybeReact(
+        chatId,
+        triggerMessageId,
+        chatTitle,
+        undefined,
+        tenant.threadId
+      );
       if (!decision || decision.kind === "none") return;
       const targetId = decision.targetMessageId ?? triggerMessageId;
 
@@ -760,11 +766,11 @@ export function installTelegram(bot: Bot, deps: TelegramDeps, contributions: Con
         log.info({ chatId: tenant.chatId, userId: tenant.userId }, "Image generation");
 
         const actionInterval = setInterval(() => {
-          ctx.api.sendChatAction(tenant.chatId, "upload_photo").catch(() => {});
+          ctx.replyWithChatAction("upload_photo").catch(() => {});
         }, 4000);
 
         try {
-          await ctx.api.sendChatAction(tenant.chatId, "upload_photo");
+          await ctx.replyWithChatAction("upload_photo");
           const buffer = await deps.llm.generateImage(prompt);
 
           if (!buffer) {
@@ -870,6 +876,7 @@ export function installTelegram(bot: Bot, deps: TelegramDeps, contributions: Con
         const ctxCount = deps.chatLog.countConversation(tenant.chatId, threadKey(tenant));
         const proactiveOn = deps.proactive?.isEnabled() ?? false;
         const reminderCount = deps.reminders?.list(tenant.chatId).length ?? 0;
+        const customPrompt = deps.chatConfig.getPrompt(tenant.chatId, tenant.threadId);
 
         const yes = "✅";
         const no = "❌";
@@ -895,6 +902,7 @@ export function installTelegram(bot: Bot, deps: TelegramDeps, contributions: Con
           `| **Vision** | ${vision === true ? yes : vision === false ? no : warn + " unknown"} |`,
           `| **Voice input** | ${deps.speech.isSttAvailable() ? yes : no} |`,
           `| **Voice replies** | ${chatCfg.voiceMode ? yes : no} |`,
+          `| **Personality** | ${customPrompt ? "custom prompt" : "panel selection"} |`,
           `| **TTS** | ${deps.speech.isTtsAvailable() ? yes : no} |`,
           `| **Memories** | ${memoryCount} |`,
           `| **Context items** | ${ctxCount} |`,
@@ -972,7 +980,7 @@ export function installTelegram(bot: Bot, deps: TelegramDeps, contributions: Con
       description: "Show recent group context",
       public: true,
       handler: async (ctx, tenant) => {
-        const context = deps.chatLog.context(tenant.chatId);
+        const context = deps.chatLog.context(tenant.chatId, tenant.threadId);
         if (!context) {
           await sendRichReply(ctx, "_No group context yet._");
           return;
@@ -1153,13 +1161,14 @@ export function installTelegram(bot: Bot, deps: TelegramDeps, contributions: Con
   bot.on("message", async (ctx, next) => {
     if (ctx.chat?.type === "group" || ctx.chat?.type === "supergroup") {
       const chatId = ctx.chat.id;
-      if (!TRACKED_CHATS.has(chatId)) {
-        deps.chatLog.loadChatLog(chatId);
-        TRACKED_CHATS.add(chatId);
+      const tenant = tenantFromGrammy(ctx);
+      const tk = threadKey(tenant);
+      if (!TRACKED_CHATS.has(tk)) {
+        deps.chatLog.loadChatLog(chatId, tenant.threadId);
+        TRACKED_CHATS.add(tk);
       }
       const entry = extractLogEntry(ctx);
-      const tenant = tenantFromGrammy(ctx);
-      deps.chatLog.log(tenant.chatId, entry, ctx.chat.title);
+      deps.chatLog.log(tenant.chatId, entry, ctx.chat.title, tenant.threadId);
       maybeReactProactively(ctx, tenant);
     }
     return next();
@@ -1344,6 +1353,7 @@ export function installTelegram(bot: Bot, deps: TelegramDeps, contributions: Con
             memory: deps.memory,
             chatLog: deps.chatLog,
             userConfig: deps.userConfig,
+            chatConfig: deps.chatConfig,
             sandbox: deps.sandbox,
             reminders: deps.reminders,
             channel: deps.channel,
@@ -1426,7 +1436,7 @@ export function installTelegram(bot: Bot, deps: TelegramDeps, contributions: Con
         options.voiceReply ||
         (deps.chatConfig.get(tenant.chatId).voiceMode && deps.speech.isTtsAvailable());
       if (shouldVoice && deps.speech.isTtsAvailable()) {
-        await ctx.api.sendChatAction(tenant.chatId, "record_voice");
+        await ctx.replyWithChatAction("record_voice");
         void draft.send("", { kind: "voice", text: "Recording a voice response…" });
         const audioBuffer = await deps.speech.synthesize(text);
         if (audioBuffer) {
@@ -1712,11 +1722,11 @@ export function installTelegram(bot: Bot, deps: TelegramDeps, contributions: Con
     log.info({ chatId: tenant.chatId, userId: tenant.userId }, "Image editing");
 
     const actionInterval = setInterval(() => {
-      ctx.api.sendChatAction(tenant.chatId, "upload_photo").catch(() => {});
+      ctx.replyWithChatAction("upload_photo").catch(() => {});
     }, 4000);
 
     try {
-      await ctx.api.sendChatAction(tenant.chatId, "upload_photo");
+      await ctx.replyWithChatAction("upload_photo");
       let photoUrls: string[] | undefined = explicitPhotoUrls;
       if (!photoUrls) {
         const file = await ctx.api.getFile(ctx.message!.photo!.pop()!.file_id);
@@ -1818,7 +1828,7 @@ export function installTelegram(bot: Bot, deps: TelegramDeps, contributions: Con
     const tk = threadKey(tenant);
     await enqueue(tk, async (signal) => {
       try {
-        await ctx.api.sendChatAction(tenant.chatId, "typing");
+        await ctx.replyWithChatAction("typing");
         const file = await ctx.api.getFile(ctx.message.voice.file_id);
         const telegramUrl = `https://api.telegram.org/file/bot${deps.botToken}/${file.file_path}`;
         const audioRes = await fetch(telegramUrl);
@@ -1876,7 +1886,7 @@ export function installTelegram(bot: Bot, deps: TelegramDeps, contributions: Con
 
     await enqueue(tk, async (signal) => {
       try {
-        await ctx.api.sendChatAction(tenant.chatId, "upload_document");
+        await ctx.replyWithChatAction("upload_document");
 
         // --- PDF: send as file content part to the LLM ---
         if (isPdf) {
@@ -1972,7 +1982,7 @@ export function installTelegram(bot: Bot, deps: TelegramDeps, contributions: Con
         return;
       }
       try {
-        await ctx.api.sendChatAction(tenant.chatId, "typing");
+        await ctx.replyWithChatAction("typing");
         const { buffer } = await downloadTelegramFile(ctx.message.audio.file_id);
         const recognized = await deps.speech.recognize(buffer);
         if (!recognized) {
@@ -2008,7 +2018,7 @@ export function installTelegram(bot: Bot, deps: TelegramDeps, contributions: Con
         return;
       }
       try {
-        await ctx.api.sendChatAction(tenant.chatId, "typing");
+        await ctx.replyWithChatAction("typing");
         const { buffer } = await downloadTelegramFile(ctx.message.video_note.file_id);
         const recognized = await deps.speech.recognize(buffer);
         if (!recognized) {
@@ -2073,7 +2083,7 @@ export function installTelegram(bot: Bot, deps: TelegramDeps, contributions: Con
     await enqueue(threadKey(tenant), async (signal) => {
       try {
         signal.throwIfAborted();
-        await ctx.api.sendChatAction(tenant.chatId, "upload_photo");
+        await ctx.replyWithChatAction("upload_photo");
         if (action === "prompt") {
           const promptRes = await deps.llm.ask(
             "Improve the user's image prompt. Keep it concise, concrete, and directly usable. Output only the improved prompt.",
@@ -2221,8 +2231,13 @@ export function installTelegram(bot: Bot, deps: TelegramDeps, contributions: Con
           since = new Date(now.getTime() - 24 * 60 * 60 * 1000);
         }
 
-        const periodMessages = deps.chatLog.groupMessagesSince(reminder.chatId, since, now);
-        const recentContext = deps.chatLog.context(reminder.chatId);
+        const periodMessages = deps.chatLog.groupMessagesSince(
+          reminder.chatId,
+          since,
+          now,
+          reminder.threadId
+        );
+        const recentContext = deps.chatLog.context(reminder.chatId, reminder.threadId);
 
         let contextBlock: string;
         if (periodMessages.length > 0) {
@@ -2282,9 +2297,10 @@ export function installTelegram(bot: Bot, deps: TelegramDeps, contributions: Con
         const actionTicker = {
           timer: undefined as NodeJS.Timeout | undefined,
           start: () => {
-            void bot.api.sendChatAction(reminder.chatId, "typing").catch(() => {});
+            const other = reminder.threadId == null ? {} : { message_thread_id: reminder.threadId };
+            void bot.api.sendChatAction(reminder.chatId, "typing", other).catch(() => {});
             actionTicker.timer = setInterval(() => {
-              void bot.api.sendChatAction(reminder.chatId, "typing").catch(() => {});
+              void bot.api.sendChatAction(reminder.chatId, "typing", other).catch(() => {});
             }, 4000);
           },
           stop: () => {
@@ -2304,6 +2320,7 @@ export function installTelegram(bot: Bot, deps: TelegramDeps, contributions: Con
                   memory: deps.memory,
                   chatLog: deps.chatLog,
                   userConfig: deps.userConfig,
+                  chatConfig: deps.chatConfig,
                   builtinTools: [],
                   allowConnectorTools: false,
                   modelId: reminderModelId,

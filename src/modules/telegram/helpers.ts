@@ -435,7 +435,7 @@ async function withTelegramRetry<T>(
 }
 
 function threadId(ctx: GrammyContext): number | undefined {
-  return ctx.message?.message_thread_id;
+  return ctx.msg?.message_thread_id;
 }
 
 function replyParameters(ctx: GrammyContext): ReplyParameters | undefined {
@@ -583,7 +583,7 @@ function isPermanentDraftError(e: unknown): boolean {
 
 export function createChatActionTicker(ctx: GrammyContext, action: ChatAction, intervalMs = 4000) {
   let timer: NodeJS.Timeout | undefined;
-  const send = () => ctx.api.sendChatAction(ctx.chat!.id, action).catch(() => {});
+  const send = () => ctx.replyWithChatAction(action).catch(() => {});
 
   return {
     start: () => {

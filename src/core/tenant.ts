@@ -44,7 +44,7 @@ export function tenantFromGrammy(ctx: GrammyContext): TenantContext {
   return {
     chatId: chat.id,
     chatType: chat.type,
-    threadId: ctx.message?.message_thread_id ?? undefined,
+    threadId: ctx.msg?.message_thread_id ?? undefined,
     userId: from?.id,
     username: from?.username,
     firstName: from?.first_name,

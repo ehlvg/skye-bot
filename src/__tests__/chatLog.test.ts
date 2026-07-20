@@ -4,6 +4,7 @@ import {
   logMessage,
   getChatContext,
   groupMessagesSince,
+  recentGroupMessages,
 } from "../modules/chatLog/service.js";
 import type { LogEntry } from "../modules/chatLog/service.js";
 
@@ -60,6 +61,28 @@ describe("getChatContext", () => {
     expect(ctx!.chatTitle).toBe("Test Group");
     expect(ctx!.recentLog).toContain("hello");
   });
+
+  test("does not mix messages from different topics", () => {
+    logMessage(CHAT, entry("topic one"), "Test Group", 101);
+    logMessage(CHAT, entry("topic two"), "Test Group", 202);
+
+    expect(getChatContext(CHAT, 101)?.recentLog).toContain("topic one");
+    expect(getChatContext(CHAT, 101)?.recentLog).not.toContain("topic two");
+    expect(getChatContext(CHAT, 202)?.recentLog).toContain("topic two");
+    expect(getChatContext(CHAT, 202)?.recentLog).not.toContain("topic one");
+  });
+
+  test("keeps proactive candidate messages inside the current topic", () => {
+    logMessage(CHAT, entry("candidate one"), "Test Group", 301);
+    logMessage(CHAT, entry("candidate two"), "Test Group", 302);
+
+    expect(recentGroupMessages(CHAT, 30, 301).map((message) => message.content)).toContain(
+      "candidate one"
+    );
+    expect(recentGroupMessages(CHAT, 30, 301).map((message) => message.content)).not.toContain(
+      "candidate two"
+    );
+  });
 });
 
 describe("groupMessagesSince", () => {
@@ -82,5 +105,14 @@ describe("groupMessagesSince", () => {
   test("returns empty for a chat with no messages in window", () => {
     const msgs = groupMessagesSince(99999, new Date(Date.now() - 60 * 1000));
     expect(msgs).toHaveLength(0);
+  });
+
+  test("can restrict the time window to one topic", () => {
+    const recent = new Date(Date.now() - 30 * 1000).toISOString();
+    logMessage(CHAT, { ...entry("first topic"), timestamp: recent }, "Test Group", 11);
+    logMessage(CHAT, { ...entry("second topic"), timestamp: recent }, "Test Group", 22);
+
+    const msgs = groupMessagesSince(CHAT, new Date(Date.now() - 60 * 1000), new Date(), 11);
+    expect(msgs.map((message) => message.content)).toEqual(["first topic"]);
   });
 });

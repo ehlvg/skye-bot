@@ -3,6 +3,7 @@ import type { ConnectorService } from "../connectors/service.js";
 import type { MemoryService } from "../memory/service.js";
 import type { ChatLogService } from "../chatLog/service.js";
 import type { UserConfigService } from "../userConfig/service.js";
+import type { ChatConfigService } from "../chatConfig/service.js";
 import type { SandboxService } from "../sandbox/service.js";
 import type { RemindersService } from "../reminders/service.js";
 import type { ChannelService } from "../channel/service.js";
@@ -20,6 +21,7 @@ export interface ChatLoopDeps {
   memory: MemoryService;
   chatLog: ChatLogService;
   userConfig: UserConfigService;
+  chatConfig: ChatConfigService;
   sandbox?: SandboxService;
   reminders?: RemindersService;
   channel?: ChannelService;
@@ -56,13 +58,14 @@ export async function runChatLoop(
   signal?.throwIfAborted();
   const memoryQuery = extractInputText(input);
   const memories = deps.memory.context(tenant.chatId, memoryQuery, 12);
-  const chatContext = deps.chatLog.context(tenant.chatId);
+  const chatContext = deps.chatLog.context(tenant.chatId, tenant.threadId);
   const connectorTools =
     deps.allowConnectorTools === false ? [] : await deps.connectors.toolsFor(tenant.userId);
   const connectorToolNames = connectorTools.map((t) => t.name);
   const tk = threadKey(tenant);
 
   const userCfg = tenant.userId ? deps.userConfig.get(tenant.userId) : undefined;
+  const chatPrompt = deps.chatConfig.getPrompt(tenant.chatId, tenant.threadId);
   const modelEntry = deps.llm.resolveModel(deps.modelId);
   const builtinTools = modelEntry.builtinTools;
   const hasBuiltinSandbox = builtinTools?.includes("sandbox") ?? false;
@@ -97,7 +100,8 @@ export async function runChatLoop(
     builtinTools,
     deps.owner,
     !!deps.channel,
-    userCfg?.personality
+    userCfg?.personality,
+    chatPrompt
   );
 
   // Log the request summary (last user item text + attachments).

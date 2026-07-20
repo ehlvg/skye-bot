@@ -121,7 +121,8 @@ export function ProfileScreen() {
         />
         <Footnote>
           {PERSONALITIES.find((item) => item.value === (config.personality ?? "skye"))?.description}
-          . This fully replaces the active character. Custom instructions are applied on top.
+          . This fully replaces the active character. A custom prompt set with /set_prompt overrides
+          the personality in that chat or topic until /reset_prompt.
         </Footnote>
       </Section>
 

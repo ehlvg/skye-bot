@@ -165,6 +165,30 @@ describe("buildSystemPrompt", () => {
     expect(prompt).not.toContain("You are always Skye");
   });
 
+  test("a chat prompt completely replaces the panel personality", () => {
+    const prompt = buildSystemPrompt(
+      [],
+      undefined,
+      undefined,
+      "These panel instructions must also be disabled.",
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      "operator",
+      "You are a patient Socratic tutor."
+    );
+
+    expect(prompt).toContain("You are a patient Socratic tutor.");
+    expect(prompt).toContain("replaces every built-in personality");
+    expect(prompt).not.toContain("You are **Operator**");
+    expect(prompt).not.toContain("You are **Skye**, a calm");
+    expect(prompt).not.toContain("These panel instructions must also be disabled.");
+  });
+
   test("places current behavior and custom instructions after chat history", () => {
     const prompt = buildSystemPrompt(
       [],

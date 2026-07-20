@@ -155,13 +155,18 @@ export function buildSystemPrompt(
   builtinTools?: string[],
   owner?: { name: string; tag: string },
   channelEnabled?: boolean,
-  personality = "skye"
+  personality = "skye",
+  chatPrompt?: string
 ): string {
   const hasWebSearch = builtinTools?.includes("web_search");
   const hasBuiltinSandbox = builtinTools?.includes("sandbox");
 
   const selectedPersonality = PERSONALITY_PROMPTS[personality] ? personality : "skye";
-  let content = PERSONALITY_PROMPTS[selectedPersonality];
+  const effectiveChatPrompt = chatPrompt?.trim();
+  const hasChatPrompt = !!effectiveChatPrompt;
+  let content = hasChatPrompt
+    ? `${effectiveChatPrompt}${SHARED_PLATFORM_PROMPT}`
+    : PERSONALITY_PROMPTS[selectedPersonality];
 
   if (owner?.name || owner?.tag) {
     const name = owner.name || "the owner";
@@ -294,13 +299,19 @@ Only post when the user explicitly asks. Keep channel posts concise, well-format
 
 Messages from users are prefixed with their name and Telegram handle like [Name (@handle)]. Use this to know who is speaking.`;
 
-  content += `
+  content += hasChatPrompt
+    ? `
+
+## Current Behavior — Highest Priority
+
+The custom prompt at the beginning of these instructions is your complete active character in this chat or topic. It replaces every built-in personality, including Skye and the personality selected in the settings panel. Earlier assistant messages may have been written under a different character; never copy their identity, tone, or behavioral rules when they conflict with the custom prompt. Return normal answers as direct text, never as a JSON object with a text field unless the user explicitly asks for JSON.`
+    : `
 
 ## Current Behavior — Highest Priority
 
 Your active personality is **${PERSONALITY_NAMES[selectedPersonality]}**. Apply it fully from this response onward. Earlier assistant messages in the chat may have been written under a different personality or different custom instructions; never copy their character, tone, or behavioral rules when they conflict with this section. Return normal answers as direct text, never as a JSON object with a text field unless the user explicitly asks for JSON.`;
 
-  if (customPrompt) {
+  if (customPrompt && !hasChatPrompt) {
     content += `\n\nCurrent custom instructions, applied on top of the active personality:\n\n${customPrompt}`;
   }
 

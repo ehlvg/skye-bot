@@ -64,4 +64,18 @@ export const migrations: Migration[] = [
       }
     },
   },
+  {
+    id: "005-thread-prompts",
+    up: (db) => {
+      db.exec(`
+        CREATE TABLE IF NOT EXISTS chat_thread_prompts (
+          chat_id       INTEGER NOT NULL,
+          thread_id     INTEGER NOT NULL DEFAULT 0,
+          custom_prompt TEXT    NOT NULL,
+          updated_at    TEXT    NOT NULL,
+          PRIMARY KEY (chat_id, thread_id)
+        );
+      `);
+    },
+  },
 ];

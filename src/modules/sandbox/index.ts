@@ -54,7 +54,7 @@ export const sandboxModule: SkyeModule = {
                   );
                   return;
                 }
-                await ctx.api.sendChatAction(tenant.chatId, "typing");
+                await ctx.replyWithChatAction("typing");
                 const parts = command.split(/\s+/);
                 const result = await service.runCommand(tenant.chatId, parts[0], parts.slice(1));
                 const output = [result.stdout, result.stderr]
@@ -70,7 +70,7 @@ export const sandboxModule: SkyeModule = {
               name: "sandbox_reset",
               description: "Reset this chat's Daytona Sandbox to a clean state",
               handler: async (ctx, tenant) => {
-                await ctx.api.sendChatAction(tenant.chatId, "typing");
+                await ctx.replyWithChatAction("typing");
                 await service.reset(tenant.chatId);
                 await ctx.reply("Sandbox reset. A fresh environment is ready.");
               },

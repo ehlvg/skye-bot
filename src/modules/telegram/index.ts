@@ -53,6 +53,13 @@ export const telegramModule: SkyeModule = {
     // Validate the Telegram token and cache botInfo before accepting updates.
     await bot.init();
     reliability.markApiReady(bot.botInfo.username);
+    log.info(
+      {
+        privateTopicsEnabled: bot.botInfo.has_topics_enabled ?? false,
+        usersCanCreatePrivateTopics: bot.botInfo.allows_users_to_create_topics ?? false,
+      },
+      "Telegram private topic capabilities"
+    );
 
     // Pre-flight: probe model capability before serving requests. This probe is
     // intentionally advisory; providers may not expose /models even when chat works.
