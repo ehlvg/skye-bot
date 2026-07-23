@@ -1,9 +1,47 @@
-import type { SpeechProvider } from "../types.js";
+import type {
+  SpeechProvider,
+  SpeechSynthesisOptions,
+  TtsCapabilities,
+} from "../types.js";
 import { transcodeAudio, pcmToOggOpus, type AudioFormat } from "../transcode.js";
 import { log } from "../../../utils/log.js";
 
 const STT_PATH = "/audio/transcriptions";
 const TTS_PATH = "/audio/speech";
+const TTS_MAX_ATTEMPTS = 2;
+
+export const GEMINI_TTS_VOICES = [
+  "Zephyr",
+  "Puck",
+  "Charon",
+  "Kore",
+  "Fenrir",
+  "Leda",
+  "Orus",
+  "Aoede",
+  "Callirrhoe",
+  "Autonoe",
+  "Enceladus",
+  "Iapetus",
+  "Umbriel",
+  "Algieba",
+  "Despina",
+  "Erinome",
+  "Algenib",
+  "Rasalgethi",
+  "Laomedeia",
+  "Achernar",
+  "Alnilam",
+  "Schedar",
+  "Gacrux",
+  "Pulcherrima",
+  "Achird",
+  "Zubenelgenubi",
+  "Vindemiatrix",
+  "Sadachbia",
+  "Sadaltager",
+  "Sulafat",
+] as const;
 
 export interface OpenRouterSettings {
   apiKey: string;
@@ -42,6 +80,15 @@ export class OpenRouterSpeechProvider implements SpeechProvider {
 
   isTtsAvailable(): boolean {
     return this.settings.apiKey.length > 0 && this.settings.ttsModel.length > 0;
+  }
+
+  getTtsCapabilities(): TtsCapabilities {
+    const isGemini = this.settings.ttsModel.toLowerCase().includes("gemini");
+    return {
+      defaultVoice: this.settings.ttsVoice,
+      ...(isGemini ? { voices: GEMINI_TTS_VOICES } : {}),
+      expressive: isGemini || this.settings.ttsModel.toLowerCase().includes("gpt-4o"),
+    };
   }
 
   async recognize(audioBuffer: Buffer, language: string = "ru-RU"): Promise<string | null> {
@@ -90,29 +137,60 @@ export class OpenRouterSpeechProvider implements SpeechProvider {
     }
   }
 
-  async synthesize(text: string): Promise<Buffer | null> {
+  async synthesize(text: string, options: SpeechSynthesisOptions = {}): Promise<Buffer | null> {
     if (!this.isTtsAvailable()) {
       log.warn("OpenRouter speech not configured, cannot synthesize speech");
       return null;
     }
 
     try {
-      const res = await fetch(`${this.settings.baseUrl}${TTS_PATH}`, {
-        method: "POST",
-        headers: this.headers({ "Content-Type": "application/json" }),
-        body: JSON.stringify({
-          model: this.settings.ttsModel,
-          input: text,
-          voice: this.settings.ttsVoice,
-          response_format: this.settings.ttsResponseFormat,
-        }),
-      });
+      const model = this.settings.ttsModel.toLowerCase();
+      const input = model.includes("gemini") ? buildGeminiTtsInput(text, options) : text;
+      const body: Record<string, unknown> = {
+        model: this.settings.ttsModel,
+        input,
+        voice: options.voice || this.settings.ttsVoice,
+        response_format: this.settings.ttsResponseFormat,
+      };
+      if (model.includes("openai/") && (options.style || options.scene)) {
+        body.provider = {
+          options: {
+            openai: {
+              instructions: [options.scene, options.style].filter(Boolean).join("\n"),
+            },
+          },
+        };
+      }
 
-      if (!res.ok) {
-        const body = await res.text().catch(() => "");
-        log.error(`OpenRouter TTS failed (${res.status}): ${body}`);
+      let res: Response | undefined;
+      for (let attempt = 1; attempt <= TTS_MAX_ATTEMPTS; attempt += 1) {
+        try {
+          res = await fetch(`${this.settings.baseUrl}${TTS_PATH}`, {
+            method: "POST",
+            headers: this.headers({ "Content-Type": "application/json" }),
+            body: JSON.stringify(body),
+          });
+        } catch (error) {
+          if (attempt < TTS_MAX_ATTEMPTS) {
+            log.warn({ err: error, attempt }, "OpenRouter TTS request failed, retrying");
+            continue;
+          }
+          throw error;
+        }
+
+        if (res.ok) break;
+        const errorBody = await res.text().catch(() => "");
+        if (res.status >= 500 && attempt < TTS_MAX_ATTEMPTS) {
+          log.warn(
+            { status: res.status, attempt, body: errorBody },
+            "OpenRouter TTS returned a transient error, retrying"
+          );
+          continue;
+        }
+        log.error(`OpenRouter TTS failed (${res.status}): ${errorBody}`);
         return null;
       }
+      if (!res?.ok) return null;
 
       const raw = Buffer.from(await res.arrayBuffer());
 
@@ -122,7 +200,11 @@ export class OpenRouterSpeechProvider implements SpeechProvider {
       // assuming the wrong rate produces sped-up / high-pitch output.
       if (this.settings.ttsResponseFormat === "pcm") {
         const { rate, channels } = parsePcmContentType(res.headers.get("content-type"));
-        return pcmToOggOpus(raw, rate ?? this.settings.pcmSampleRate, channels ?? this.settings.pcmChannels);
+        return pcmToOggOpus(
+          raw,
+          rate ?? this.settings.pcmSampleRate,
+          channels ?? this.settings.pcmChannels
+        );
       }
       return transcodeAudio(raw, "oggopus");
     } catch (e) {
@@ -147,11 +229,27 @@ export class OpenRouterSpeechProvider implements SpeechProvider {
   }
 }
 
+export function buildGeminiTtsInput(
+  transcript: string,
+  options: SpeechSynthesisOptions
+): string {
+  const sections: string[] = [];
+  if (options.scene?.trim()) {
+    sections.push(`## THE SCENE\n${options.scene.trim()}`);
+  }
+  if (options.style?.trim()) {
+    sections.push(`## DIRECTOR'S NOTES\n${options.style.trim()}`);
+  }
+  if (sections.length === 0) return transcript;
+  sections.push(`## TRANSCRIPT\n${transcript}`);
+  return sections.join("\n\n");
+}
+
 /**
  * Parse "audio/pcm;rate=24000;channels=1" → { rate, channels }. Returns
  * undefined fields if the header is absent or malformed.
  */
-function parsePcmContentType(
+export function parsePcmContentType(
   contentType: string | null
 ): { rate?: number; channels?: number } {
   if (!contentType) return {};

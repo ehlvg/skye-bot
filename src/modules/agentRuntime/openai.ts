@@ -277,12 +277,16 @@ export class OpenAIAgentsRuntime implements AgentRuntime {
     const text = unwrapTextEnvelope(
       typeof stream.finalOutput === "string" ? stream.finalOutput : ""
     );
-    if (!text) throw new Error("Agents SDK returned an empty final response");
-    this.deps.chatLog.appendConversation(request.tenant.chatId, threadKey(request.tenant), {
-      role: "assistant",
-      content: text,
-      text,
-    });
+    if (!text && !request.acceptEmptyFinal?.()) {
+      throw new Error("Agents SDK returned an empty final response");
+    }
+    if (text) {
+      this.deps.chatLog.appendConversation(request.tenant.chatId, threadKey(request.tenant), {
+        role: "assistant",
+        content: text,
+        text,
+      });
+    }
     return text;
   }
 

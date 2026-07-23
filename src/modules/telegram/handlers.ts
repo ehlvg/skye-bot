@@ -13,6 +13,10 @@ import type { ChatLogService } from "../chatLog/service.js";
 import type { ChatConfigService } from "../chatConfig/service.js";
 import type { UserConfigService } from "../userConfig/service.js";
 import type { SpeechService } from "../speech/service.js";
+import {
+  createSendVoiceTool,
+  type PreparedVoiceMessage,
+} from "../speech/tool.js";
 import type { AuditService } from "../audit/service.js";
 import type { SandboxService } from "../sandbox/service.js";
 import type { ProactiveService } from "../proactive/service.js";
@@ -83,6 +87,8 @@ export interface TelegramDeps {
 }
 
 const IMAGE_CMD_RE = /^\/image(?:@\S+)?\s*([\s\S]*)$/;
+const VOICE_OUTPUT_REQUEST_RE =
+  /(голос|озвуч|аудио|вслух|шепни|прошепт|voice note|voice message|spoken|out loud|read aloud|whisper)/i;
 const TEXT_HISTORY_LIMIT = 40;
 const TRACKED_CHATS = new Set<string>();
 const SUPPORTED_TEXT_MIME_RE =
@@ -689,7 +695,7 @@ export function installTelegram(bot: Bot, deps: TelegramDeps, contributions: Con
           "",
           "## Voice",
           "",
-          "Send a voice note — I transcribe and answer. Toggle voice replies with /voice.",
+          "Send a voice note — I transcribe and answer. Use /voice text, /voice auto, or /voice always to choose how I reply. You can also ask for a specific voice, tone, language, or spoken performance.",
           "",
           "## Documents, PDFs & audio",
           "",
@@ -882,7 +888,7 @@ export function installTelegram(bot: Bot, deps: TelegramDeps, contributions: Con
           } |`,
           `| **Vision** | ${vision === true ? yes : vision === false ? no : warn + " unknown"} |`,
           `| **Voice input** | ${deps.speech.isSttAvailable() ? yes : no} |`,
-          `| **Voice replies** | ${chatCfg.voiceMode ? yes : no} |`,
+          `| **Voice replies** | ${chatCfg.voiceReplyMode} |`,
           `| **Personality** | ${customPrompt ? "custom prompt" : "panel selection"} |`,
           `| **TTS** | ${deps.speech.isTtsAvailable() ? yes : no} |`,
           `| **Memories** | ${memoryCount} |`,
@@ -900,7 +906,17 @@ export function installTelegram(bot: Bot, deps: TelegramDeps, contributions: Con
       description: "Show all available tools (full debug detail)",
       handler: async (ctx, tenant) => {
         const connectorTools = await deps.connectors.detailedToolsFor(tenant.userId);
-        const total = builtinTools.length + connectorTools.length;
+        const displayedBuiltinTools = [...baseBuiltinTools];
+        if (deps.speech.isTtsAvailable()) {
+          displayedBuiltinTools.push(
+            createSendVoiceTool({
+              speech: deps.speech,
+              mode: deps.chatConfig.get(tenant.chatId).voiceReplyMode,
+              onPrepared: () => {},
+            })
+          );
+        }
+        const total = displayedBuiltinTools.length + connectorTools.length;
 
         if (total === 0) {
           await sendRichReply(ctx, "_No tools available._");
@@ -909,11 +925,11 @@ export function installTelegram(bot: Bot, deps: TelegramDeps, contributions: Con
 
         const sep = "\n\n---\n\n";
         const blocks: string[] = [
-          `## Tools (${total} total)\n\n**${builtinTools.length} built-in · ${connectorTools.length} connector**`,
+          `## Tools (${total} total)\n\n**${displayedBuiltinTools.length} built-in · ${connectorTools.length} connector**`,
         ];
 
-        if (builtinTools.length > 0) {
-          builtinTools.forEach((tool, i) => {
+        if (displayedBuiltinTools.length > 0) {
+          displayedBuiltinTools.forEach((tool, i) => {
             const heading = i === 0 ? "### Built-in\n\n" : "";
             blocks.push(
               `${heading}${formatToolBlock(tool.name, tool.description, tool.parameters)}`
@@ -1180,7 +1196,7 @@ export function installTelegram(bot: Bot, deps: TelegramDeps, contributions: Con
   }
 
   // --- Built-in tools (memory + image generation) come from contributions ---
-  const builtinTools: ToolDefinition[] = [...contributions.tools, generateImageTool];
+  const baseBuiltinTools: ToolDefinition[] = [...contributions.tools, generateImageTool];
 
   const maybeSendChecklist = async (
     ctx: GrammyContext,
@@ -1209,7 +1225,7 @@ export function installTelegram(bot: Bot, deps: TelegramDeps, contributions: Con
     userItem: ResponseInputItem,
     inputText: string,
     msgType: "text" | "voice" | "photo" | "document" | "audio" | "video_note",
-    options: { voiceReply?: boolean; signal?: AbortSignal } = {}
+    options: { signal?: AbortSignal } = {}
   ) => {
     const t0 = Date.now();
     const tk = threadKey(tenant);
@@ -1220,6 +1236,26 @@ export function installTelegram(bot: Bot, deps: TelegramDeps, contributions: Con
     const draft = createDraftManager(ctx);
     const actionTicker = createChatActionTicker(ctx, "typing");
     const toolCallHistory: ToolCallRecord[] = [];
+    const voiceReplyMode = deps.chatConfig.get(tenant.chatId).voiceReplyMode;
+    const preparedVoiceMessages: PreparedVoiceMessage[] = [];
+    const requestTools = [...baseBuiltinTools];
+    const allowVoiceTool =
+      voiceReplyMode !== "text" || VOICE_OUTPUT_REQUEST_RE.test(inputText);
+    if (deps.speech.isTtsAvailable() && allowVoiceTool) {
+      requestTools.push(
+        createSendVoiceTool({
+          speech: deps.speech,
+          mode: voiceReplyMode,
+          onStart: async () => {
+            await ctx.replyWithChatAction("record_voice");
+            void draft.send("", { kind: "voice", text: "Recording a voice response…" });
+          },
+          onPrepared: (message) => {
+            preparedVoiceMessages.push(message);
+          },
+        })
+      );
+    }
 
     let lastDraftTs = 0;
     const onChunk = (snapshot: string) => {
@@ -1346,6 +1382,7 @@ export function installTelegram(bot: Bot, deps: TelegramDeps, contributions: Con
           owner: deps.owner,
           onChunk,
           onToolCalls,
+          acceptEmptyFinal: () => preparedVoiceMessages.length > 0,
           signal: controller.signal,
         });
 
@@ -1358,11 +1395,11 @@ export function installTelegram(bot: Bot, deps: TelegramDeps, contributions: Con
         controller.signal.throwIfAborted();
         try {
           const attemptText = await withBillingLock(tenant.userId, () =>
-            runAttempt(attemptModelId, builtinTools)
+            runAttempt(attemptModelId, requestTools)
           );
           rawText = attemptText;
-          if (rawText) usedModelId = attemptModelId;
-          if (rawText) break;
+          if (rawText || preparedVoiceMessages.length > 0) usedModelId = attemptModelId;
+          if (rawText || preparedVoiceMessages.length > 0) break;
           throw new Error("Model returned an empty response");
         } catch (e) {
           lastAttemptError = e;
@@ -1379,7 +1416,7 @@ export function installTelegram(bot: Bot, deps: TelegramDeps, contributions: Con
         }
       }
 
-      if (!rawText) {
+      if (!rawText && preparedVoiceMessages.length === 0) {
         const recoveryModelId = fallbackIds[0] ?? modelId;
         void draft.send("", { ...DEFAULT_DRAFT_STATUS, text: "Trying without tools…" });
         try {
@@ -1392,10 +1429,12 @@ export function installTelegram(bot: Bot, deps: TelegramDeps, contributions: Con
           lastAttemptError = e;
         }
       }
-      if (!rawText && lastAttemptError) throw lastAttemptError;
+      if (!rawText && preparedVoiceMessages.length === 0 && lastAttemptError) {
+        throw lastAttemptError;
+      }
       const text = cleanMd(unwrapTextEnvelope(rawText));
 
-      if (!text) {
+      if (!text && preparedVoiceMessages.length === 0) {
         await draft.delete();
         await ctx.reply("I couldn't generate a response. Please try again.", {
           reply_to_message_id: ctx.message?.message_id,
@@ -1412,10 +1451,13 @@ export function installTelegram(bot: Bot, deps: TelegramDeps, contributions: Con
         return;
       }
 
-      const shouldVoice =
-        options.voiceReply ||
-        (deps.chatConfig.get(tenant.chatId).voiceMode && deps.speech.isTtsAvailable());
-      if (shouldVoice && deps.speech.isTtsAvailable()) {
+      const shouldVoice = voiceReplyMode === "always" && deps.speech.isTtsAvailable();
+      if (
+        preparedVoiceMessages.length === 0 &&
+        text &&
+        shouldVoice &&
+        deps.speech.isTtsAvailable()
+      ) {
         await ctx.replyWithChatAction("record_voice");
         void draft.send("", { kind: "voice", text: "Recording a voice response…" });
         const audioBuffer = await deps.speech.synthesize(text);
@@ -1444,19 +1486,35 @@ export function installTelegram(bot: Bot, deps: TelegramDeps, contributions: Con
 
       const finalText = buildFinalReply(toolCallHistory, text);
       await draft.delete();
-      const checklistMessage = await maybeSendChecklist(ctx, finalText, inputText);
-      if (!checklistMessage) await sendRichReply(ctx, finalText);
+      if (finalText) {
+        const checklistMessage = await maybeSendChecklist(ctx, finalText, inputText);
+        if (!checklistMessage) await sendRichReply(ctx, finalText);
+      }
+      for (const message of preparedVoiceMessages) {
+        await ctx.replyWithVoice(new InputFile(message.audio, "response.ogg"), {
+          reply_to_message_id: ctx.message?.message_id,
+        });
+      }
       reactSafely(ctx, "👍");
+      const spokenText = preparedVoiceMessages.map((message) => message.transcript).join("\n");
+      if (!text && spokenText) {
+        storeConversation(
+          tenant,
+          "assistant",
+          { type: "voice", transcript: spokenText },
+          spokenText
+        );
+      }
       deps.audit.log({
         ...ctxAudit(ctx),
         msgType,
         inputLen: inputText.length,
-        outputLen: text.length,
+        outputLen: text.length + spokenText.length,
         latencyMs: Date.now() - t0,
         status: "ok",
         model: deps.llm.resolveModel(usedModelId).model,
         inputText,
-        outputText: finalText,
+        outputText: [finalText, spokenText].filter(Boolean).join("\n\n"),
         toolCalls: toolCallHistory,
       });
     } catch (e) {
@@ -1835,10 +1893,7 @@ export function installTelegram(bot: Bot, deps: TelegramDeps, contributions: Con
           role: "user",
           content,
         };
-        await runLlmReply(ctx, tenant, userItem, recognized, "voice", {
-          voiceReply: true,
-          signal,
-        });
+        await runLlmReply(ctx, tenant, userItem, recognized, "voice", { signal });
       } catch (e) {
         log.error({ ...serializeError(e) }, "Voice preparation failed");
         await ctx

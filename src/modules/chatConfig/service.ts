@@ -1,35 +1,43 @@
 import { getDb } from "../../core/db.js";
 
 export interface ChatApiConfig {
-  voiceMode: boolean;
+  voiceReplyMode: VoiceReplyMode;
 }
 
+export type VoiceReplyMode = "text" | "auto" | "always";
+
 type ConfigRow = {
-  voiceMode: number;
+  voiceReplyMode: string;
 };
+
+export function isVoiceReplyMode(value: unknown): value is VoiceReplyMode {
+  return value === "text" || value === "auto" || value === "always";
+}
 
 export function getChatConfig(chatId: number): ChatApiConfig {
   const row = getDb()
     .prepare<
       [number],
       ConfigRow
-    >("SELECT voice_mode AS voiceMode FROM chat_configs WHERE chat_id = ?")
+    >("SELECT voice_reply_mode AS voiceReplyMode FROM chat_configs WHERE chat_id = ?")
     .get(chatId);
-  if (!row) return { voiceMode: false };
-  return { voiceMode: row.voiceMode === 1 };
+  if (!row || !isVoiceReplyMode(row.voiceReplyMode)) return { voiceReplyMode: "text" };
+  return { voiceReplyMode: row.voiceReplyMode };
 }
 
-export function setChatVoiceMode(chatId: number, enabled: boolean): void {
+export function setChatVoiceReplyMode(chatId: number, mode: VoiceReplyMode): void {
   getDb()
     .prepare(
-      `INSERT INTO chat_configs (chat_id, voice_mode) VALUES (?, ?)
-       ON CONFLICT(chat_id) DO UPDATE SET voice_mode = excluded.voice_mode`
+      `INSERT INTO chat_configs (chat_id, voice_reply_mode) VALUES (?, ?)
+       ON CONFLICT(chat_id) DO UPDATE SET voice_reply_mode = excluded.voice_reply_mode`
     )
-    .run(chatId, enabled ? 1 : 0);
+    .run(chatId, mode);
 }
 
-export function resetChatVoiceMode(chatId: number): void {
-  getDb().prepare("DELETE FROM chat_configs WHERE chat_id = ? AND voice_mode = 0").run(chatId);
+export function resetChatVoiceReplyMode(chatId: number): void {
+  getDb()
+    .prepare("DELETE FROM chat_configs WHERE chat_id = ? AND voice_reply_mode = 'text'")
+    .run(chatId);
 }
 
 function storedThreadId(threadId?: number): number {
@@ -106,8 +114,8 @@ export function resetChatThreadAgent(chatId: number, threadId?: number): boolean
 
 export interface ChatConfigService {
   get(chatId: number): ChatApiConfig;
-  setVoiceMode(chatId: number, enabled: boolean): void;
-  resetVoiceMode(chatId: number): void;
+  setVoiceReplyMode(chatId: number, mode: VoiceReplyMode): void;
+  resetVoiceReplyMode(chatId: number): void;
   getPrompt(chatId: number, threadId?: number): string | undefined;
   setPrompt(chatId: number, threadId: number | undefined, prompt: string): void;
   resetPrompt(chatId: number, threadId?: number): boolean;
@@ -118,8 +126,8 @@ export interface ChatConfigService {
 
 export const chatConfigService: ChatConfigService = {
   get: getChatConfig,
-  setVoiceMode: setChatVoiceMode,
-  resetVoiceMode: resetChatVoiceMode,
+  setVoiceReplyMode: setChatVoiceReplyMode,
+  resetVoiceReplyMode: resetChatVoiceReplyMode,
   getPrompt: getChatThreadPrompt,
   setPrompt: setChatThreadPrompt,
   resetPrompt: resetChatThreadPrompt,

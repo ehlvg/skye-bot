@@ -38,6 +38,7 @@ export interface AgentRunRequest {
   owner?: { name: string; tag: string };
   onChunk?: (snapshot: string) => void;
   onToolCalls?: (calls: ToolCallRecord[]) => void;
+  acceptEmptyFinal?: () => boolean;
   signal?: AbortSignal;
 }
 

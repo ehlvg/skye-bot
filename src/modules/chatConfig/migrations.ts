@@ -78,4 +78,22 @@ export const migrations: Migration[] = [
       `);
     },
   },
+  {
+    id: "006-flexible-voice-replies",
+    up: (db) => {
+      const cols = new Set(
+        (db.pragma("table_info(chat_configs)") as { name: string }[]).map((c) => c.name)
+      );
+      if (!cols.has("voice_reply_mode")) {
+        db.exec(
+          "ALTER TABLE chat_configs ADD COLUMN voice_reply_mode TEXT NOT NULL DEFAULT 'text'"
+        );
+        if (cols.has("voice_mode")) {
+          db.exec(
+            "UPDATE chat_configs SET voice_reply_mode = CASE WHEN voice_mode = 1 THEN 'always' ELSE 'text' END"
+          );
+        }
+      }
+    },
+  },
 ];

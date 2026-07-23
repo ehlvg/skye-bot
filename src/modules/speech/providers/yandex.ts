@@ -1,4 +1,8 @@
-import type { SpeechProvider } from "../types.js";
+import type {
+  SpeechProvider,
+  SpeechSynthesisOptions,
+  TtsCapabilities,
+} from "../types.js";
 import { log } from "../../../utils/log.js";
 
 const STT_URL = "https://stt.api.cloud.yandex.net/speech/v1/stt:recognize";
@@ -26,6 +30,13 @@ export class YandexSpeechProvider implements SpeechProvider {
 
   isTtsAvailable(): boolean {
     return this.settings.apiKey.length > 0;
+  }
+
+  getTtsCapabilities(): TtsCapabilities {
+    return {
+      defaultVoice: this.settings.ttsVoice,
+      expressive: false,
+    };
   }
 
   async recognize(audioBuffer: Buffer, language: string = "ru-RU"): Promise<string | null> {
@@ -65,7 +76,7 @@ export class YandexSpeechProvider implements SpeechProvider {
    * Max 5000 chars per call — longer texts are truncated by the caller.
    * Returns OGG Opus bytes ready for Telegram replyWithVoice.
    */
-  async synthesize(text: string): Promise<Buffer | null> {
+  async synthesize(text: string, options: SpeechSynthesisOptions = {}): Promise<Buffer | null> {
     if (!this.isTtsAvailable()) {
       log.warn("Yandex Cloud API key not configured, cannot synthesize speech");
       return null;
@@ -73,7 +84,7 @@ export class YandexSpeechProvider implements SpeechProvider {
 
     const body = new URLSearchParams({
       text,
-      voice: this.settings.ttsVoice,
+      voice: options.voice || this.settings.ttsVoice,
       lang: this.settings.ttsLang,
       emotion: this.settings.ttsEmotion,
       speed: String(this.settings.ttsSpeed),

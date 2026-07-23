@@ -8,8 +8,9 @@ import {
   getChatThreadPrompt,
   resetChatThreadPrompt,
   setChatThreadPrompt,
-  setChatVoiceMode,
+  setChatVoiceReplyMode,
   type ChatConfigService,
+  type VoiceReplyMode,
 } from "./service.js";
 
 export const MAX_CHAT_PROMPT_CHARS = 16_000;
@@ -17,6 +18,14 @@ export const MAX_CHAT_PROMPT_CHARS = 16_000;
 function scopeLabel(threadId?: number): string {
   return threadId == null ? "this chat" : "this topic";
 }
+
+const VOICE_MODES: VoiceReplyMode[] = ["text", "auto", "always"];
+
+const VOICE_MODE_MESSAGES: Record<VoiceReplyMode, string> = {
+  text: "📝 **Voice replies: TEXT**\n\n_Skye replies in text unless you explicitly ask for audio._",
+  auto: "✨ **Voice replies: AUTO**\n\n_Skye may use a voice note when vocal delivery adds something useful._",
+  always: "🎙 **Voice replies: ALWAYS**\n\n_Regular responses will be sent as voice notes._",
+};
 
 declare module "../../core/module.js" {
   interface SkyeServices {
@@ -35,17 +44,25 @@ export const chatConfigModule: SkyeModule = {
       commands: [
         {
           name: "voice",
-          description: "Toggle voice note responses",
+          description: "Change voice reply mode",
           public: true,
           handler: async (ctx, tenant) => {
             const cfg = getChatConfig(tenant.chatId);
-            const newState = !cfg.voiceMode;
-            setChatVoiceMode(tenant.chatId, newState);
+            const requested = ctx.match?.toString().trim().toLowerCase();
+            const requestedMode = VOICE_MODES.find((mode) => mode === requested);
+            if (requested && !requestedMode) {
+              await sendRichReply(
+                ctx,
+                `Unknown voice mode \`${requested}\`. Use /voice text, /voice auto, or /voice always.\n\n_Current mode: **${cfg.voiceReplyMode.toUpperCase()}**._`
+              );
+              return;
+            }
+            const currentIndex = VOICE_MODES.indexOf(cfg.voiceReplyMode);
+            const nextMode = requestedMode ?? VOICE_MODES[(currentIndex + 1) % VOICE_MODES.length];
+            setChatVoiceReplyMode(tenant.chatId, nextMode);
             await sendRichReply(
               ctx,
-              newState
-                ? "🎙 **Voice mode ON**\n\n_Text responses will be sent as voice notes._"
-                : "📝 **Voice mode OFF**\n\n_Responses will be sent as text._"
+              `${VOICE_MODE_MESSAGES[nextMode]}\n\n_Use /voice text, /voice auto, or /voice always to choose directly._`
             );
           },
         },

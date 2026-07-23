@@ -1,6 +1,17 @@
 import type { ModuleContext, PanelRoute } from "../../core/module.js";
 import type { PanelRequest } from "../panel/index.js";
 import { getDb } from "../../core/db.js";
+import { isVoiceReplyMode, type VoiceReplyMode } from "./service.js";
+
+export function serializeChatConfig(mode: VoiceReplyMode): {
+  voiceReplyMode: VoiceReplyMode;
+  voiceMode: boolean;
+} {
+  return {
+    voiceReplyMode: mode,
+    voiceMode: mode === "always",
+  };
+}
 
 export function buildRoutes(ctx: ModuleContext): PanelRoute[] {
   const chatConfig = ctx.services.get("chatConfig");
@@ -21,11 +32,11 @@ export function buildRoutes(ctx: ModuleContext): PanelRoute[] {
           .get(userId);
 
         if (!row) {
-          res.json({ voiceMode: false });
+          res.json(serializeChatConfig("text"));
           return;
         }
         const cfg = chatConfig.get(row.chatId);
-        res.json({ voiceMode: cfg.voiceMode });
+        res.json(serializeChatConfig(cfg.voiceReplyMode));
       },
     },
     {
@@ -33,7 +44,19 @@ export function buildRoutes(ctx: ModuleContext): PanelRoute[] {
       path: "/chat-config",
       handler: (req, res) => {
         const userId = (req as PanelRequest).tenant.userId!;
-        const body = req.body as { voiceMode?: boolean };
+        const body = req.body as { voiceReplyMode?: unknown; voiceMode?: boolean };
+        const requestedMode: VoiceReplyMode | undefined = isVoiceReplyMode(body.voiceReplyMode)
+          ? body.voiceReplyMode
+          : typeof body.voiceMode === "boolean"
+            ? body.voiceMode
+              ? "always"
+              : "text"
+            : undefined;
+
+        if (body.voiceReplyMode !== undefined && !isVoiceReplyMode(body.voiceReplyMode)) {
+          res.status(400).json({ error: "voiceReplyMode must be text, auto, or always" });
+          return;
+        }
 
         const row = getDb()
           .prepare<
@@ -43,19 +66,21 @@ export function buildRoutes(ctx: ModuleContext): PanelRoute[] {
           .get(userId);
 
         if (row) {
-          if (body.voiceMode !== undefined) chatConfig.setVoiceMode(row.chatId, body.voiceMode);
+          if (requestedMode !== undefined) {
+            chatConfig.setVoiceReplyMode(row.chatId, requestedMode);
+          }
           const cfg = chatConfig.get(row.chatId);
-          if (body.voiceMode !== undefined) {
+          if (requestedMode !== undefined) {
             audit()?.event({
               action: "voice_mode_changed",
               userId,
               chatId: row.chatId,
-              details: { enabled: cfg.voiceMode },
+              details: { mode: cfg.voiceReplyMode },
             });
           }
-          res.json({ voiceMode: cfg.voiceMode });
+          res.json(serializeChatConfig(cfg.voiceReplyMode));
         } else {
-          res.json({ voiceMode: body.voiceMode ?? false });
+          res.json(serializeChatConfig(requestedMode ?? "text"));
         }
       },
     },

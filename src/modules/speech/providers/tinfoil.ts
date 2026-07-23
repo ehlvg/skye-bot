@@ -1,9 +1,24 @@
-import type { SpeechProvider } from "../types.js";
+import type {
+  SpeechProvider,
+  SpeechSynthesisOptions,
+  TtsCapabilities,
+} from "../types.js";
 import { transcodeAudio, type AudioFormat } from "../transcode.js";
 import { log } from "../../../utils/log.js";
 
 const STT_PATH = "/audio/transcriptions";
 const TTS_PATH = "/audio/speech";
+const TINFOIL_TTS_VOICES = [
+  "aiden",
+  "dylan",
+  "eric",
+  "ono_anna",
+  "ryan",
+  "serena",
+  "sohee",
+  "uncle_fu",
+  "vivian",
+] as const;
 
 export interface TinfoilSettings {
   apiKey: string;
@@ -33,6 +48,15 @@ export class TinfoilSpeechProvider implements SpeechProvider {
 
   isTtsAvailable(): boolean {
     return this.settings.apiKey.length > 0 && this.settings.ttsModel.length > 0;
+  }
+
+  getTtsCapabilities(): TtsCapabilities {
+    const isQwen = this.settings.ttsModel.toLowerCase().includes("qwen3-tts");
+    return {
+      defaultVoice: this.settings.ttsVoice,
+      ...(isQwen ? { voices: TINFOIL_TTS_VOICES } : {}),
+      expressive: true,
+    };
   }
 
   async recognize(audioBuffer: Buffer, language: string = "ru-RU"): Promise<string | null> {
@@ -86,7 +110,7 @@ export class TinfoilSpeechProvider implements SpeechProvider {
     }
   }
 
-  async synthesize(text: string): Promise<Buffer | null> {
+  async synthesize(text: string, options: SpeechSynthesisOptions = {}): Promise<Buffer | null> {
     if (!this.isTtsAvailable()) {
       log.warn("Tinfoil speech not configured, cannot synthesize speech");
       return null;
@@ -96,9 +120,12 @@ export class TinfoilSpeechProvider implements SpeechProvider {
       const body: Record<string, unknown> = {
         model: this.settings.ttsModel,
         input: text,
-        voice: this.settings.ttsVoice,
+        voice: options.voice || this.settings.ttsVoice,
       };
-      if (this.settings.ttsInstruct) body.instruct = this.settings.ttsInstruct;
+      const instruct = [this.settings.ttsInstruct, options.scene, options.style]
+        .filter(Boolean)
+        .join("\n");
+      if (instruct) body.instruct = instruct;
 
       const res = await fetch(`${this.settings.baseUrl}${TTS_PATH}`, {
         method: "POST",

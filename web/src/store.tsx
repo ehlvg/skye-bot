@@ -68,7 +68,7 @@ interface AppState {
   updateConfig: (patch: Partial<UserConfig>) => void;
   saveConfig: () => Promise<void>;
 
-  toggleVoice: () => Promise<void>;
+  setVoiceReplyMode: (mode: ChatConfig["voiceReplyMode"]) => Promise<void>;
 
   editor: { open: boolean; connector: CustomConnector | null };
   openCustomConnector: (connector: CustomConnector | null) => void;
@@ -102,7 +102,7 @@ export function useApp(): AppState {
 
 const EMPTY = {
   config: { systemPrompt: "", personality: "skye" as const },
-  chatConfig: { voiceMode: false },
+  chatConfig: { voiceReplyMode: "text" as const },
   connectors: {
     managed: { enabled: false, connectors: [] },
     custom: [],
@@ -286,19 +286,19 @@ export function AppProvider({ children }: { children: ReactNode }) {
     }
   }, [config, saving]);
 
-  const toggleVoice = useCallback(async () => {
-    const next = !chatConfig.voiceMode;
-    setChatConfig({ voiceMode: next });
+  const setVoiceReplyMode = useCallback(async (mode: ChatConfig["voiceReplyMode"]) => {
+    const previous = chatConfig.voiceReplyMode;
+    setChatConfig({ voiceReplyMode: mode });
     haptic.selection();
     try {
-      const updated = await api.updateChatConfig({ voiceMode: next });
+      const updated = await api.updateChatConfig({ voiceReplyMode: mode });
       setChatConfig(updated);
     } catch (e) {
-      setChatConfig({ voiceMode: !next });
+      setChatConfig({ voiceReplyMode: previous });
       haptic.error();
       alertDialog(`Update failed: ${e instanceof Error ? e.message : String(e)}`);
     }
-  }, [chatConfig.voiceMode]);
+  }, [chatConfig.voiceReplyMode]);
 
   const openCustomConnector = useCallback((connector: CustomConnector | null) => {
     haptic.light();
@@ -514,7 +514,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
       markDirty,
       updateConfig,
       saveConfig,
-      toggleVoice,
+      setVoiceReplyMode,
       editor,
       openCustomConnector,
       closeCustomConnector,
@@ -559,7 +559,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
       markDirty,
       updateConfig,
       saveConfig,
-      toggleVoice,
+      setVoiceReplyMode,
       editor,
       openCustomConnector,
       closeCustomConnector,

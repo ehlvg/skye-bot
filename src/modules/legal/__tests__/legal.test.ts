@@ -50,7 +50,9 @@ function seed(userId: number): void {
   db.prepare(
     "INSERT INTO group_messages (chat_id, message_id, sender, timestamp, type, content, reply_to) VALUES (?, NULL, 'u', ?, 'text', 'hi', NULL)"
   ).run(userId, now);
-  db.prepare("INSERT INTO chat_configs (chat_id, voice_mode) VALUES (?, 1)").run(userId);
+  db.prepare("INSERT INTO chat_configs (chat_id, voice_reply_mode) VALUES (?, 'always')").run(
+    userId
+  );
   db.prepare(
     "INSERT INTO reminders (id, chat_id, thread_id, user_id, prompt, fire_at, repeat, created_at, active) VALUES (?, ?, NULL, ?, 'x', ?, 'none', ?, 1)"
   ).run("rem_1", userId, userId, now, now);

@@ -344,6 +344,9 @@ export function draftStatusForToolCalls(calls: ToolCallRecord[]): DraftStatus {
   if (names.some((name) => name.includes("image"))) {
     return { kind: "images", text: "Creating an image…" };
   }
+  if (names.some((name) => name.includes("voice") || name.includes("speech"))) {
+    return { kind: "voice", text: "Recording a voice response…" };
+  }
   if (names.some((name) => name.startsWith("sandbox_") || name.includes("command"))) {
     return { kind: "code", text: "Working with code and commands…" };
   }

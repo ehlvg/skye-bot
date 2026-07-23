@@ -1,4 +1,8 @@
-import type { SpeechProvider } from "./types.js";
+import type {
+  SpeechProvider,
+  SpeechSynthesisOptions,
+  TtsCapabilities,
+} from "./types.js";
 
 /**
  * Public speech facade exposed to the rest of the bot. Delegates to a
@@ -21,7 +25,11 @@ export class SpeechService {
     return this.provider.recognize(audioBuffer, language);
   }
 
-  synthesize(text: string): Promise<Buffer | null> {
-    return this.provider.synthesize(text);
+  synthesize(text: string, options?: SpeechSynthesisOptions): Promise<Buffer | null> {
+    return this.provider.synthesize(text, options);
+  }
+
+  getTtsCapabilities(): TtsCapabilities {
+    return this.provider.getTtsCapabilities();
   }
 }

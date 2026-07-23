@@ -215,15 +215,17 @@ voice:
     stt_model: "nvidia/parakeet-tdt-0.6b-v3"
     # TTS model — e.g. google/gemini-3.1-flash-tts-preview, openai/gpt-4o-mini-tts
     tts_model: "google/gemini-3.1-flash-tts-preview"
-    # Voice id (model-specific). Gemini TTS voices: Puck, Charon, Sulafat,
-    # Aoede, Leda, Orus, Kore, Fenrir. OpenAI TTS voices: alloy, echo, nova...
+    # Voice id (model-specific). Gemini supports 30 voices, including Aoede,
+    # Sulafat, Achird, Kore, Puck, Charon, Enceladus, Achernar and Gacrux.
+    # The send_voice tool may select any supported voice per response.
     tts_voice: "Aoede"
     # TTS response format: mp3 | pcm. Gemini TTS only supports "pcm".
     tts_format: "pcm"
     # tts_format: "mp3"
     # PCM raw stream parameters (used only when tts_format = "pcm"). OpenRouter
-    # returns 48 kHz mono s16le by default.
-    pcm_sample_rate: 48000
+    # Gemini returns 24 kHz mono s16le. The response Content-Type takes
+    # precedence when the provider announces a different rate.
+    pcm_sample_rate: 24000
     pcm_channels: 1
     # Input format to normalize audio into before STT: mp3 | wav | oggopus
     stt_format: "mp3"

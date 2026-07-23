@@ -1,11 +1,23 @@
-import { describe, it, expect } from "vitest";
+import { afterEach, describe, it, expect, vi } from "vitest";
 import { spawn } from "child_process";
 import ffmpegPath from "ffmpeg-static";
 import { transcodeAudio } from "../transcode.js";
 import { buildProvider, speechModule } from "../index.js";
 import { YandexSpeechProvider } from "../providers/yandex.js";
-import { OpenRouterSpeechProvider } from "../providers/openrouter.js";
+import {
+  buildGeminiTtsInput,
+  OpenRouterSpeechProvider,
+  parsePcmContentType,
+} from "../providers/openrouter.js";
+import { TinfoilSpeechProvider } from "../providers/tinfoil.js";
+import { SpeechService } from "../service.js";
+import { createSendVoiceTool } from "../tool.js";
+import type { SpeechProvider, SpeechSynthesisOptions } from "../types.js";
 import type { SkyeConfig } from "../../../core/config.js";
+
+afterEach(() => {
+  vi.unstubAllGlobals();
+});
 
 function ffmpegSineMp3(seconds = 0.4): Promise<Buffer> {
   return new Promise((resolve, reject) => {
@@ -64,7 +76,7 @@ function makeConfig(overrides: Partial<SkyeConfig> = {}): SkyeConfig {
         tts_model: "google/gemini-3.1-flash-tts-preview",
         tts_voice: "Aoede",
         tts_format: "mp3",
-        pcm_sample_rate: 48000,
+        pcm_sample_rate: 24000,
         pcm_channels: 1,
         stt_format: "mp3",
         stt_language: "",
@@ -196,5 +208,148 @@ describe("speech module provider selection", () => {
     } | undefined;
     expect(result?.service).toBeDefined();
     expect(result?.service?.isSttAvailable()).toBe(true);
+  });
+});
+
+describe("expressive speech", () => {
+  it("builds a Gemini director prompt around the exact transcript", () => {
+    expect(
+      buildGeminiTtsInput("[whispers] Секрет", {
+        scene: "A quiet room at night",
+        style: "Warm, slow and conspiratorial",
+      })
+    ).toBe(
+      "## THE SCENE\nA quiet room at night\n\n## DIRECTOR'S NOTES\nWarm, slow and conspiratorial\n\n## TRANSCRIPT\n[whispers] Секрет"
+    );
+  });
+
+  it("leaves a plain Gemini transcript unchanged", () => {
+    expect(buildGeminiTtsInput("Привет", {})).toBe("Привет");
+  });
+
+  it("parses Gemini PCM rate and channels from the response header", () => {
+    expect(parsePcmContentType("audio/pcm;rate=24000;channels=1")).toEqual({
+      rate: 24000,
+      channels: 1,
+    });
+  });
+
+  it("retries a transient OpenRouter TTS error with the same expressive payload", async () => {
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(new Response("temporary", { status: 500 }))
+      .mockResolvedValueOnce(new Response("invalid request", { status: 400 }));
+    vi.stubGlobal("fetch", fetchMock);
+    const provider = new OpenRouterSpeechProvider({
+      apiKey: "key",
+      baseUrl: "https://openrouter.ai/api/v1",
+      sttModel: "stt",
+      ttsModel: "google/gemini-3.1-flash-tts-preview",
+      ttsVoice: "Aoede",
+      ttsResponseFormat: "pcm",
+      sttInputFormat: "mp3",
+      sttLanguage: "",
+      referer: "",
+      title: "",
+      pcmSampleRate: 24000,
+      pcmChannels: 1,
+    });
+
+    await expect(
+      provider.synthesize("[whispers] Секрет", {
+        voice: "Sulafat",
+        style: "Warm and slow",
+        scene: "A quiet room",
+      })
+    ).resolves.toBeNull();
+
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+    const firstRequest = fetchMock.mock.calls[0]?.[1] as RequestInit;
+    expect(JSON.parse(String(firstRequest.body))).toEqual({
+      model: "google/gemini-3.1-flash-tts-preview",
+      input:
+        "## THE SCENE\nA quiet room\n\n## DIRECTOR'S NOTES\nWarm and slow\n\n## TRANSCRIPT\n[whispers] Секрет",
+      voice: "Sulafat",
+      response_format: "pcm",
+    });
+    expect(fetchMock.mock.calls[1]?.[1]).toEqual(fetchMock.mock.calls[0]?.[1]);
+  });
+
+  it("combines persistent and per-call Tinfoil voice directions", async () => {
+    const fetchMock = vi.fn().mockResolvedValue(new Response("invalid request", { status: 400 }));
+    vi.stubGlobal("fetch", fetchMock);
+    const provider = new TinfoilSpeechProvider({
+      apiKey: "key",
+      baseUrl: "https://inference.tinfoil.sh/v1",
+      sttModel: "whisper-large-v3-turbo",
+      ttsModel: "qwen3-tts",
+      ttsVoice: "vivian",
+      ttsInstruct: "A bright, friendly character",
+      sttInputFormat: "mp3",
+      sttLanguage: "",
+    });
+
+    await expect(
+      provider.synthesize("Hello", {
+        voice: "serena",
+        scene: "A quiet studio",
+        style: "Slow and warm",
+      })
+    ).resolves.toBeNull();
+
+    const request = fetchMock.mock.calls[0]?.[1] as RequestInit;
+    expect(JSON.parse(String(request.body))).toMatchObject({
+      voice: "serena",
+      instruct: "A bright, friendly character\nA quiet studio\nSlow and warm",
+    });
+  });
+
+  it("prepares one voice note with a per-call voice and directions", async () => {
+    const calls: { text: string; options?: SpeechSynthesisOptions }[] = [];
+    const provider: SpeechProvider = {
+      isSttAvailable: () => false,
+      isTtsAvailable: () => true,
+      recognize: async () => null,
+      synthesize: async (text, options) => {
+        calls.push({ text, options });
+        return Buffer.from("ogg");
+      },
+      getTtsCapabilities: () => ({
+        defaultVoice: "Aoede",
+        voices: ["Aoede", "Sulafat"],
+        expressive: true,
+      }),
+    };
+    const prepared: Buffer[] = [];
+    const tool = createSendVoiceTool({
+      speech: new SpeechService(provider),
+      mode: "auto",
+      onPrepared: ({ audio }) => {
+        prepared.push(audio);
+      },
+    });
+
+    const result = await tool.execute({
+      text: "[excited] Поехали!",
+      voice: "sulafat",
+      style: "Warm and lively",
+      scene: "A friendly studio",
+    }, {} as never);
+
+    expect(result).toContain("prepared successfully");
+    expect(calls).toEqual([
+      {
+        text: "[excited] Поехали!",
+        options: {
+          voice: "Sulafat",
+          style: "Warm and lively",
+          scene: "A friendly studio",
+        },
+      },
+    ]);
+    expect(prepared).toEqual([Buffer.from("ogg")]);
+    await expect(tool.execute({ text: "Again" }, {} as never)).resolves.toContain(
+      "already prepared"
+    );
   });
 });

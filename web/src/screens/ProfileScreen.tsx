@@ -1,7 +1,6 @@
 import { useApp } from "../store";
 import { Caption, Footnote, Hint, LargeTitle, Section } from "../components/ui";
 import { List, Row } from "../components/Row";
-import { Switch } from "../components/Switch";
 import { Icon } from "../components/Icon";
 import { fmtTokens, formatDate } from "../lib/format";
 import { haptic } from "../lib/telegram";
@@ -23,7 +22,7 @@ export function ProfileScreen() {
     dirty,
     updateConfig,
     saveConfig,
-    toggleVoice,
+    setVoiceReplyMode,
     setTab,
     about,
     openAbout,
@@ -158,19 +157,23 @@ export function ProfileScreen() {
       </Section>
 
       <Section>
-        <Caption>Chat</Caption>
-        <List>
-          <Row
-            icon={Icon.Speaker}
-            color="c-green"
-            title="Voice Mode"
-            subtitle="Send replies as voice notes via Yandex SpeechKit"
-            chevron={false}
-            trailing={<Switch on={chatConfig.voiceMode} onChange={() => toggleVoice()} ariaLabel="Voice mode" />}
-            onClick={() => toggleVoice()}
-          />
-        </List>
-        <Hint>Toggle how Skye replies in this chat.</Hint>
+        <Caption>Voice Replies</Caption>
+        <Segmented
+          value={chatConfig.voiceReplyMode}
+          options={[
+            { value: "text", label: "Text" },
+            { value: "auto", label: "Auto" },
+            { value: "always", label: "Always" },
+          ]}
+          onChange={(mode) => void setVoiceReplyMode(mode)}
+        />
+        <Hint>
+          {chatConfig.voiceReplyMode === "text"
+            ? "Skye uses text unless you explicitly ask for a voice note."
+            : chatConfig.voiceReplyMode === "auto"
+              ? "Skye chooses voice when delivery, emotion, or pronunciation benefits from it."
+              : "Every regular response is sent as a voice note."}
+        </Hint>
       </Section>
 
       {dirty && (

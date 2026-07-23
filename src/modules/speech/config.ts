@@ -19,7 +19,7 @@ export const speechConfigSchema = z.object({
           tts_model: z.string().default("google/gemini-3.1-flash-tts-preview"),
           tts_voice: z.string().default("Aoede"),
           tts_format: z.enum(["mp3", "pcm"]).default("mp3"),
-          pcm_sample_rate: z.number().int().positive().default(48000),
+          pcm_sample_rate: z.number().int().positive().default(24000),
           pcm_channels: z.number().int().positive().default(1),
           stt_format: z.enum(["mp3", "wav", "oggopus"]).default("mp3"),
           stt_language: z.string().default(""),

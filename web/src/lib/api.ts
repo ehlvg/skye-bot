@@ -44,7 +44,7 @@ export interface UserConfig {
 }
 
 export interface ChatConfig {
-  voiceMode: boolean;
+  voiceReplyMode: "text" | "auto" | "always";
 }
 
 export interface CustomConnector {
