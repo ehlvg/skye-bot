@@ -1,4 +1,4 @@
-<div align="center"><img src="./assets/wordmark.png" alt="Cloud circle avatar" width="96"/></div>
+<div align="center"><img src="./assets/wordmark.png" alt="Skye textmark" width="96"/></div>
 
 <h3 align="center">
     Skye
@@ -29,7 +29,7 @@ See `AGENTS.md` for the repository conventions.
 
 ## Documentation
 
-Skye's full documentation lives on the [website](https://shiftline.craft.me/skye).
+Skye's full documentation lives on the [website](https://skye-bot.com).
 
 ## License
 
