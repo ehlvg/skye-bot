@@ -1,14 +1,11 @@
-import type {
-  SpeechProvider,
-  SpeechSynthesisOptions,
-  TtsCapabilities,
-} from "../types.js";
+import type { SpeechProvider, SpeechSynthesisOptions, TtsCapabilities } from "../types.js";
 import { transcodeAudio, pcmToOggOpus, type AudioFormat } from "../transcode.js";
 import { log } from "../../../utils/log.js";
 
 const STT_PATH = "/audio/transcriptions";
 const TTS_PATH = "/audio/speech";
 const TTS_MAX_ATTEMPTS = 2;
+const TTS_TIMEOUT_MS = 60_000;
 
 export const GEMINI_TTS_VOICES = [
   "Zephyr",
@@ -137,20 +134,28 @@ export class OpenRouterSpeechProvider implements SpeechProvider {
     }
   }
 
-  async synthesize(text: string, options: SpeechSynthesisOptions = {}): Promise<Buffer | null> {
+  async synthesize(
+    text: string,
+    options: SpeechSynthesisOptions = {},
+    signal?: AbortSignal
+  ): Promise<Buffer | null> {
     if (!this.isTtsAvailable()) {
       log.warn("OpenRouter speech not configured, cannot synthesize speech");
       return null;
     }
 
+    const startedAt = Date.now();
+    const timeoutSignal = AbortSignal.timeout(TTS_TIMEOUT_MS);
+    const requestSignal = signal ? AbortSignal.any([signal, timeoutSignal]) : timeoutSignal;
     try {
       const model = this.settings.ttsModel.toLowerCase();
       const input = model.includes("gemini") ? buildGeminiTtsInput(text, options) : text;
+      const responseFormat = model.includes("gemini") ? "pcm" : this.settings.ttsResponseFormat;
       const body: Record<string, unknown> = {
         model: this.settings.ttsModel,
         input,
         voice: options.voice || this.settings.ttsVoice,
-        response_format: this.settings.ttsResponseFormat,
+        response_format: responseFormat,
       };
       if (model.includes("openai/") && (options.style || options.scene)) {
         body.provider = {
@@ -162,44 +167,119 @@ export class OpenRouterSpeechProvider implements SpeechProvider {
         };
       }
 
-      let res: Response | undefined;
+      let raw: Buffer | undefined;
+      let contentType: string | null = null;
       for (let attempt = 1; attempt <= TTS_MAX_ATTEMPTS; attempt += 1) {
+        const attemptStartedAt = Date.now();
+        let res: Response;
         try {
           res = await fetch(`${this.settings.baseUrl}${TTS_PATH}`, {
             method: "POST",
             headers: this.headers({ "Content-Type": "application/json" }),
             body: JSON.stringify(body),
+            signal: requestSignal,
           });
         } catch (error) {
+          if (signal?.aborted) throw signal.reason;
+          if (requestSignal.aborted) throw requestSignal.reason;
           if (attempt < TTS_MAX_ATTEMPTS) {
-            log.warn({ err: error, attempt }, "OpenRouter TTS request failed, retrying");
+            log.warn(
+              { err: error, attempt, elapsedMs: Date.now() - attemptStartedAt },
+              "OpenRouter TTS request failed, retrying"
+            );
             continue;
           }
           throw error;
         }
+        const headersMs = Date.now() - attemptStartedAt;
 
-        if (res.ok) break;
-        const errorBody = await res.text().catch(() => "");
-        if (res.status >= 500 && attempt < TTS_MAX_ATTEMPTS) {
+        if (!res.ok) {
+          const errorBody = await res.text().catch(() => "");
+          if (res.status >= 500 && attempt < TTS_MAX_ATTEMPTS) {
+            log.warn(
+              { status: res.status, attempt, body: errorBody },
+              "OpenRouter TTS returned a transient error, retrying"
+            );
+            continue;
+          }
+          log.error(`OpenRouter TTS failed (${res.status}): ${errorBody}`);
+          return null;
+        }
+
+        const candidate = Buffer.from(await res.arrayBuffer());
+        const bodyMs = Date.now() - attemptStartedAt - headersMs;
+        const candidateContentType = res.headers.get("content-type");
+        const generationId = res.headers.get("x-generation-id");
+        const invalidReason = validateTtsBytes(
+          candidate,
+          candidateContentType,
+          responseFormat,
+          this.settings.pcmSampleRate,
+          this.settings.pcmChannels
+        );
+        if (invalidReason && attempt < TTS_MAX_ATTEMPTS) {
           log.warn(
-            { status: res.status, attempt, body: errorBody },
-            "OpenRouter TTS returned a transient error, retrying"
+            {
+              attempt,
+              bytes: candidate.length,
+              contentType: candidateContentType,
+              generationId,
+              invalidReason,
+              headersMs,
+              bodyMs,
+            },
+            "OpenRouter TTS returned invalid audio, retrying"
           );
           continue;
         }
-        log.error(`OpenRouter TTS failed (${res.status}): ${errorBody}`);
-        return null;
+        if (invalidReason) {
+          log.error(
+            {
+              bytes: candidate.length,
+              contentType: candidateContentType,
+              generationId,
+              invalidReason,
+              headersMs,
+              bodyMs,
+            },
+            "OpenRouter TTS returned invalid audio"
+          );
+          return null;
+        }
+        const pcmInfo = parsePcmContentType(candidateContentType);
+        log.debug(
+          {
+            bytes: candidate.length,
+            contentType: candidateContentType,
+            generationId,
+            rate: pcmInfo.rate,
+            channels: pcmInfo.channels,
+            estimatedDurationSeconds:
+              responseFormat === "pcm"
+                ? candidate.length /
+                  ((pcmInfo.rate ?? this.settings.pcmSampleRate) *
+                    (pcmInfo.channels ?? this.settings.pcmChannels) *
+                    2)
+                : undefined,
+            attempt,
+            headersMs,
+            bodyMs,
+            totalMs: Date.now() - startedAt,
+          },
+          "OpenRouter TTS audio received"
+        );
+        raw = candidate;
+        contentType = candidateContentType;
+        break;
       }
-      if (!res?.ok) return null;
-
-      const raw = Buffer.from(await res.arrayBuffer());
+      if (!raw) return null;
 
       // PCM from OpenRouter is a raw s16le stream with no container/header, so
       // ffmpeg needs explicit format args. The actual sample rate is announced
       // in the Content-Type header (e.g. "audio/pcm;rate=24000;channels=1");
       // assuming the wrong rate produces sped-up / high-pitch output.
-      if (this.settings.ttsResponseFormat === "pcm") {
-        const { rate, channels } = parsePcmContentType(res.headers.get("content-type"));
+      if (responseFormat === "pcm") {
+        const { rate, channels } = parsePcmContentType(contentType);
         return pcmToOggOpus(
           raw,
           rate ?? this.settings.pcmSampleRate,
@@ -208,8 +288,9 @@ export class OpenRouterSpeechProvider implements SpeechProvider {
       }
       return transcodeAudio(raw, "oggopus");
     } catch (e) {
+      if (signal?.aborted) throw signal.reason;
       const msg = e instanceof Error ? e.message : String(e);
-      log.error(`OpenRouter TTS error: ${msg}`);
+      log.error({ err: e, elapsedMs: Date.now() - startedAt }, `OpenRouter TTS error: ${msg}`);
       return null;
     }
   }
@@ -229,10 +310,42 @@ export class OpenRouterSpeechProvider implements SpeechProvider {
   }
 }
 
-export function buildGeminiTtsInput(
-  transcript: string,
-  options: SpeechSynthesisOptions
-): string {
+export function validateTtsBytes(
+  audio: Buffer,
+  contentType: string | null,
+  responseFormat: "mp3" | "pcm",
+  fallbackPcmRate = 24_000,
+  fallbackPcmChannels = 1
+): string | null {
+  if (audio.length === 0) return "empty response body";
+  if (contentType?.toLowerCase().includes("json")) return `unexpected ${contentType}`;
+  if (responseFormat === "pcm") {
+    if (contentType && !contentType.toLowerCase().startsWith("audio/pcm")) {
+      return `unexpected ${contentType} for PCM response`;
+    }
+    const { rate, channels } = parsePcmContentType(contentType);
+    const bytesPerSample = 2;
+    const minimumBytes = Math.ceil(
+      (rate ?? fallbackPcmRate) * (channels ?? fallbackPcmChannels) * bytesPerSample * 0.1
+    );
+    if (audio.length < minimumBytes) return "PCM response is shorter than 100 ms";
+    const frameBytes = (channels ?? fallbackPcmChannels) * bytesPerSample;
+    if (audio.length % frameBytes !== 0) {
+      return "PCM response has an incomplete 16-bit sample";
+    }
+  } else {
+    if (
+      contentType &&
+      !["audio/mpeg", "audio/mp3"].some((type) => contentType.toLowerCase().startsWith(type))
+    ) {
+      return `unexpected ${contentType} for MP3 response`;
+    }
+    if (audio.length < 128) return "MP3 response is too short";
+  }
+  return null;
+}
+
+export function buildGeminiTtsInput(transcript: string, options: SpeechSynthesisOptions): string {
   const sections: string[] = [];
   if (options.scene?.trim()) {
     sections.push(`## THE SCENE\n${options.scene.trim()}`);
@@ -249,9 +362,10 @@ export function buildGeminiTtsInput(
  * Parse "audio/pcm;rate=24000;channels=1" → { rate, channels }. Returns
  * undefined fields if the header is absent or malformed.
  */
-export function parsePcmContentType(
-  contentType: string | null
-): { rate?: number; channels?: number } {
+export function parsePcmContentType(contentType: string | null): {
+  rate?: number;
+  channels?: number;
+} {
   if (!contentType) return {};
   const rateMatch = contentType.match(/rate=(\d+)/i);
   const chMatch = contentType.match(/channels=(\d+)/i);

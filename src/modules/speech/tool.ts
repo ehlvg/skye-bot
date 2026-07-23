@@ -1,6 +1,7 @@
 import type { ToolDefinition } from "../../core/module.js";
 import type { SpeechService } from "./service.js";
 import type { SpeechSynthesisOptions } from "./types.js";
+import { oggOpusDurationSeconds } from "./transcode.js";
 
 export type VoiceToolMode = "text" | "auto" | "always";
 
@@ -8,6 +9,7 @@ export interface PreparedVoiceMessage {
   audio: Buffer;
   transcript: string;
   options: SpeechSynthesisOptions;
+  durationSeconds: number;
 }
 
 interface VoiceToolOptions {
@@ -61,7 +63,8 @@ export function createSendVoiceTool(options: VoiceToolOptions): ToolDefinition {
 
   return {
     name: "send_voice",
-    timeoutMs: 120_000,
+    timeoutMs: 60_000,
+    terminal: true,
     description: `${policy} The audio is delivered as a Telegram voice note. Speak only content that belongs in the conversation. Do not repeat the transcript in the final text; after a successful call, return no text unless separate written context is genuinely useful. At most one voice note can be prepared per response.`,
     parameters: {
       type: "object",
@@ -69,7 +72,7 @@ export function createSendVoiceTool(options: VoiceToolOptions): ToolDefinition {
       required: ["text"],
       additionalProperties: false,
     },
-    execute: async (args) => {
+    execute: async (args, _tenant, signal) => {
       if (prepared) return "A voice note is already prepared for this response.";
 
       const transcript = String(args.text ?? "").trim();
@@ -95,11 +98,15 @@ export function createSendVoiceTool(options: VoiceToolOptions): ToolDefinition {
       const synthesisOptions = { voice, style, scene };
 
       await options.onStart?.();
-      const audio = await options.speech.synthesize(transcript, synthesisOptions);
+      const audio = await options.speech.synthesize(transcript, synthesisOptions, signal);
       if (!audio) return "Voice synthesis failed. Continue with a text response instead.";
+      const durationSeconds = oggOpusDurationSeconds(audio);
+      if (durationSeconds < 0.1) {
+        return "Voice synthesis returned empty audio. Continue with a text response instead.";
+      }
 
       prepared = true;
-      await options.onPrepared({ audio, transcript, options: synthesisOptions });
+      await options.onPrepared({ audio, transcript, options: synthesisOptions, durationSeconds });
       return "Voice note prepared successfully. Do not repeat its transcript in text.";
     },
   };

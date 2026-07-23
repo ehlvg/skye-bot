@@ -35,6 +35,7 @@ export interface ChatLoopDeps {
   onUsage?: (usage: { promptTokens: number; completionTokens: number }, modelId: string) => void;
   /** Bot owner info (name + Telegram handle) to weight in the system prompt. */
   owner?: { name: string; tag: string };
+  acceptEmptyFinal?: () => boolean;
 }
 
 export const MAX_TOOL_ITERATIONS = 20;
@@ -251,7 +252,7 @@ export async function runChatLoop(
         }
         const execution = isConnector
           ? deps.connectors.execute(fc.name, args, tenant.userId, signal)
-          : Promise.resolve(tool!.execute(args, tenant));
+          : Promise.resolve(tool!.execute(args, tenant, signal));
         result = await withTimeout(execution, tool?.timeoutMs ?? 60_000, fc.name, signal);
       } catch (e) {
         failed = true;
@@ -288,6 +289,11 @@ export async function runChatLoop(
     for (const item of executed) {
       toolOutputItems.push(item.output);
     }
+
+    const completedTerminalTool = executed.some(
+      (item) => builtinMap.get(item.call.name)?.terminal && deps.acceptEmptyFinal?.()
+    );
+    if (completedTerminalTool) return "";
 
     for (const fc of fnCalls) currentInput.push(fc as ResponseInputItem);
     currentInput.push(...toolOutputItems);

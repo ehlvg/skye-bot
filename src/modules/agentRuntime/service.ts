@@ -20,6 +20,7 @@ class LegacyAgentRuntime implements AgentRuntime {
         beforeRound: request.beforeRound,
         onUsage: request.onUsage,
         owner: request.owner,
+        acceptEmptyFinal: request.acceptEmptyFinal,
       },
       request.tenant,
       request.input,

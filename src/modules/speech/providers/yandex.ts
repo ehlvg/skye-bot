@@ -1,12 +1,9 @@
-import type {
-  SpeechProvider,
-  SpeechSynthesisOptions,
-  TtsCapabilities,
-} from "../types.js";
+import type { SpeechProvider, SpeechSynthesisOptions, TtsCapabilities } from "../types.js";
 import { log } from "../../../utils/log.js";
 
 const STT_URL = "https://stt.api.cloud.yandex.net/speech/v1/stt:recognize";
 const TTS_URL = "https://tts.api.cloud.yandex.net/speech/v1/tts:synthesize";
+const TTS_TIMEOUT_MS = 60_000;
 
 export interface YandexSettings {
   apiKey: string;
@@ -76,7 +73,11 @@ export class YandexSpeechProvider implements SpeechProvider {
    * Max 5000 chars per call — longer texts are truncated by the caller.
    * Returns OGG Opus bytes ready for Telegram replyWithVoice.
    */
-  async synthesize(text: string, options: SpeechSynthesisOptions = {}): Promise<Buffer | null> {
+  async synthesize(
+    text: string,
+    options: SpeechSynthesisOptions = {},
+    signal?: AbortSignal
+  ): Promise<Buffer | null> {
     if (!this.isTtsAvailable()) {
       log.warn("Yandex Cloud API key not configured, cannot synthesize speech");
       return null;
@@ -94,6 +95,9 @@ export class YandexSpeechProvider implements SpeechProvider {
       body.append("folderId", this.settings.folderId);
     }
 
+    const startedAt = Date.now();
+    const timeoutSignal = AbortSignal.timeout(TTS_TIMEOUT_MS);
+    const requestSignal = signal ? AbortSignal.any([signal, timeoutSignal]) : timeoutSignal;
     try {
       const res = await fetch(TTS_URL, {
         method: "POST",
@@ -102,6 +106,7 @@ export class YandexSpeechProvider implements SpeechProvider {
           "Content-Type": "application/x-www-form-urlencoded",
         },
         body: body.toString(),
+        signal: requestSignal,
       });
 
       if (!res.ok) {
@@ -110,10 +115,16 @@ export class YandexSpeechProvider implements SpeechProvider {
         return null;
       }
 
-      return Buffer.from(await res.arrayBuffer());
+      const audio = Buffer.from(await res.arrayBuffer());
+      log.debug(
+        { provider: "yandex", bytes: audio.length, totalMs: Date.now() - startedAt },
+        "TTS audio prepared"
+      );
+      return audio;
     } catch (e) {
+      if (signal?.aborted) throw signal.reason;
       const msg = e instanceof Error ? e.message : String(e);
-      log.error(`Yandex TTS error: ${msg}`);
+      log.error({ err: e, elapsedMs: Date.now() - startedAt }, `Yandex TTS error: ${msg}`);
       return null;
     }
   }

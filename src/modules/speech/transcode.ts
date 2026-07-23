@@ -56,11 +56,7 @@ function toOggOpus(input: Buffer): Promise<Buffer> {
  * Convert raw PCM (s16le, 48kHz mono — OpenRouter's default) to OGG Opus.
  * PCM has no container/header, so ffmpeg must be told the format explicitly.
  */
-export function pcmToOggOpus(
-  input: Buffer,
-  sampleRate = 48000,
-  channels = 1
-): Promise<Buffer> {
+export function pcmToOggOpus(input: Buffer, sampleRate = 48000, channels = 1): Promise<Buffer> {
   return new Promise((resolve, reject) => {
     const args = [
       "-hide_banner",
@@ -144,4 +140,25 @@ export function transcodeAudio(input: Buffer, target: AudioFormat): Promise<Buff
     default:
       return Promise.reject(new Error(`unsupported audio format: ${target}`));
   }
+}
+
+export function oggOpusDurationSeconds(input: Buffer): number {
+  let offset = 0;
+  let lastGranule = 0n;
+  while (offset + 27 <= input.length) {
+    if (input.subarray(offset, offset + 4).toString("ascii") !== "OggS") return 0;
+    const granule = input.readBigUInt64LE(offset + 6);
+    if (granule !== 0xffff_ffff_ffff_ffffn && granule > lastGranule) {
+      lastGranule = granule;
+    }
+    const segmentCount = input[offset + 26];
+    const segmentTableEnd = offset + 27 + segmentCount;
+    if (segmentTableEnd > input.length) return 0;
+    let bodyBytes = 0;
+    for (let i = offset + 27; i < segmentTableEnd; i += 1) bodyBytes += input[i];
+    const nextOffset = segmentTableEnd + bodyBytes;
+    if (nextOffset > input.length || nextOffset <= offset) return 0;
+    offset = nextOffset;
+  }
+  return Number(lastGranule) / 48_000;
 }

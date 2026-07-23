@@ -13,10 +13,8 @@ import type { ChatLogService } from "../chatLog/service.js";
 import type { ChatConfigService } from "../chatConfig/service.js";
 import type { UserConfigService } from "../userConfig/service.js";
 import type { SpeechService } from "../speech/service.js";
-import {
-  createSendVoiceTool,
-  type PreparedVoiceMessage,
-} from "../speech/tool.js";
+import { createSendVoiceTool, type PreparedVoiceMessage } from "../speech/tool.js";
+import { oggOpusDurationSeconds } from "../speech/transcode.js";
 import type { AuditService } from "../audit/service.js";
 import type { SandboxService } from "../sandbox/service.js";
 import type { ProactiveService } from "../proactive/service.js";
@@ -1239,8 +1237,7 @@ export function installTelegram(bot: Bot, deps: TelegramDeps, contributions: Con
     const voiceReplyMode = deps.chatConfig.get(tenant.chatId).voiceReplyMode;
     const preparedVoiceMessages: PreparedVoiceMessage[] = [];
     const requestTools = [...baseBuiltinTools];
-    const allowVoiceTool =
-      voiceReplyMode !== "text" || VOICE_OUTPUT_REQUEST_RE.test(inputText);
+    const allowVoiceTool = voiceReplyMode !== "text" || VOICE_OUTPUT_REQUEST_RE.test(inputText);
     if (deps.speech.isTtsAvailable() && allowVoiceTool) {
       requestTools.push(
         createSendVoiceTool({
@@ -1460,11 +1457,13 @@ export function installTelegram(bot: Bot, deps: TelegramDeps, contributions: Con
       ) {
         await ctx.replyWithChatAction("record_voice");
         void draft.send("", { kind: "voice", text: "Recording a voice response…" });
-        const audioBuffer = await deps.speech.synthesize(text);
-        if (audioBuffer) {
+        const audioBuffer = await deps.speech.synthesize(text, undefined, controller.signal);
+        const durationSeconds = audioBuffer ? oggOpusDurationSeconds(audioBuffer) : 0;
+        if (audioBuffer && durationSeconds >= 0.1) {
           await draft.delete();
           await ctx.replyWithVoice(new InputFile(audioBuffer, "response.ogg"), {
             reply_to_message_id: ctx.message?.message_id,
+            duration: Math.max(1, Math.ceil(durationSeconds)),
           });
           reactSafely(ctx, "👍");
           deps.audit.log({
@@ -1493,6 +1492,7 @@ export function installTelegram(bot: Bot, deps: TelegramDeps, contributions: Con
       for (const message of preparedVoiceMessages) {
         await ctx.replyWithVoice(new InputFile(message.audio, "response.ogg"), {
           reply_to_message_id: ctx.message?.message_id,
+          duration: Math.max(1, Math.ceil(message.durationSeconds)),
         });
       }
       reactSafely(ctx, "👍");

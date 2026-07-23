@@ -10,6 +10,139 @@ type OfferedTool = {
 };
 
 describe("runChatLoop", () => {
+  it("stops after one successful terminal tool call", async () => {
+    const requests: ResponseInputItem[][] = [];
+    let prepared = false;
+    let executions = 0;
+    const sendVoice: ToolDefinition = {
+      name: "send_voice",
+      description: "Prepare a voice note",
+      parameters: { type: "object", properties: {} },
+      terminal: true,
+      execute: () => {
+        executions += 1;
+        prepared = true;
+        return "Voice note prepared successfully.";
+      },
+    };
+    const deps = {
+      llm: {
+        resolveModel: () => ({
+          id: "test",
+          name: "Test",
+          model: "test/model",
+          multiplier: 1,
+          contextWindow: 128_000,
+        }),
+        askStream: (_instructions: string, input: ResponseInputItem[]): LlmStream => {
+          requests.push([...input]);
+          return {
+            on: () => undefined,
+            finalResponse: async () => ({
+              output_text: "",
+              output: [
+                {
+                  type: "function_call",
+                  call_id: "voice-1",
+                  name: "send_voice",
+                  arguments: "{}",
+                },
+              ],
+            }),
+            abort: async () => undefined,
+          };
+        },
+      },
+      connectors: {
+        toolsFor: async () => [],
+        isConnectorTool: () => false,
+      },
+      memory: { context: () => [] },
+      chatLog: {
+        context: () => undefined,
+        appendConversation: () => undefined,
+      },
+      userConfig: { get: () => ({}) },
+      chatConfig: { getPrompt: () => undefined },
+      builtinTools: [sendVoice],
+      acceptEmptyFinal: () => prepared,
+    } as unknown as ChatLoopDeps;
+
+    const result = await runChatLoop(deps, { chatId: 1, chatType: "private", userId: 1 }, [
+      { type: "message", role: "user", content: "Speak" },
+    ]);
+
+    expect(result).toBe("");
+    expect(executions).toBe(1);
+    expect(requests).toHaveLength(1);
+  });
+
+  it("continues to a text fallback when a terminal tool fails", async () => {
+    const responses: LlmResponse[] = [
+      {
+        output_text: "",
+        output: [
+          {
+            type: "function_call",
+            call_id: "voice-1",
+            name: "send_voice",
+            arguments: "{}",
+          },
+        ],
+      },
+      { output_text: "Text fallback", output: [] },
+    ];
+    let requests = 0;
+    const sendVoice: ToolDefinition = {
+      name: "send_voice",
+      description: "Prepare a voice note",
+      parameters: { type: "object", properties: {} },
+      terminal: true,
+      execute: () => "Voice synthesis failed. Continue with text.",
+    };
+    const deps = {
+      llm: {
+        resolveModel: () => ({
+          id: "test",
+          name: "Test",
+          model: "test/model",
+          multiplier: 1,
+          contextWindow: 128_000,
+        }),
+        askStream: (): LlmStream => {
+          requests += 1;
+          const response = responses.shift();
+          if (!response) throw new Error("Unexpected LLM request");
+          return {
+            on: () => undefined,
+            finalResponse: async () => response,
+            abort: async () => undefined,
+          };
+        },
+      },
+      connectors: {
+        toolsFor: async () => [],
+        isConnectorTool: () => false,
+      },
+      memory: { context: () => [] },
+      chatLog: {
+        context: () => undefined,
+        appendConversation: () => undefined,
+      },
+      userConfig: { get: () => ({}) },
+      chatConfig: { getPrompt: () => undefined },
+      builtinTools: [sendVoice],
+      acceptEmptyFinal: () => false,
+    } as unknown as ChatLoopDeps;
+
+    const result = await runChatLoop(deps, { chatId: 1, chatType: "private", userId: 1 }, [
+      { type: "message", role: "user", content: "Speak" },
+    ]);
+
+    expect(result).toBe("Text fallback");
+    expect(requests).toBe(2);
+  });
+
   it("allows 20 tool iterations and then requests a final answer with their outputs", async () => {
     const responses: LlmResponse[] = Array.from({ length: MAX_TOOL_ITERATIONS }, (_, index) => ({
       output_text: "",

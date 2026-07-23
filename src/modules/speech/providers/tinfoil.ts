@@ -1,13 +1,10 @@
-import type {
-  SpeechProvider,
-  SpeechSynthesisOptions,
-  TtsCapabilities,
-} from "../types.js";
+import type { SpeechProvider, SpeechSynthesisOptions, TtsCapabilities } from "../types.js";
 import { transcodeAudio, type AudioFormat } from "../transcode.js";
 import { log } from "../../../utils/log.js";
 
 const STT_PATH = "/audio/transcriptions";
 const TTS_PATH = "/audio/speech";
+const TTS_TIMEOUT_MS = 60_000;
 const TINFOIL_TTS_VOICES = [
   "aiden",
   "dylan",
@@ -110,12 +107,19 @@ export class TinfoilSpeechProvider implements SpeechProvider {
     }
   }
 
-  async synthesize(text: string, options: SpeechSynthesisOptions = {}): Promise<Buffer | null> {
+  async synthesize(
+    text: string,
+    options: SpeechSynthesisOptions = {},
+    signal?: AbortSignal
+  ): Promise<Buffer | null> {
     if (!this.isTtsAvailable()) {
       log.warn("Tinfoil speech not configured, cannot synthesize speech");
       return null;
     }
 
+    const startedAt = Date.now();
+    const timeoutSignal = AbortSignal.timeout(TTS_TIMEOUT_MS);
+    const requestSignal = signal ? AbortSignal.any([signal, timeoutSignal]) : timeoutSignal;
     try {
       const body: Record<string, unknown> = {
         model: this.settings.ttsModel,
@@ -134,6 +138,7 @@ export class TinfoilSpeechProvider implements SpeechProvider {
           "Content-Type": "application/json",
         },
         body: JSON.stringify(body),
+        signal: requestSignal,
       });
 
       if (!res.ok) {
@@ -143,10 +148,16 @@ export class TinfoilSpeechProvider implements SpeechProvider {
       }
 
       const raw = Buffer.from(await res.arrayBuffer());
-      return transcodeAudio(raw, "oggopus");
+      const audio = await transcodeAudio(raw, "oggopus");
+      log.debug(
+        { provider: "tinfoil", bytes: audio.length, totalMs: Date.now() - startedAt },
+        "TTS audio prepared"
+      );
+      return audio;
     } catch (e) {
+      if (signal?.aborted) throw signal.reason;
       const msg = e instanceof Error ? e.message : String(e);
-      log.error(`Tinfoil TTS error: ${msg}`);
+      log.error({ err: e, elapsedMs: Date.now() - startedAt }, `Tinfoil TTS error: ${msg}`);
       return null;
     }
   }

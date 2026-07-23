@@ -37,7 +37,13 @@ export interface ToolDefinition {
   readOnly?: boolean;
   /** Maximum execution time before a timeout result is returned to the model. */
   timeoutMs?: number;
-  execute: (args: Record<string, unknown>, tenant: TenantContext) => Promise<string> | string;
+  /** A successful call completes the response without another LLM round. */
+  terminal?: boolean;
+  execute: (
+    args: Record<string, unknown>,
+    tenant: TenantContext,
+    signal?: AbortSignal
+  ) => Promise<string> | string;
 }
 
 /** A Telegram bot command (/name). */

@@ -1,13 +1,14 @@
 import { afterEach, describe, it, expect, vi } from "vitest";
 import { spawn } from "child_process";
 import ffmpegPath from "ffmpeg-static";
-import { transcodeAudio } from "../transcode.js";
+import { oggOpusDurationSeconds, transcodeAudio } from "../transcode.js";
 import { buildProvider, speechModule } from "../index.js";
 import { YandexSpeechProvider } from "../providers/yandex.js";
 import {
   buildGeminiTtsInput,
   OpenRouterSpeechProvider,
   parsePcmContentType,
+  validateTtsBytes,
 } from "../providers/openrouter.js";
 import { TinfoilSpeechProvider } from "../providers/tinfoil.js";
 import { SpeechService } from "../service.js";
@@ -46,6 +47,22 @@ function ffmpegSineMp3(seconds = 0.4): Promise<Buffer> {
       code === 0 ? resolve(Buffer.concat(chunks)) : reject(new Error(`ffmpeg exit ${code}`))
     );
   });
+}
+
+function pcmSine(seconds = 1, rate = 24_000): Buffer {
+  const samples = Math.floor(seconds * rate);
+  const pcm = Buffer.alloc(samples * 2);
+  for (let i = 0; i < samples; i += 1) {
+    pcm.writeInt16LE(Math.round(Math.sin((2 * Math.PI * 440 * i) / rate) * 8_000), i * 2);
+  }
+  return pcm;
+}
+
+function fakeOggDuration(seconds: number): Buffer {
+  const ogg = Buffer.alloc(32);
+  ogg.write("OggS", 0, "ascii");
+  ogg.writeBigUInt64LE(BigInt(Math.round(seconds * 48_000)), 6);
+  return ogg;
 }
 
 function makeConfig(overrides: Partial<SkyeConfig> = {}): SkyeConfig {
@@ -104,6 +121,7 @@ describe("speech transcodeAudio", () => {
     const out = await transcodeAudio(mp3, "oggopus");
     expect(out.length).toBeGreaterThan(0);
     expect(out.subarray(0, 4).toString("ascii")).toBe("OggS");
+    expect(oggOpusDurationSeconds(out)).toBeGreaterThan(0.3);
   });
 
   it("converts ogg opus → mp3", async () => {
@@ -203,9 +221,11 @@ describe("speech module provider selection", () => {
     const ctx = {
       config: makeConfig({ voice: { ...makeConfig().voice, yc_api_key: "k" } }),
     } as never;
-    const result = speechModule.init?.(ctx) as {
-      service?: { isSttAvailable: () => boolean };
-    } | undefined;
+    const result = speechModule.init?.(ctx) as
+      | {
+          service?: { isSttAvailable: () => boolean };
+        }
+      | undefined;
     expect(result?.service).toBeDefined();
     expect(result?.service?.isSttAvailable()).toBe(true);
   });
@@ -232,6 +252,62 @@ describe("expressive speech", () => {
       rate: 24000,
       channels: 1,
     });
+  });
+
+  it("rejects empty, too-short, and JSON TTS responses", () => {
+    expect(validateTtsBytes(Buffer.alloc(0), "audio/pcm;rate=24000;channels=1", "pcm")).toBe(
+      "empty response body"
+    );
+    expect(validateTtsBytes(Buffer.alloc(4_000), "audio/pcm;rate=24000;channels=1", "pcm")).toBe(
+      "PCM response is shorter than 100 ms"
+    );
+    expect(validateTtsBytes(Buffer.from("{}"), "application/json", "pcm")).toBe(
+      "unexpected application/json"
+    );
+  });
+
+  it("retries an empty Gemini response and converts valid 24 kHz PCM to OGG Opus", async () => {
+    const pcm = pcmSine();
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(
+        new Response(null, {
+          status: 200,
+          headers: { "Content-Type": "audio/pcm;rate=24000;channels=1" },
+        })
+      )
+      .mockResolvedValueOnce(
+        new Response(new Uint8Array(pcm), {
+          status: 200,
+          headers: {
+            "Content-Type": "audio/pcm;rate=24000;channels=1",
+            "X-Generation-Id": "gen-test",
+          },
+        })
+      );
+    vi.stubGlobal("fetch", fetchMock);
+    const provider = new OpenRouterSpeechProvider({
+      apiKey: "key",
+      baseUrl: "https://openrouter.ai/api/v1",
+      sttModel: "stt",
+      ttsModel: "google/gemini-3.1-flash-tts-preview",
+      ttsVoice: "Aoede",
+      ttsResponseFormat: "mp3",
+      sttInputFormat: "mp3",
+      sttLanguage: "",
+      referer: "",
+      title: "",
+      pcmSampleRate: 24_000,
+      pcmChannels: 1,
+    });
+
+    const audio = await provider.synthesize("Привет");
+
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+    expect(audio?.subarray(0, 4).toString("ascii")).toBe("OggS");
+    expect(oggOpusDurationSeconds(audio!)).toBeGreaterThan(0.9);
+    const request = fetchMock.mock.calls[0]?.[1] as RequestInit;
+    expect(JSON.parse(String(request.body)).response_format).toBe("pcm");
   });
 
   it("retries a transient OpenRouter TTS error with the same expressive payload", async () => {
@@ -275,6 +351,42 @@ describe("expressive speech", () => {
     expect(fetchMock.mock.calls[1]?.[1]).toEqual(fetchMock.mock.calls[0]?.[1]);
   });
 
+  it("aborts an in-flight OpenRouter TTS request without retrying", async () => {
+    const fetchMock = vi.fn(
+      async (_url: string, init?: RequestInit) =>
+        new Promise<Response>((_resolve, reject) => {
+          const requestSignal = init?.signal;
+          requestSignal?.addEventListener("abort", () => reject(requestSignal.reason), {
+            once: true,
+          });
+        })
+    );
+    vi.stubGlobal("fetch", fetchMock);
+    const provider = new OpenRouterSpeechProvider({
+      apiKey: "key",
+      baseUrl: "https://openrouter.ai/api/v1",
+      sttModel: "stt",
+      ttsModel: "google/gemini-3.1-flash-tts-preview",
+      ttsVoice: "Aoede",
+      ttsResponseFormat: "pcm",
+      sttInputFormat: "mp3",
+      sttLanguage: "",
+      referer: "",
+      title: "",
+      pcmSampleRate: 24000,
+      pcmChannels: 1,
+    });
+    const controller = new AbortController();
+    const reason = new Error("cancelled");
+
+    const synthesis = provider.synthesize("Привет", {}, controller.signal);
+    await vi.waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(1));
+    controller.abort(reason);
+
+    await expect(synthesis).rejects.toBe(reason);
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+
   it("combines persistent and per-call Tinfoil voice directions", async () => {
     const fetchMock = vi.fn().mockResolvedValue(new Response("invalid request", { status: 400 }));
     vi.stubGlobal("fetch", fetchMock);
@@ -312,7 +424,7 @@ describe("expressive speech", () => {
       recognize: async () => null,
       synthesize: async (text, options) => {
         calls.push({ text, options });
-        return Buffer.from("ogg");
+        return fakeOggDuration(1.5);
       },
       getTtsCapabilities: () => ({
         defaultVoice: "Aoede",
@@ -329,12 +441,15 @@ describe("expressive speech", () => {
       },
     });
 
-    const result = await tool.execute({
-      text: "[excited] Поехали!",
-      voice: "sulafat",
-      style: "Warm and lively",
-      scene: "A friendly studio",
-    }, {} as never);
+    const result = await tool.execute(
+      {
+        text: "[excited] Поехали!",
+        voice: "sulafat",
+        style: "Warm and lively",
+        scene: "A friendly studio",
+      },
+      {} as never
+    );
 
     expect(result).toContain("prepared successfully");
     expect(calls).toEqual([
@@ -347,7 +462,7 @@ describe("expressive speech", () => {
         },
       },
     ]);
-    expect(prepared).toEqual([Buffer.from("ogg")]);
+    expect(prepared).toEqual([fakeOggDuration(1.5)]);
     await expect(tool.execute({ text: "Again" }, {} as never)).resolves.toContain(
       "already prepared"
     );

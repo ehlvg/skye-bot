@@ -12,7 +12,9 @@ import {
   type ModelResponse,
   type RunStreamEvent,
   type StreamEvent,
+  type ToolsToFinalOutputResult,
 } from "@openai/agents";
+import { createHmac, randomBytes, randomUUID } from "node:crypto";
 import type { ToolDefinition } from "../../core/module.js";
 import { threadKey } from "../../core/tenant.js";
 import { log } from "../../utils/log.js";
@@ -28,15 +30,43 @@ type RuntimeTool = {
   description: string;
   parameters: Record<string, unknown>;
   timeoutMs?: number;
+  terminal?: boolean;
   isConnector: boolean;
   execute: (args: Record<string, unknown>, signal?: AbortSignal) => Promise<string>;
 };
 
+type MeteredResponse = {
+  id?: string;
+  responseId?: string;
+  requestId?: string;
+  output: Array<{ type?: string }>;
+  usage: { inputTokens: number; outputTokens: number };
+};
+
+const modelRequestFingerprintKey = randomBytes(32);
+
+export function resolveTerminalToolUse(
+  tools: ReadonlyArray<{ name: string; terminal?: boolean }>,
+  calledToolNames: readonly string[],
+  acceptEmptyFinal?: () => boolean
+): ToolsToFinalOutputResult {
+  const completedTerminalTool = calledToolNames.some(
+    (name) => tools.find((definition) => definition.name === name)?.terminal
+  );
+  return completedTerminalTool && acceptEmptyFinal?.()
+    ? { isFinalOutput: true, isInterrupted: undefined, finalOutput: "" }
+    : { isFinalOutput: false, isInterrupted: undefined };
+}
+
 class MeteredModel implements Model {
+  private round = 0;
+
   constructor(
     private readonly inner: Model,
     private readonly modelId: string,
     private readonly providerData: Record<string, unknown>,
+    private readonly runId: string,
+    private readonly chatId: number,
     private readonly beforeRound?: (modelId: string) => void,
     private readonly onUsage?: (
       usage: { promptTokens: number; completionTokens: number },
@@ -45,17 +75,25 @@ class MeteredModel implements Model {
   ) {}
 
   async getResponse(request: ModelRequest): Promise<ModelResponse> {
+    const round = ++this.round;
+    const startedAt = Date.now();
+    this.logStart(request, round);
     this.beforeRound?.(this.modelId);
     const response = await this.inner.getResponse(this.withProviderData(request));
     this.recordUsage(response.usage.inputTokens, response.usage.outputTokens);
+    this.logDone(response, round, startedAt);
     return response;
   }
 
   async *getStreamedResponse(request: ModelRequest): AsyncIterable<StreamEvent> {
+    const round = ++this.round;
+    const startedAt = Date.now();
+    this.logStart(request, round);
     this.beforeRound?.(this.modelId);
     for await (const event of this.inner.getStreamedResponse(this.withProviderData(request))) {
       if (event.type === "response_done") {
         this.recordUsage(event.response.usage.inputTokens, event.response.usage.outputTokens);
+        this.logDone(event.response, round, startedAt);
       }
       yield event;
     }
@@ -63,6 +101,39 @@ class MeteredModel implements Model {
 
   private recordUsage(promptTokens: number, completionTokens: number): void {
     this.onUsage?.({ promptTokens, completionTokens }, this.modelId);
+  }
+
+  private logStart(request: ModelRequest, round: number): void {
+    log.debug(
+      {
+        runId: this.runId,
+        chatId: this.chatId,
+        modelId: this.modelId,
+        round,
+        requestFingerprint: fingerprintModelRequest(request),
+        inputItems: Array.isArray(request.input) ? request.input.length : 1,
+        toolCount: request.tools.length,
+      },
+      "Agent model round started"
+    );
+  }
+
+  private logDone(response: MeteredResponse, round: number, startedAt: number): void {
+    log.debug(
+      {
+        runId: this.runId,
+        chatId: this.chatId,
+        modelId: this.modelId,
+        round,
+        responseId: response.responseId ?? response.id,
+        requestId: response.requestId,
+        outputTypes: response.output.map((item) => item.type ?? "message"),
+        promptTokens: response.usage.inputTokens,
+        completionTokens: response.usage.outputTokens,
+        elapsedMs: Date.now() - startedAt,
+      },
+      "Agent model round completed"
+    );
   }
 
   private withProviderData(request: ModelRequest): ModelRequest {
@@ -116,6 +187,7 @@ export class OpenAIAgentsRuntime implements AgentRuntime {
 
   async run(request: AgentRunRequest): Promise<string> {
     request.signal?.throwIfAborted();
+    const runId = randomUUID();
     const prepared = await this.prepare(request);
     const failedCalls = new Set<string>();
     const sdkTools = prepared.tools.map((definition) => ({
@@ -144,13 +216,14 @@ export class OpenAIAgentsRuntime implements AgentRuntime {
         },
       }),
     }));
-    const toolsForModel = (entry: ModelEntry) => [
+    const toolsForModel = (entry: ModelEntry, includeTerminalTools: boolean) => [
       ...sdkTools
         .filter(
           ({ definition }) =>
-            definition.isConnector ||
-            !entry.builtinTools?.includes("sandbox") ||
-            !definition.name.startsWith("sandbox_")
+            (includeTerminalTools || !definition.terminal) &&
+            (definition.isConnector ||
+              !entry.builtinTools?.includes("sandbox") ||
+              !definition.name.startsWith("sandbox_"))
         )
         .map(({ tool: sdkTool }) => sdkTool),
       ...hostedToolsForModel(entry, this.deps.llm.settings.useChatCompletions),
@@ -199,7 +272,7 @@ export class OpenAIAgentsRuntime implements AgentRuntime {
     const specialistAgents = await Promise.all(
       prepared.profiles.map(async (profile) => {
         const entry = this.modelForProfile(profile, prepared.modelEntry);
-        const model = await this.meteredModel(entry, request);
+        const model = await this.meteredModel(entry, request, runId);
         return {
           profile,
           agent: new Agent({
@@ -207,7 +280,7 @@ export class OpenAIAgentsRuntime implements AgentRuntime {
             handoffDescription: profile.description,
             instructions: prepared.instructionsFor(profile),
             model,
-            tools: toolsForModel(entry),
+            tools: toolsForModel(entry, false),
           }),
         };
       })
@@ -230,12 +303,18 @@ export class OpenAIAgentsRuntime implements AgentRuntime {
     const rootEntry = prepared.activeProfile
       ? this.modelForProfile(prepared.activeProfile, prepared.modelEntry)
       : prepared.modelEntry;
-    const rootModel = await this.meteredModel(rootEntry, request);
+    const rootModel = await this.meteredModel(rootEntry, request, runId);
     const rootAgent = new Agent({
       name: prepared.activeProfile?.name ?? "Skye",
       instructions: prepared.rootInstructions,
       model: rootModel,
-      tools: [...toolsForModel(rootEntry), ...delegateTools],
+      tools: [...toolsForModel(rootEntry, true), ...delegateTools],
+      toolUseBehavior: (_context, toolResults) =>
+        resolveTerminalToolUse(
+          prepared.tools,
+          toolResults.map((result) => result.tool.name),
+          request.acceptEmptyFinal
+        ),
     });
     const input = toAgentInput(request.input);
 
@@ -290,12 +369,18 @@ export class OpenAIAgentsRuntime implements AgentRuntime {
     return text;
   }
 
-  private async meteredModel(entry: ModelEntry, request: AgentRunRequest): Promise<Model> {
+  private async meteredModel(
+    entry: ModelEntry,
+    request: AgentRunRequest,
+    runId: string
+  ): Promise<Model> {
     const model = await this.provider.getModel(entry.model);
     return new MeteredModel(
       model,
       entry.id,
       providerDataForModel(entry, request.input, this.deps.llm.settings.pdfEngine),
+      runId,
+      request.tenant.chatId,
       request.beforeRound,
       request.onUsage
     );
@@ -405,10 +490,29 @@ export class OpenAIAgentsRuntime implements AgentRuntime {
       description: definition.description,
       parameters: definition.parameters,
       timeoutMs: definition.timeoutMs,
+      terminal: definition.terminal,
       isConnector: false,
-      execute: async (args) => String(await definition.execute(args, request.tenant)),
+      execute: async (args, signal) =>
+        String(await definition.execute(args, request.tenant, signal)),
     };
   }
+}
+
+function fingerprintModelRequest(request: ModelRequest): string {
+  const payload = JSON.stringify({
+    systemInstructions: request.systemInstructions,
+    input: request.input,
+    previousResponseId: request.previousResponseId,
+    conversationId: request.conversationId,
+    modelSettings: request.modelSettings,
+    tools: request.tools,
+    outputType: request.outputType,
+    handoffs: request.handoffs,
+  });
+  return createHmac("sha256", modelRequestFingerprintKey)
+    .update(payload)
+    .digest("hex")
+    .slice(0, 16);
 }
 
 export function toAgentInput(input: AgentRunRequest["input"]): AgentInputItem[] {
